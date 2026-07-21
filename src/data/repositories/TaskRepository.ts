@@ -1,5 +1,8 @@
 import Database from 'better-sqlite3';
 import { Task } from '../types';
+import { mapBooleanFields } from '../utils';
+
+type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority'>>;
 
 export class TaskRepository {
   private db: Database.Database;
@@ -91,27 +94,26 @@ export class TaskRepository {
     return newTask;
   }
 
-  update(task: Partial<Task> & { id: string }): Task | null {
-    const existing = this.getById(task.id);
+  update(id: string, updates: TaskUpdateFields): Task | null {
+    const existing = this.getById(id);
     if (!existing) return null;
 
     const now = Date.now();
     const updatedTask: Task = {
       ...existing,
-      ...task,
+      ...updates,
       updatedAt: now,
     };
 
     this.db.prepare(`
       UPDATE Task
       SET title = ?, remark = ?, folderId = ?, parentId = ?, startDate = ?, deadline = ?,
-          priority = ?, completed = ?, completedAt = ?, updatedAt = ?
+          priority = ?, updatedAt = ?
       WHERE id = ?
     `).run(
       updatedTask.title, updatedTask.remark, updatedTask.folderId, updatedTask.parentId,
       updatedTask.startDate, updatedTask.deadline, updatedTask.priority,
-      updatedTask.completed ? 1 : 0, updatedTask.completedAt, updatedTask.updatedAt,
-      updatedTask.id
+      updatedTask.updatedAt, updatedTask.id
     );
 
     return updatedTask;
@@ -167,10 +169,6 @@ export class TaskRepository {
   }
 
   private mapRow(row: any): Task {
-    return {
-      ...row,
-      completed: row.completed === 1,
-      deleted: row.deleted === 1,
-    };
+    return mapBooleanFields(row) as Task;
   }
 }

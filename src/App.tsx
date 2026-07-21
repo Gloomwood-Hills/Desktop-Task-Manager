@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getDatabase } from './data';
-import { TaskService, SettingsService, WindowStateService } from './services';
+import { TaskService, FolderService, SettingsService, WindowStateService } from './services';
 
 function App() {
   const [status, setStatus] = useState('Initializing...');
@@ -15,10 +15,15 @@ function App() {
       setStatus('Connecting to database...');
       const db = await getDatabase();
       
+      setStatus('Testing FolderService...');
+      const folderService = new FolderService(db);
+      const folders = folderService.getAllFolders();
+      setStatus(`Found ${folders.length} folders`);
+
       setStatus('Testing TaskService...');
       const taskService = new TaskService(db);
-      const folders = taskService.getAllFolders();
-      setStatus(`Found ${folders.length} folders`);
+      const tasks = taskService.getAllTasks();
+      setStatus(`Found ${tasks.length} tasks`);
 
       setStatus('Testing SettingsService...');
       const settingsService = new SettingsService(db);
@@ -55,11 +60,19 @@ function App() {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              <span>Task Service 业务层实现完成</span>
+              <span>TaskService + FolderService 业务层实现完成</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
               <span>数据迁移和初始化完成</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              <span>错误处理和日志添加完成</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              <span>通用工具函数提取完成</span>
             </div>
           </div>
         )}

@@ -1,43 +1,12 @@
 import Database from 'better-sqlite3';
-import { Task, Folder, TaskWithSubtasks, FolderWithTasks, Priority } from '../data/types';
-import { TaskRepository, FolderRepository } from '../data/repositories';
+import { Task, TaskWithSubtasks, Priority } from '../data/types';
+import { TaskRepository } from '../data/repositories';
 
 export class TaskService {
   private taskRepository: TaskRepository;
-  private folderRepository: FolderRepository;
 
   constructor(db: Database.Database) {
     this.taskRepository = new TaskRepository(db);
-    this.folderRepository = new FolderRepository(db);
-  }
-
-  getAllFolders(): Folder[] {
-    return this.folderRepository.getAll();
-  }
-
-  getFolderById(id: string): Folder | null {
-    return this.folderRepository.getById(id);
-  }
-
-  createFolder(name: string, parentId: string | null = null): Folder {
-    const id = this.generateId();
-    const folders = this.folderRepository.getByParentId(parentId);
-    const sortOrder = folders.length;
-
-    return this.folderRepository.create({
-      id,
-      name,
-      parentId,
-      sortOrder,
-    });
-  }
-
-  updateFolder(id: string, name: string): Folder | null {
-    return this.folderRepository.update({ id, name });
-  }
-
-  deleteFolder(id: string): boolean {
-    return this.folderRepository.delete(id);
   }
 
   getAllTasks(): Task[] {
@@ -82,7 +51,7 @@ export class TaskService {
   }
 
   updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>): Task | null {
-    return this.taskRepository.update({ id, ...updates });
+    return this.taskRepository.update(id, updates);
   }
 
   deleteTask(id: string): boolean {
@@ -102,10 +71,6 @@ export class TaskService {
 
     if (updated && updated.parentId) {
       this.updateParentCompletion(updated.parentId);
-    }
-
-    if (updated && newCompleted) {
-      this.completeParentChain(id);
     }
 
     return updated;
@@ -130,21 +95,6 @@ export class TaskService {
     }
   }
 
-  private completeParentChain(taskId: string): void {
-    const task = this.taskRepository.getById(taskId);
-    if (!task || !task.parentId) return;
-
-    const parent = this.taskRepository.getById(task.parentId);
-    if (!parent) return;
-
-    const { completed, total } = this.getParentTaskCompletion(task.parentId);
-    
-    if (total > 0 && completed === total && !parent.completed) {
-      this.taskRepository.markCompleted(task.parentId, true);
-      this.completeParentChain(task.parentId);
-    }
-  }
-
   buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
     const taskMap = new Map<string, TaskWithSubtasks>();
     const rootTasks: TaskWithSubtasks[] = [];
@@ -164,32 +114,6 @@ export class TaskService {
     });
 
     return rootTasks;
-  }
-
-  getFolderWithTasks(folderId: string): FolderWithTasks | null {
-    const folder = this.folderRepository.getById(folderId);
-    if (!folder) return null;
-
-    const tasks = this.taskRepository.getByFolderId(folderId);
-    const taskTree = this.buildTaskTree(tasks);
-
-    return {
-      ...folder,
-      tasks: taskTree,
-    };
-  }
-
-  getAllFoldersWithTasks(): FolderWithTasks[] {
-    const folders = this.folderRepository.getAll();
-    
-    return folders.map((folder) => {
-      const tasks = this.taskRepository.getByFolderId(folder.id);
-      const taskTree = this.buildTaskTree(tasks);
-      return {
-        ...folder,
-        tasks: taskTree,
-      };
-    });
   }
 
   private generateId(): string {

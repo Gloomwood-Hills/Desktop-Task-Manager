@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { Settings, Theme, SortType } from '../types';
+import { mapBooleanFields } from '../utils';
 
 export class SettingsRepository {
   private db: Database.Database;
@@ -71,10 +72,6 @@ export class SettingsRepository {
   }
 
   private mapRow(row: any): Settings {
-    return {
-      ...row,
-      glassEffect: row.glassEffect === 1,
-      reminderEnabled: row.reminderEnabled === 1,
-    };
+    return mapBooleanFields(row) as Settings;
   }
 }

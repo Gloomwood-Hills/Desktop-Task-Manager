@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { WindowState } from '../types';
+import { parseJSONField } from '../utils';
 
 export class WindowStateRepository {
   private db: Database.Database;
@@ -60,7 +61,7 @@ export class WindowStateRepository {
   private mapRow(row: any): WindowState {
     return {
       ...row,
-      collapsedFolders: typeof row.collapsedFolders === 'string' ? JSON.parse(row.collapsedFolders) : [],
+      collapsedFolders: parseJSONField<string[]>(row.collapsedFolders) || [],
     };
   }
 }
