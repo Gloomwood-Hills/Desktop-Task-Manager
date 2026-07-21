@@ -23,13 +23,10 @@ mod worker_w {
 
             // 1. 找到 Progman 窗口（桌面管理器）
             let progman_class: Vec<u16> = "Progman\0".encode_utf16().collect();
-            let progman = FindWindowW(PCWSTR(progman_class.as_ptr()), PCWSTR::null());
-
-            if progman.is_err() {
+            let Ok(progman) = FindWindowW(PCWSTR(progman_class.as_ptr()), PCWSTR::null()) else {
                 log::error!("Failed to find Progman window");
                 return;
-            }
-            let progman = progman.unwrap();
+            };
 
             // 2. 发送消息让 Progman 创建 WorkerW
             let _ = SendMessageTimeoutW(
@@ -51,16 +48,21 @@ mod worker_w {
 
             if let Some(worker) = worker_w {
                 // 4. 将窗口设置为 WorkerW 的子窗口
-                let _ = SetParent(hwnd, worker);
-
-                // 5. 确保窗口在底层
-                let _ = SetWindowPos(
-                    hwnd,
-                    HWND_BOTTOM,
-                    0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                );
-                log::info!("Window attached to WorkerW");
+                match SetParent(hwnd, worker) {
+                    Ok(_) => {
+                        // 5. 确保窗口在底层
+                        let _ = SetWindowPos(
+                            hwnd,
+                            HWND_BOTTOM,
+                            0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                        );
+                        log::info!("Window attached to WorkerW");
+                    }
+                    Err(e) => {
+                        log::error!("Failed to set parent to WorkerW: {}", e);
+                    }
+                }
             } else {
                 log::warn!("WorkerW window not found, desktop layer attachment skipped");
             }
