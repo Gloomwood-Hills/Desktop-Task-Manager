@@ -11,14 +11,19 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Desktop Task Manager",
         "width": 400,
         "height": 600,
+        "minWidth": 320,
+        "minHeight": 400,
         "resizable": true,
         "fullscreen": false,
         "transparent": true,
         "decorations": false,
-        "alwaysOnBottom": true
+        "skipTaskbar": true,
+        "alwaysOnBottom": true,
+        "focus": false
       }
     ],
     "security": {
