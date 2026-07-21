@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { Task, TaskWithSubtasks, Priority } from '../data/types';
 import { TaskRepository } from '../data/repositories';
+import { generateId, buildTaskTree } from '../data/utils';
 
 export class TaskService {
   private taskRepository: TaskRepository;
@@ -36,7 +37,7 @@ export class TaskService {
       priority?: Priority;
     }
   ): Task {
-    const id = this.generateId();
+    const id = generateId();
 
     return this.taskRepository.create({
       id,
@@ -96,27 +97,6 @@ export class TaskService {
   }
 
   buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
-    const taskMap = new Map<string, TaskWithSubtasks>();
-    const rootTasks: TaskWithSubtasks[] = [];
-
-    tasks.forEach((task) => {
-      taskMap.set(task.id, { ...task, subtasks: [] });
-    });
-
-    tasks.forEach((task) => {
-      const taskWithSubtasks = taskMap.get(task.id)!;
-      
-      if (task.parentId && taskMap.has(task.parentId)) {
-        taskMap.get(task.parentId)!.subtasks.push(taskWithSubtasks);
-      } else {
-        rootTasks.push(taskWithSubtasks);
-      }
-    });
-
-    return rootTasks;
-  }
-
-  private generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return buildTaskTree(tasks);
   }
 }

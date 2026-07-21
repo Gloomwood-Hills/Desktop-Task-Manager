@@ -26,3 +26,26 @@ export function parseJSONField<T>(value: string | T): T {
   }
   return value;
 }
+
+import { Task, TaskWithSubtasks } from './types';
+
+export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
+  const taskMap = new Map<string, TaskWithSubtasks>();
+  const rootTasks: TaskWithSubtasks[] = [];
+
+  tasks.forEach((task) => {
+    taskMap.set(task.id, { ...task, subtasks: [] });
+  });
+
+  tasks.forEach((task) => {
+    const taskWithSubtasks = taskMap.get(task.id)!;
+    
+    if (task.parentId && taskMap.has(task.parentId)) {
+      taskMap.get(task.parentId)!.subtasks.push(taskWithSubtasks);
+    } else {
+      rootTasks.push(taskWithSubtasks);
+    }
+  });
+
+  return rootTasks;
+}
