@@ -72,6 +72,6 @@ export class SettingsRepository {
   }
 
   private mapRow(row: any): Settings {
-    return mapBooleanFields(row) as Settings;
+    return mapBooleanFields(row, ['glassEffect', 'reminderEnabled'] as (keyof Settings)[]) as Settings;
   }
 }

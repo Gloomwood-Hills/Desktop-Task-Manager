@@ -59,14 +59,15 @@ export class TaskRepository {
       ? `WHERE completed = 1 AND deleted = 0 AND folderId = ?`
       : `WHERE completed = 1 AND deleted = 0`;
 
-    const rows = this.db.prepare(`
+    const stmt = this.db.prepare(`
       SELECT id, title, remark, folderId, parentId, startDate, deadline, priority,
              completed, completedAt, deleted, createdAt, updatedAt
       FROM Task
       ${query}
       ORDER BY completedAt DESC
-    `).all(folderId || undefined) as Task[];
-    return rows.map(this.mapRow);
+    `);
+    const rows = folderId ? stmt.all(folderId) : stmt.all();
+    return (rows as Task[]).map(this.mapRow);
   }
 
   create(task: Omit<Task, 'completed' | 'completedAt' | 'deleted' | 'createdAt' | 'updatedAt'>): Task {
@@ -169,6 +170,6 @@ export class TaskRepository {
   }
 
   private mapRow(row: any): Task {
-    return mapBooleanFields(row) as Task;
+    return mapBooleanFields(row, ['completed', 'deleted'] as (keyof Task)[]) as Task;
   }
 }

@@ -1,14 +1,19 @@
-export function mapBooleanFields<T extends object>(row: T): T {
+import { Task, TaskWithSubtasks } from './types';
+
+export function mapBooleanFields<T extends object>(
+  row: T,
+  booleanFields: (keyof T)[]
+): T {
   const result = { ...row };
-  
-  for (const key in result) {
+
+  for (const key of booleanFields) {
     if (result[key] === 1) {
-      result[key as keyof T] = true as unknown as T[keyof T];
+      result[key] = true as unknown as T[keyof T];
     } else if (result[key] === 0) {
-      result[key as keyof T] = false as unknown as T[keyof T];
+      result[key] = false as unknown as T[keyof T];
     }
   }
-  
+
   return result;
 }
 
@@ -27,8 +32,6 @@ export function parseJSONField<T>(value: string | T): T {
   return value;
 }
 
-import { Task, TaskWithSubtasks } from './types';
-
 export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
   const taskMap = new Map<string, TaskWithSubtasks>();
   const rootTasks: TaskWithSubtasks[] = [];
@@ -39,7 +42,7 @@ export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
 
   tasks.forEach((task) => {
     const taskWithSubtasks = taskMap.get(task.id)!;
-    
+
     if (task.parentId && taskMap.has(task.parentId)) {
       taskMap.get(task.parentId)!.subtasks.push(taskWithSubtasks);
     } else {
