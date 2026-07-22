@@ -16,11 +16,13 @@
         "title": "Desktop Task Manager",
         "width": 400,
         "height": 600,
-        "center": true,
+        "x": 100,
+        "y": 100,
         "resizable": true,
         "fullscreen": false,
-        "transparent": false,
-        "decorations": true,
+        "transparent": true,
+        "decorations": false,
+        "skipTaskbar": true,
         "visible": true
       }
     ],
