@@ -1,6 +1,8 @@
 import Database from '@tauri-apps/plugin-sql';
 import { Folder } from '../types';
 
+const FOLDER_COLUMNS = 'id, name, parentId, sortOrder, createdAt, updatedAt';
+
 export class FolderRepository {
   private db: Database;
 
@@ -9,17 +11,15 @@ export class FolderRepository {
   }
 
   async getAll(): Promise<Folder[]> {
-    const rows = await this.db.select<Folder[]>(`
-      SELECT id, name, parentId, sortOrder, createdAt, updatedAt
-      FROM Folder
-      ORDER BY sortOrder ASC
-    `);
+    const rows = await this.db.select<Folder[]>(
+      `SELECT ${FOLDER_COLUMNS} FROM Folder ORDER BY sortOrder ASC`
+    );
     return rows;
   }
 
   async getById(id: string): Promise<Folder | null> {
     const rows = await this.db.select<Folder[]>(
-      `SELECT id, name, parentId, sortOrder, createdAt, updatedAt FROM Folder WHERE id = ?`,
+      `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE id = ?`,
       [id]
     );
     return rows[0] || null;
@@ -28,14 +28,12 @@ export class FolderRepository {
   async getByParentId(parentId: string | null): Promise<Folder[]> {
     if (parentId) {
       return await this.db.select<Folder[]>(
-        `SELECT id, name, parentId, sortOrder, createdAt, updatedAt
-         FROM Folder WHERE parentId = ? ORDER BY sortOrder ASC`,
+        `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE parentId = ? ORDER BY sortOrder ASC`,
         [parentId]
       );
     } else {
       return await this.db.select<Folder[]>(
-        `SELECT id, name, parentId, sortOrder, createdAt, updatedAt
-         FROM Folder WHERE parentId IS NULL ORDER BY sortOrder ASC`
+        `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE parentId IS NULL ORDER BY sortOrder ASC`
       );
     }
   }

@@ -175,7 +175,8 @@ export class TaskRepository {
     return rows[0].count;
   }
 
-  private mapRow(row: any): Task {
-    return mapBooleanFields(row, ['completed', 'deleted'] as (keyof Task)[]) as Task;
+  private mapRow(row: unknown): Task {
+    const r = row as Record<string, unknown>;
+    return mapBooleanFields(r, ['completed', 'deleted'] as (keyof Task)[]) as unknown as Task;
   }
 }

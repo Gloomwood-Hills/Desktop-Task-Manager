@@ -72,7 +72,8 @@ export class SettingsRepository {
     return this.update({ reminderOffset });
   }
 
-  private mapRow(row: any): Settings {
-    return mapBooleanFields(row, ['glassEffect', 'reminderEnabled'] as (keyof Settings)[]) as Settings;
+  private mapRow(row: unknown): Settings {
+    const r = row as Record<string, unknown>;
+    return mapBooleanFields(r, ['glassEffect', 'reminderEnabled'] as (keyof Settings)[]) as unknown as Settings;
   }
 }

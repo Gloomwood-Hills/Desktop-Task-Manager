@@ -1,7 +1,7 @@
 import Database from '@tauri-apps/plugin-sql';
 import { appDataDir, join } from '@tauri-apps/api/path';
 
-let db: Database | null = null;
+let db: Database | undefined = undefined;
 let initError: Error | null = null;
 
 export async function getDatabase(): Promise<Database> {

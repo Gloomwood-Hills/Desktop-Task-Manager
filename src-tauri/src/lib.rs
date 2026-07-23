@@ -83,8 +83,6 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
-            eprintln!("[DEBUG] Tauri setup called");
-
             // System tray
             let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
             let hide_item = MenuItemBuilder::with_id("hide", "Hide").build(app)?;
@@ -145,7 +143,6 @@ pub fn run() {
                     if let Ok(hwnd) = window.hwnd() {
                         // HWND.0 is the raw pointer; cast to isize for Send
                         let hwnd_raw = hwnd.0 as isize;
-                        eprintln!("[WorkerW] Window HWND raw: {:#x}", hwnd_raw);
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(1500));
                             unsafe { worker_w::attach(hwnd_raw); }

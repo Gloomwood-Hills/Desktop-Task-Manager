@@ -59,10 +59,12 @@ export class WindowStateRepository {
     return this.update({ collapsedFolders });
   }
 
-  private mapRow(row: any): WindowState {
+  private mapRow(row: unknown): WindowState {
+    const r = row as Record<string, unknown>;
+    const collapsedFolders = parseJSONField<string[]>(r.collapsedFolders as string) || [];
     return {
-      ...row,
-      collapsedFolders: parseJSONField<string[]>(row.collapsedFolders) || [],
-    };
+      ...r,
+      collapsedFolders,
+    } as unknown as WindowState;
   }
 }

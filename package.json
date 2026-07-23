@@ -12,8 +12,6 @@
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.4.0",
-    "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^13.0.1",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
