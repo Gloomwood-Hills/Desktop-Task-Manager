@@ -1,76 +1,75 @@
-import Database from 'better-sqlite3';
+import Database from '@tauri-apps/plugin-sql';
 import { Task } from '../types';
 import { mapBooleanFields } from '../utils';
 
 type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority'>>;
 
-export class TaskRepository {
-  private db: Database.Database;
+const TASK_COLUMNS = `
+  id, title, remark, folderId, parentId, startDate, deadline, priority,
+  completed, completedAt, deleted, createdAt, updatedAt
+`;
 
-  constructor(db: Database.Database) {
+export class TaskRepository {
+  private db: Database;
+
+  constructor(db: Database) {
     this.db = db;
   }
 
-  getAll(): Task[] {
-    const rows = this.db.prepare(`
-      SELECT id, title, remark, folderId, parentId, startDate, deadline, priority,
-             completed, completedAt, deleted, createdAt, updatedAt
+  async getAll(): Promise<Task[]> {
+    const rows = await this.db.select<Task[]>(`
+      SELECT ${TASK_COLUMNS}
       FROM Task
       WHERE deleted = 0
       ORDER BY createdAt DESC
-    `).all() as Task[];
-    return rows.map(this.mapRow);
-  }
-
-  getById(id: string): Task | null {
-    const row = this.db.prepare(`
-      SELECT id, title, remark, folderId, parentId, startDate, deadline, priority,
-             completed, completedAt, deleted, createdAt, updatedAt
-      FROM Task
-      WHERE id = ? AND deleted = 0
-    `).get(id) as Task | undefined;
-    return row ? this.mapRow(row) : null;
-  }
-
-  getByFolderId(folderId: string): Task[] {
-    const rows = this.db.prepare(`
-      SELECT id, title, remark, folderId, parentId, startDate, deadline, priority,
-             completed, completedAt, deleted, createdAt, updatedAt
-      FROM Task
-      WHERE folderId = ? AND deleted = 0
-      ORDER BY createdAt DESC
-    `).all(folderId) as Task[];
-    return rows.map(this.mapRow);
-  }
-
-  getByParentId(parentId: string): Task[] {
-    const rows = this.db.prepare(`
-      SELECT id, title, remark, folderId, parentId, startDate, deadline, priority,
-             completed, completedAt, deleted, createdAt, updatedAt
-      FROM Task
-      WHERE parentId = ? AND deleted = 0
-      ORDER BY createdAt ASC
-    `).all(parentId) as Task[];
-    return rows.map(this.mapRow);
-  }
-
-  getCompleted(folderId?: string): Task[] {
-    const query = folderId
-      ? `WHERE completed = 1 AND deleted = 0 AND folderId = ?`
-      : `WHERE completed = 1 AND deleted = 0`;
-
-    const stmt = this.db.prepare(`
-      SELECT id, title, remark, folderId, parentId, startDate, deadline, priority,
-             completed, completedAt, deleted, createdAt, updatedAt
-      FROM Task
-      ${query}
-      ORDER BY completedAt DESC
     `);
-    const rows = folderId ? stmt.all(folderId) : stmt.all();
-    return (rows as Task[]).map(this.mapRow);
+    return rows.map(this.mapRow);
   }
 
-  create(task: Omit<Task, 'completed' | 'completedAt' | 'deleted' | 'createdAt' | 'updatedAt'>): Task {
+  async getById(id: string): Promise<Task | null> {
+    const rows = await this.db.select<Task[]>(
+      `SELECT ${TASK_COLUMNS} FROM Task WHERE id = ? AND deleted = 0`,
+      [id]
+    );
+    return rows[0] ? this.mapRow(rows[0]) : null;
+  }
+
+  async getByFolderId(folderId: string): Promise<Task[]> {
+    const rows = await this.db.select<Task[]>(
+      `SELECT ${TASK_COLUMNS} FROM Task WHERE folderId = ? AND deleted = 0 ORDER BY createdAt DESC`,
+      [folderId]
+    );
+    return rows.map(this.mapRow);
+  }
+
+  async getByParentId(parentId: string): Promise<Task[]> {
+    const rows = await this.db.select<Task[]>(
+      `SELECT ${TASK_COLUMNS} FROM Task WHERE parentId = ? AND deleted = 0 ORDER BY createdAt ASC`,
+      [parentId]
+    );
+    return rows.map(this.mapRow);
+  }
+
+  async getCompleted(folderId?: string): Promise<Task[]> {
+    if (folderId) {
+      const rows = await this.db.select<Task[]>(
+        `SELECT ${TASK_COLUMNS} FROM Task
+         WHERE completed = 1 AND deleted = 0 AND folderId = ?
+         ORDER BY completedAt DESC`,
+        [folderId]
+      );
+      return rows.map(this.mapRow);
+    } else {
+      const rows = await this.db.select<Task[]>(
+        `SELECT ${TASK_COLUMNS} FROM Task
+         WHERE completed = 1 AND deleted = 0
+         ORDER BY completedAt DESC`
+      );
+      return rows.map(this.mapRow);
+    }
+  }
+
+  async create(task: Omit<Task, 'completed' | 'completedAt' | 'deleted' | 'createdAt' | 'updatedAt'>): Promise<Task> {
     const now = Date.now();
     const newTask: Task = {
       ...task,
@@ -81,22 +80,23 @@ export class TaskRepository {
       updatedAt: now,
     };
 
-    this.db.prepare(`
-      INSERT INTO Task (id, title, remark, folderId, parentId, startDate, deadline, priority,
-                        completed, completedAt, deleted, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      newTask.id, newTask.title, newTask.remark, newTask.folderId, newTask.parentId,
-      newTask.startDate, newTask.deadline, newTask.priority,
-      newTask.completed ? 1 : 0, newTask.completedAt, newTask.deleted ? 1 : 0,
-      newTask.createdAt, newTask.updatedAt
+    await this.db.execute(
+      `INSERT INTO Task (id, title, remark, folderId, parentId, startDate, deadline, priority,
+                         completed, completedAt, deleted, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        newTask.id, newTask.title, newTask.remark, newTask.folderId, newTask.parentId,
+        newTask.startDate, newTask.deadline, newTask.priority,
+        newTask.completed ? 1 : 0, newTask.completedAt, newTask.deleted ? 1 : 0,
+        newTask.createdAt, newTask.updatedAt,
+      ]
     );
 
     return newTask;
   }
 
-  update(id: string, updates: TaskUpdateFields): Task | null {
-    const existing = this.getById(id);
+  async update(id: string, updates: TaskUpdateFields): Promise<Task | null> {
+    const existing = await this.getById(id);
     if (!existing) return null;
 
     const now = Date.now();
@@ -106,38 +106,41 @@ export class TaskRepository {
       updatedAt: now,
     };
 
-    this.db.prepare(`
-      UPDATE Task
-      SET title = ?, remark = ?, folderId = ?, parentId = ?, startDate = ?, deadline = ?,
-          priority = ?, updatedAt = ?
-      WHERE id = ?
-    `).run(
-      updatedTask.title, updatedTask.remark, updatedTask.folderId, updatedTask.parentId,
-      updatedTask.startDate, updatedTask.deadline, updatedTask.priority,
-      updatedTask.updatedAt, updatedTask.id
+    await this.db.execute(
+      `UPDATE Task
+       SET title = ?, remark = ?, folderId = ?, parentId = ?, startDate = ?, deadline = ?,
+           priority = ?, updatedAt = ?
+       WHERE id = ?`,
+      [
+        updatedTask.title, updatedTask.remark, updatedTask.folderId, updatedTask.parentId,
+        updatedTask.startDate, updatedTask.deadline, updatedTask.priority,
+        updatedTask.updatedAt, updatedTask.id,
+      ]
     );
 
     return updatedTask;
   }
 
-  softDelete(id: string): boolean {
+  async softDelete(id: string): Promise<boolean> {
     const now = Date.now();
-    const result = this.db.prepare(`
-      UPDATE Task SET deleted = 1, updatedAt = ? WHERE id = ?
-    `).run(now, id);
-    return result.changes > 0;
+    const result = await this.db.execute(
+      `UPDATE Task SET deleted = 1, updatedAt = ? WHERE id = ?`,
+      [now, id]
+    );
+    return result.rowsAffected > 0;
   }
 
-  restore(id: string): boolean {
+  async restore(id: string): Promise<boolean> {
     const now = Date.now();
-    const result = this.db.prepare(`
-      UPDATE Task SET deleted = 0, updatedAt = ? WHERE id = ?
-    `).run(now, id);
-    return result.changes > 0;
+    const result = await this.db.execute(
+      `UPDATE Task SET deleted = 0, updatedAt = ? WHERE id = ?`,
+      [now, id]
+    );
+    return result.rowsAffected > 0;
   }
 
-  markCompleted(id: string, completed: boolean): Task | null {
-    const existing = this.getById(id);
+  async markCompleted(id: string, completed: boolean): Promise<Task | null> {
+    const existing = await this.getById(id);
     if (!existing) return null;
 
     const now = Date.now();
@@ -148,25 +151,28 @@ export class TaskRepository {
       updatedAt: now,
     };
 
-    this.db.prepare(`
-      UPDATE Task SET completed = ?, completedAt = ?, updatedAt = ? WHERE id = ?
-    `).run(updatedTask.completed ? 1 : 0, updatedTask.completedAt, updatedTask.updatedAt, updatedTask.id);
+    await this.db.execute(
+      `UPDATE Task SET completed = ?, completedAt = ?, updatedAt = ? WHERE id = ?`,
+      [updatedTask.completed ? 1 : 0, updatedTask.completedAt, updatedTask.updatedAt, updatedTask.id]
+    );
 
     return updatedTask;
   }
 
-  getSubtaskCount(parentId: string): number {
-    const result = this.db.prepare(`
-      SELECT COUNT(*) as count FROM Task WHERE parentId = ? AND deleted = 0
-    `).get(parentId) as { count: number };
-    return result.count;
+  async getSubtaskCount(parentId: string): Promise<number> {
+    const rows = await this.db.select<{ count: number }[]>(
+      `SELECT COUNT(*) as count FROM Task WHERE parentId = ? AND deleted = 0`,
+      [parentId]
+    );
+    return rows[0].count;
   }
 
-  getCompletedSubtaskCount(parentId: string): number {
-    const result = this.db.prepare(`
-      SELECT COUNT(*) as count FROM Task WHERE parentId = ? AND completed = 1 AND deleted = 0
-    `).get(parentId) as { count: number };
-    return result.count;
+  async getCompletedSubtaskCount(parentId: string): Promise<number> {
+    const rows = await this.db.select<{ count: number }[]>(
+      `SELECT COUNT(*) as count FROM Task WHERE parentId = ? AND completed = 1 AND deleted = 0`,
+      [parentId]
+    );
+    return rows[0].count;
   }
 
   private mapRow(row: any): Task {

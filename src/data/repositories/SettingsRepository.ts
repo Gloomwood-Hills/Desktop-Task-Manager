@@ -1,25 +1,25 @@
-import Database from 'better-sqlite3';
+import Database from '@tauri-apps/plugin-sql';
 import { Settings, Theme, SortType } from '../types';
 import { mapBooleanFields } from '../utils';
 
 export class SettingsRepository {
-  private db: Database.Database;
+  private db: Database;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database) {
     this.db = db;
   }
 
-  get(): Settings | null {
-    const row = this.db.prepare(`
-      SELECT id, theme, glassEffect, transparency, sortType, reminderEnabled, reminderOffset, createdAt, updatedAt
-      FROM Settings
-      WHERE id = ?
-    `).get('default') as Settings | undefined;
-    return row ? this.mapRow(row) : null;
+  async get(): Promise<Settings | null> {
+    const rows = await this.db.select<Settings[]>(
+      `SELECT id, theme, glassEffect, transparency, sortType, reminderEnabled, reminderOffset, createdAt, updatedAt
+       FROM Settings WHERE id = ?`,
+      ['default']
+    );
+    return rows[0] ? this.mapRow(rows[0]) : null;
   }
 
-  update(settings: Partial<Settings>): Settings | null {
-    const existing = this.get();
+  async update(settings: Partial<Settings>): Promise<Settings | null> {
+    const existing = await this.get();
     if (!existing) return null;
 
     const now = Date.now();
@@ -29,45 +29,46 @@ export class SettingsRepository {
       updatedAt: now,
     };
 
-    this.db.prepare(`
-      UPDATE Settings
-      SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, reminderEnabled = ?, reminderOffset = ?, updatedAt = ?
-      WHERE id = ?
-    `).run(
-      updatedSettings.theme,
-      updatedSettings.glassEffect ? 1 : 0,
-      updatedSettings.transparency,
-      updatedSettings.sortType,
-      updatedSettings.reminderEnabled ? 1 : 0,
-      updatedSettings.reminderOffset,
-      updatedSettings.updatedAt,
-      updatedSettings.id
+    await this.db.execute(
+      `UPDATE Settings
+       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, reminderEnabled = ?, reminderOffset = ?, updatedAt = ?
+       WHERE id = ?`,
+      [
+        updatedSettings.theme,
+        updatedSettings.glassEffect ? 1 : 0,
+        updatedSettings.transparency,
+        updatedSettings.sortType,
+        updatedSettings.reminderEnabled ? 1 : 0,
+        updatedSettings.reminderOffset,
+        updatedSettings.updatedAt,
+        updatedSettings.id,
+      ]
     );
 
     return updatedSettings;
   }
 
-  updateTheme(theme: Theme): Settings | null {
+  async updateTheme(theme: Theme): Promise<Settings | null> {
     return this.update({ theme });
   }
 
-  updateGlassEffect(glassEffect: boolean): Settings | null {
+  async updateGlassEffect(glassEffect: boolean): Promise<Settings | null> {
     return this.update({ glassEffect });
   }
 
-  updateTransparency(transparency: number): Settings | null {
+  async updateTransparency(transparency: number): Promise<Settings | null> {
     return this.update({ transparency });
   }
 
-  updateSortType(sortType: SortType): Settings | null {
+  async updateSortType(sortType: SortType): Promise<Settings | null> {
     return this.update({ sortType });
   }
 
-  updateReminderEnabled(reminderEnabled: boolean): Settings | null {
+  async updateReminderEnabled(reminderEnabled: boolean): Promise<Settings | null> {
     return this.update({ reminderEnabled });
   }
 
-  updateReminderOffset(reminderOffset: number): Settings | null {
+  async updateReminderOffset(reminderOffset: number): Promise<Settings | null> {
     return this.update({ reminderOffset });
   }
 

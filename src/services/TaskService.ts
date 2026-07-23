@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import Database from '@tauri-apps/plugin-sql';
 import { Task, TaskWithSubtasks, Priority } from '../data/types';
 import { TaskRepository } from '../data/repositories';
 import { generateId, buildTaskTree } from '../data/utils';
@@ -6,27 +6,27 @@ import { generateId, buildTaskTree } from '../data/utils';
 export class TaskService {
   private taskRepository: TaskRepository;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database) {
     this.taskRepository = new TaskRepository(db);
   }
 
-  getAllTasks(): Task[] {
+  async getAllTasks(): Promise<Task[]> {
     return this.taskRepository.getAll();
   }
 
-  getTaskById(id: string): Task | null {
+  async getTaskById(id: string): Promise<Task | null> {
     return this.taskRepository.getById(id);
   }
 
-  getTasksByFolderId(folderId: string): Task[] {
+  async getTasksByFolderId(folderId: string): Promise<Task[]> {
     return this.taskRepository.getByFolderId(folderId);
   }
 
-  getCompletedTasks(folderId?: string): Task[] {
+  async getCompletedTasks(folderId?: string): Promise<Task[]> {
     return this.taskRepository.getCompleted(folderId);
   }
 
-  createTask(
+  async createTask(
     title: string,
     folderId: string,
     options?: {
@@ -36,7 +36,7 @@ export class TaskService {
       deadline?: number | null;
       priority?: Priority;
     }
-  ): Task {
+  ): Promise<Task> {
     const id = generateId();
 
     return this.taskRepository.create({
@@ -51,47 +51,47 @@ export class TaskService {
     });
   }
 
-  updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>): Task | null {
+  async updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>): Promise<Task | null> {
     return this.taskRepository.update(id, updates);
   }
 
-  deleteTask(id: string): boolean {
+  async deleteTask(id: string): Promise<boolean> {
     return this.taskRepository.softDelete(id);
   }
 
-  restoreTask(id: string): boolean {
+  async restoreTask(id: string): Promise<boolean> {
     return this.taskRepository.restore(id);
   }
 
-  toggleTaskCompleted(id: string): Task | null {
-    const task = this.taskRepository.getById(id);
+  async toggleTaskCompleted(id: string): Promise<Task | null> {
+    const task = await this.taskRepository.getById(id);
     if (!task) return null;
 
     const newCompleted = !task.completed;
-    const updated = this.taskRepository.markCompleted(id, newCompleted);
+    const updated = await this.taskRepository.markCompleted(id, newCompleted);
 
     if (updated && updated.parentId) {
-      this.updateParentCompletion(updated.parentId);
+      await this.updateParentCompletion(updated.parentId);
     }
 
     return updated;
   }
 
-  getParentTaskCompletion(parentId: string): { completed: number; total: number } {
-    const total = this.taskRepository.getSubtaskCount(parentId);
-    const completed = this.taskRepository.getCompletedSubtaskCount(parentId);
+  async getParentTaskCompletion(parentId: string): Promise<{ completed: number; total: number }> {
+    const total = await this.taskRepository.getSubtaskCount(parentId);
+    const completed = await this.taskRepository.getCompletedSubtaskCount(parentId);
     return { completed, total };
   }
 
-  private updateParentCompletion(parentId: string): void {
-    const { completed, total } = this.getParentTaskCompletion(parentId);
-    
+  private async updateParentCompletion(parentId: string): Promise<void> {
+    const { completed, total } = await this.getParentTaskCompletion(parentId);
+
     if (total > 0) {
       const allCompleted = completed === total;
-      const parentTask = this.taskRepository.markCompleted(parentId, allCompleted);
+      const parentTask = await this.taskRepository.markCompleted(parentId, allCompleted);
 
       if (parentTask && parentTask.parentId) {
-        this.updateParentCompletion(parentTask.parentId);
+        await this.updateParentCompletion(parentTask.parentId);
       }
     }
   }
