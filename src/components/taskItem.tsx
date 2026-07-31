@@ -108,7 +108,7 @@ export default function TaskItem({
             width: 18, height: 18, borderRadius: '50%',
             border: task.completed
               ? `1.5px solid var(--state-success)`
-              : `1.5px solid ${task.priority === 'important' ? '#ff6b3d' : 'var(--border)'}`,
+              : `1.5px solid ${task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)'}`,
             background: task.completed
               ? 'var(--state-success)'
               : task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent',
@@ -199,7 +199,7 @@ export default function TaskItem({
                 style={{
                   width: 15, height: 15, borderRadius: '50%',
                   background: sub.completed ? 'var(--state-success)' : 'transparent',
-                  border: `1.5px solid ${sub.completed ? 'var(--state-success)' : 'var(--border)'}`,
+                  border: `1.5px solid ${sub.completed ? 'var(--state-success)' : 'var(--muted-foreground)'}`,
                   flexShrink: 0,
                   display: 'inline-flex',
                   alignItems: 'center',

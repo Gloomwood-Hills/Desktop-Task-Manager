@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
 import CompletedSection from './components/completedSection';
-import ShortcutHint from './components/shortcutHint';
 import ContextMenu, { ContextMenuState } from './components/contextMenu';
 import QuickCapture from './components/quickCapture';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
@@ -242,9 +241,6 @@ function App() {
           />
         </main>
       </div>
-
-      {/* 快捷键提示 */}
-      <ShortcutHint />
 
       {/* 右键菜单 */}
       <ContextMenu
