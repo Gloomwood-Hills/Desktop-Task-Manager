@@ -57,6 +57,16 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
                 padding: '7px 8px',
                 opacity: 0.6,
                 cursor: 'pointer',
+                borderRadius: 'calc(var(--radius) * 0.5)',
+                transition: 'background-color 0.15s ease, opacity 0.15s ease',
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 70%, transparent)';
+                e.currentTarget.style.opacity = '0.85';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.opacity = '0.6';
               }}
             >
               <div style={{ position: 'absolute', left: -14, top: 15, width: 14, height: 1, background: 'var(--border)', opacity: 0.35 }} />

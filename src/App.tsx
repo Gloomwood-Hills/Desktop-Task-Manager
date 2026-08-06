@@ -35,7 +35,7 @@ function App() {
     () => new Set(['folder-ky', 'folder-lw', 'folder-sy', 'folder-gp', 'folder-sh'])
   );
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set(['task-lw1']));
-  const [completedExpanded, setCompletedExpanded] = useState(true);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
