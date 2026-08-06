@@ -14,7 +14,7 @@ interface TaskItemProps {
 }
 
 /** 高亮搜索关键词 */
-function Highlight({ text, query }: { text: string; query: string }) {
+export function Highlight({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return <>{text}</>;
@@ -91,7 +91,7 @@ function DateBadge({ task }: { task: Task }) {
 }
 
 /** 详情行：图标 + 标签 + 值 */
-function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       {icon}
@@ -358,7 +358,7 @@ export default function TaskItem({
             <DetailRow
               icon={<AlignLeft style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
               label="备注"
-              value={task.remark}
+              value={<Highlight text={task.remark} query={searchQuery} />}
             />
           )}
           {task.startDate !== null && (

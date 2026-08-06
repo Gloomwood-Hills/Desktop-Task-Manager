@@ -158,7 +158,14 @@ function App() {
     setCaptureOpen(false);
   };
 
-  // ===== 搜索过滤（标题/备注匹配） =====
+  // ===== 搜索过滤（标题/备注/子任务，递归） =====
+
+  /** 任务是否匹配关键词（含任意层级子任务，递归） */
+  const taskMatches = (t: TaskWithSubtasks, q: string): boolean =>
+    t.title.toLowerCase().includes(q)
+    || t.remark.toLowerCase().includes(q)
+    || t.subtasks.some((s) => taskMatches(s, q));
+
   const filteredCompleted = useMemo(() => {
     if (!searchQuery.trim()) return completedTasks;
     const q = searchQuery.toLowerCase();
@@ -169,22 +176,18 @@ function App() {
   const unclassifiedToRender = useMemo(() => {
     if (!searchQuery.trim()) return unclassifiedTasks;
     const q = searchQuery.toLowerCase();
-    return unclassifiedTasks.filter(
-      (t) => t.title.toLowerCase().includes(q) || t.remark.toLowerCase().includes(q)
-      || t.subtasks.some((s) => s.title.toLowerCase().includes(q))
-    );
+    return unclassifiedTasks.filter((t) => taskMatches(t, q));
   }, [unclassifiedTasks, searchQuery]);
 
-  // ===== 递归过滤文件夹树（搜索时保留含匹配任务的路径） =====
+  // ===== 递归过滤文件夹树（搜索时保留含匹配任务的路径；文件夹名匹配时保留该文件夹） =====
   const treeToRender = useMemo(() => {
     if (!searchQuery.trim()) return folderTree;
     const q = searchQuery.toLowerCase();
     const filterNode = (node: FolderNode): FolderNode | null => {
-      const tasks = node.tasks.filter(
-        (t) => t.title.toLowerCase().includes(q) || t.remark.toLowerCase().includes(q) || t.subtasks.some((s) => s.title.toLowerCase().includes(q))
-      );
+      const nameMatch = node.name.toLowerCase().includes(q);
+      const tasks = node.tasks.filter((t) => taskMatches(t, q));
       const children = node.children.map(filterNode).filter((c): c is FolderNode => c !== null);
-      if (tasks.length === 0 && children.length === 0) return null;
+      if (!nameMatch && tasks.length === 0 && children.length === 0) return null;
       return { ...node, tasks, children };
     };
     return folderTree.map(filterNode).filter((n): n is FolderNode => n !== null);

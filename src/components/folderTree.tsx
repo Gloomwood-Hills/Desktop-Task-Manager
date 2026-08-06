@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen } from 'lucide-react';
 import { FolderNode, TaskWithSubtasks } from '../data/types';
-import TaskItem from './taskItem';
+import TaskItem, { Highlight } from './taskItem';
 
 interface FolderTreeProps {
   folders: FolderNode[];
@@ -84,7 +84,7 @@ export default function FolderTree({
                 textOverflow: 'ellipsis',
                 minWidth: 0,
               }}>
-                {folder.name}
+                <Highlight text={folder.name} query={searchQuery} />
               </span>
               <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>
                 ({total})
