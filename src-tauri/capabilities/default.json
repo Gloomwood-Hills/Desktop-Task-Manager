@@ -12,6 +12,7 @@
     "core:window:allow-set-focus",
     "core:window:allow-close",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-resizable",
     "sql:default",
     "sql:allow-load",
     "sql:allow-execute",

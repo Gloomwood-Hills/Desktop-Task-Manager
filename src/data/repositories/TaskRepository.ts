@@ -54,7 +54,7 @@ export class TaskRepository {
     if (folderId) {
       const rows = await this.db.select<Task[]>(
         `SELECT ${TASK_COLUMNS} FROM Task
-         WHERE completed = 1 AND deleted = 0 AND folderId = ?
+         WHERE completed = 1 AND deleted = 0 AND parentId IS NULL AND folderId = ?
          ORDER BY completedAt DESC`,
         [folderId]
       );
@@ -62,7 +62,7 @@ export class TaskRepository {
     } else {
       const rows = await this.db.select<Task[]>(
         `SELECT ${TASK_COLUMNS} FROM Task
-         WHERE completed = 1 AND deleted = 0
+         WHERE completed = 1 AND deleted = 0 AND parentId IS NULL
          ORDER BY completedAt DESC`
       );
       return rows.map(this.mapRow);
@@ -133,7 +133,7 @@ export class TaskRepository {
   async restore(id: string): Promise<boolean> {
     const now = Date.now();
     const result = await this.db.execute(
-      `UPDATE Task SET deleted = 0, updatedAt = ? WHERE id = ?`,
+      `UPDATE Task SET deleted = 0, completed = 0, completedAt = NULL, updatedAt = ? WHERE id = ?`,
       [now, id]
     );
     return result.rowsAffected > 0;

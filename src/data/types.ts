@@ -13,7 +13,8 @@ export interface Task {
   id: string;
   title: string;
   remark: string;
-  folderId: string;
+  /** null 表示未分类任务（顶层显示） */
+  folderId: string | null;
   parentId: string | null;
   startDate: number | null;
   deadline: number | null;
@@ -58,4 +59,9 @@ export interface TaskWithSubtasks extends Task {
 
 export interface FolderWithTasks extends Folder {
   tasks: TaskWithSubtasks[];
+}
+
+/** 文件夹树节点：文件夹 + 其直属任务树 + 子文件夹（递归） */
+export interface FolderNode extends FolderWithTasks {
+  children: FolderNode[];
 }

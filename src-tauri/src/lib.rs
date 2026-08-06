@@ -83,6 +83,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
+            // 确保数据库目录存在（sqlx 不会自动创建父目录，否则 Database.load 失败）
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(data_dir.join("desktop-task-manager"));
+            }
+
             // System tray
             let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
             let hide_item = MenuItemBuilder::with_id("hide", "Hide").build(app)?;

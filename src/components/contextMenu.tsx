@@ -1,10 +1,12 @@
-import { Pencil, ChevronsDown, ChevronsUp, Trash2 } from 'lucide-react';
+import { Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus } from 'lucide-react';
 
 export interface ContextMenuState {
   x: number;
   y: number;
   /** 菜单关联的任务 ID；null 表示空白区域右键 */
   taskId: string | null;
+  /** 菜单关联的文件夹 ID（右键文件夹时设置） */
+  folderId?: string | null;
 }
 
 interface ContextMenuProps {
@@ -14,10 +16,16 @@ interface ContextMenuProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onDeleteTask: (taskId: string) => void;
+  onCreateFolder: (parentId: string | null) => void;
+  onRenameFolder: (folderId: string) => void;
+  onDeleteFolder: (folderId: string) => void;
 }
 
 /** 右键菜单（对齐设计稿 context-menu） */
-export default function ContextMenu({ state, onClose, onEditTask, onExpandAll, onCollapseAll, onDeleteTask }: ContextMenuProps) {
+export default function ContextMenu({
+  state, onClose, onEditTask, onExpandAll, onCollapseAll, onDeleteTask,
+  onCreateFolder, onRenameFolder, onDeleteFolder,
+}: ContextMenuProps) {
   if (!state) return null;
 
   const itemBase: React.CSSProperties = {
@@ -33,15 +41,23 @@ export default function ContextMenu({ state, onClose, onEditTask, onExpandAll, o
   const labelStyle: React.CSSProperties = { flex: 1, fontSize: 14, color: 'var(--popover-foreground)' };
   const hintStyle: React.CSSProperties = { fontSize: 12, color: 'var(--muted-foreground)' };
 
-  const items = [
+  const isTaskContext = state.taskId !== null;
+  const isFolderContext = state.folderId !== null && state.folderId !== undefined;
+
+  // 任务菜单项
+  const taskItems = [
     {
       key: 'edit',
       icon: <Pencil style={iconStyle} />,
       label: '编辑',
       hint: 'Enter',
-      visible: state.taskId !== null,
+      visible: isTaskContext,
       action: () => state.taskId && onEditTask(state.taskId),
     },
+  ];
+
+  // 通用菜单项（始终显示）
+  const commonItems = [
     {
       key: 'expand',
       icon: <ChevronsDown style={iconStyle} />,
@@ -60,8 +76,66 @@ export default function ContextMenu({ state, onClose, onEditTask, onExpandAll, o
     },
   ];
 
-  const visibleItems = items.filter((i) => i.visible);
-  const showDelete = state.taskId !== null;
+  // 文件夹操作项
+  const folderItems = [
+    {
+      key: 'create-folder',
+      icon: <FolderPlus style={iconStyle} />,
+      label: '新建文件夹',
+      hint: '',
+      visible: !isTaskContext,
+      action: () => onCreateFolder(state.folderId || null),
+    },
+    {
+      key: 'rename-folder',
+      icon: <Edit3 style={iconStyle} />,
+      label: '重命名文件夹',
+      hint: 'F2',
+      visible: isFolderContext,
+      action: () => state.folderId && onRenameFolder(state.folderId),
+    },
+    {
+      key: 'delete-folder',
+      icon: <FolderMinus style={iconStyle} />,
+      label: '删除文件夹',
+      hint: '',
+      visible: isFolderContext,
+      action: () => state.folderId && onDeleteFolder(state.folderId),
+      destructive: true,
+    },
+  ];
+
+  const visibleTaskItems = taskItems.filter((i) => i.visible);
+  const visibleCommonItems = commonItems.filter((i) => i.visible);
+  const visibleFolderItems = folderItems.filter((i) => i.visible);
+  const showDelete = isTaskContext;
+
+  const renderItem = (item: { key: string; icon: React.ReactNode; label: string; hint: string; action: () => void; destructive?: boolean }) => (
+    <div
+      key={item.key}
+      className="ctx-menu-item"
+      style={itemBase}
+      onClick={() => { item.action(); onClose(); }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.background = item.destructive ? 'var(--destructive)' : 'var(--primary)';
+        const spans = e.currentTarget.querySelectorAll('span');
+        spans.forEach((s) => { s.style.color = item.destructive ? 'var(--destructive-foreground)' : 'var(--primary-foreground)'; });
+        const icons = e.currentTarget.querySelectorAll('svg');
+        icons.forEach((ic) => { ic.style.color = item.destructive ? 'var(--destructive-foreground)' : 'var(--primary-foreground)'; });
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.background = 'transparent';
+        const spans = e.currentTarget.querySelectorAll('span');
+        spans.forEach((s) => { s.style.color = ''; });
+        const icons = e.currentTarget.querySelectorAll('svg');
+        icons.forEach((ic) => { ic.style.color = ''; });
+      }}
+    >
+      {item.icon}
+      <span style={{ ...labelStyle, ...(item.destructive ? { color: 'var(--destructive)' } : {}) }}>{item.label}</span>
+      {item.hint && <span style={{ ...hintStyle, ...(item.destructive ? { color: 'var(--destructive)', opacity: 0.7 } : {}) }}>{item.hint}</span>}
+    </div>
+  );
 
   return (
     <>
@@ -75,7 +149,7 @@ export default function ContextMenu({ state, onClose, onEditTask, onExpandAll, o
       <div
         style={{
           position: 'fixed',
-          top: Math.min(state.y, window.innerHeight - 220),
+          top: Math.min(state.y, window.innerHeight - 280),
           left: Math.min(state.x, window.innerWidth - 230),
           zIndex: 100,
           minWidth: 210,
@@ -89,32 +163,19 @@ export default function ContextMenu({ state, onClose, onEditTask, onExpandAll, o
           WebkitBackdropFilter: 'blur(20px)',
         }}
       >
-        {visibleItems.map((item) => (
-          <div
-            key={item.key}
-            className="ctx-menu-item"
-            style={itemBase}
-            onClick={() => { item.action(); onClose(); }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = 'var(--primary)';
-              const spans = e.currentTarget.querySelectorAll('span');
-              spans.forEach((s) => { s.style.color = 'var(--primary-foreground)'; });
-              const icons = e.currentTarget.querySelectorAll('svg');
-              icons.forEach((ic) => { ic.style.color = 'var(--primary-foreground)'; });
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              const spans = e.currentTarget.querySelectorAll('span');
-              spans.forEach((s) => { s.style.color = ''; });
-              const icons = e.currentTarget.querySelectorAll('svg');
-              icons.forEach((ic) => { ic.style.color = ''; });
-            }}
-          >
-            {item.icon}
-            <span style={labelStyle}>{item.label}</span>
-            <span style={hintStyle}>{item.hint}</span>
-          </div>
-        ))}
+        {visibleTaskItems.map(renderItem)}
+
+        {visibleTaskItems.length > 0 && (visibleCommonItems.length > 0 || visibleFolderItems.length > 0) && (
+          <div style={{ height: 1, background: 'var(--border)', margin: '4px 12px' }} />
+        )}
+
+        {visibleFolderItems.map(renderItem)}
+
+        {visibleFolderItems.length > 0 && visibleCommonItems.length > 0 && (
+          <div style={{ height: 1, background: 'var(--border)', margin: '4px 12px' }} />
+        )}
+
+        {visibleCommonItems.map(renderItem)}
 
         {showDelete && (
           <>

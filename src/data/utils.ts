@@ -1,4 +1,4 @@
-import { Task, TaskWithSubtasks } from './types';
+import { Task, TaskWithSubtasks, Folder, FolderNode } from './types';
 
 export function mapBooleanFields<T extends object>(
   row: T,
@@ -51,4 +51,43 @@ export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
   });
 
   return rootTasks;
+}
+
+/** 从扁平 folders + tasks 构建 FolderNode 树 */
+export function buildFolderTree(folders: Folder[], tasks: Task[]): FolderNode[] {
+  const folderMap = new Map<string, FolderNode>();
+  const rootNodes: FolderNode[] = [];
+
+  folders.forEach((folder) => {
+    folderMap.set(folder.id, { ...folder, tasks: [], children: [] });
+  });
+
+  folders.forEach((folder) => {
+    const node = folderMap.get(folder.id)!;
+    if (folder.parentId && folderMap.has(folder.parentId)) {
+      folderMap.get(folder.parentId)!.children.push(node);
+    } else {
+      rootNodes.push(node);
+    }
+  });
+
+  const fillTasks = (node: FolderNode) => {
+    const directTasks = tasks.filter(
+      (t) => t.folderId === node.id && (t.parentId === null || !folderMap.has(t.parentId))
+    );
+    node.tasks = buildTaskTree(directTasks);
+    node.children.forEach(fillTasks);
+  };
+
+  rootNodes.forEach(fillTasks);
+
+  // 按 sortOrder 排序
+  rootNodes.sort((a, b) => a.sortOrder - b.sortOrder);
+  const sortChildren = (node: FolderNode) => {
+    node.children.sort((a, b) => a.sortOrder - b.sortOrder);
+    node.children.forEach(sortChildren);
+  };
+  rootNodes.forEach(sortChildren);
+
+  return rootNodes;
 }

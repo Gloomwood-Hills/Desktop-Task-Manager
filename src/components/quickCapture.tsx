@@ -3,12 +3,12 @@ import {
   Folder as FolderIcon, ChevronDown, Calendar as CalendarIcon, Bell, Check, Star,
   Plus, Sparkles,
 } from 'lucide-react';
-import { FolderNode } from '../mock/mockData';
+import { FolderNode } from '../data/types';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
   onClose: () => void;
-  onCreate: (title: string, folderId: string) => void;
+  onCreate: (title: string, folderId: string | null) => void;
 }
 
 const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '提前1天', '不提醒'];
@@ -16,15 +16,17 @@ const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '�
 /** 新建任务弹窗（Quick Capture，对齐设计稿 quick-capture） */
 export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptureProps) {
   const [title, setTitle] = useState('');
-  const [folderId, setFolderId] = useState(folders[0]?.id ?? '');
+  const [folderId, setFolderId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [reminderOn, setReminderOn] = useState(true);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderValue, setReminderValue] = useState(REMINDER_OPTIONS[0]);
   const [important, setImportant] = useState(false);
 
-  // 扁平化文件夹用于选择器
-  const flatFolders: { id: string; name: string; depth: number }[] = [];
+  // 扁平化文件夹用于选择器（含"未分类"顶层项）
+  const flatFolders: { id: string | null; name: string; depth: number }[] = [
+    { id: null, name: '未分类', depth: 0 },
+  ];
   const flatten = (nodes: FolderNode[], depth: number) => {
     nodes.forEach((n) => {
       flatFolders.push({ id: n.id, name: n.name, depth });
@@ -144,7 +146,7 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
             }}>
               {flatFolders.map((f) => (
                 <div
-                  key={f.id}
+                  key={f.id ?? 'unclassified'}
                   onClick={() => { setFolderId(f.id); setFolderOpen(false); }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,

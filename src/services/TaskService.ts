@@ -28,7 +28,7 @@ export class TaskService {
 
   async createTask(
     title: string,
-    folderId: string,
+    folderId: string | null,
     options?: {
       remark?: string;
       parentId?: string | null;

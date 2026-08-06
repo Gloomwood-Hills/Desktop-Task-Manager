@@ -1,22 +1,28 @@
-import { Search, Settings, Plus } from 'lucide-react';
+import { Search, Settings, Plus, Pin, PinOff } from 'lucide-react';
 
 interface TopBarProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
   onOpenSettings: () => void;
   onNewTask: () => void;
+  pinned: boolean;
+  onTogglePin: () => void;
 }
 
 /** 顶栏：搜索框 + 设置按钮 + 新建按钮（对齐设计稿 main-view-v2） */
-export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, onNewTask }: TopBarProps) {
+export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, onNewTask, pinned, onTogglePin }: TopBarProps) {
   return (
-    <header style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '14px 20px 10px',
-      flexShrink: 0,
-    }}>
+    <header
+      {...(pinned ? {} : { 'data-tauri-drag-region': true })}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '14px 20px 10px',
+        flexShrink: 0,
+        userSelect: 'none',
+      }}
+    >
       {/* Search */}
       <div style={{
         display: 'flex',
@@ -55,6 +61,25 @@ export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, on
 
       {/* Right actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 16, flexShrink: 0 }}>
+        <button
+          onClick={onTogglePin}
+          aria-label={pinned ? "解锁位置" : "锁定位置"}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 34,
+            height: 34,
+            borderRadius: 'calc(var(--radius) * 0.7)',
+            cursor: 'pointer',
+            transition: 'background-color 0.18s ease, color 0.18s ease',
+            color: pinned ? 'var(--primary)' : 'var(--icon-muted)',
+            background: 'transparent',
+            border: 'none',
+          }}
+        >
+          {pinned ? <PinOff style={{ width: 16, height: 16 }} /> : <Pin style={{ width: 16, height: 16 }} />}
+        </button>
         <button
           onClick={onOpenSettings}
           aria-label="设置"
