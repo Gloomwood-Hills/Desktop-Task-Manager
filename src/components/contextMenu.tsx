@@ -1,4 +1,4 @@
-import { Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus } from 'lucide-react';
+import { Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus } from 'lucide-react';
 
 export interface ContextMenuState {
   x: number;
@@ -13,6 +13,7 @@ interface ContextMenuProps {
   state: ContextMenuState | null;
   onClose: () => void;
   onEditTask: (taskId: string) => void;
+  onAddSubtask: (taskId: string) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onDeleteTask: (taskId: string) => void;
@@ -23,7 +24,7 @@ interface ContextMenuProps {
 
 /** 右键菜单（对齐设计稿 context-menu） */
 export default function ContextMenu({
-  state, onClose, onEditTask, onExpandAll, onCollapseAll, onDeleteTask,
+  state, onClose, onEditTask, onAddSubtask, onExpandAll, onCollapseAll, onDeleteTask,
   onCreateFolder, onRenameFolder, onDeleteFolder,
 }: ContextMenuProps) {
   if (!state) return null;
@@ -53,6 +54,14 @@ export default function ContextMenu({
       hint: 'Enter',
       visible: isTaskContext,
       action: () => state.taskId && onEditTask(state.taskId),
+    },
+    {
+      key: 'add-subtask',
+      icon: <ListPlus style={iconStyle} />,
+      label: '添加子任务',
+      hint: '',
+      visible: isTaskContext,
+      action: () => state.taskId && onAddSubtask(state.taskId),
     },
   ];
 

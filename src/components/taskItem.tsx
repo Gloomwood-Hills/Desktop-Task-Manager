@@ -5,7 +5,8 @@ import { formatDeadline, formatStartDate, deadlineUrgency } from './utils/format
 
 interface TaskItemProps {
   task: TaskWithSubtasks;
-  expanded: boolean;
+  /** 展开状态集合（任务 id → 是否展开子任务），供嵌套层级共用 */
+  expandedSet: Set<string>;
   onToggleExpanded: (id: string) => void;
   onToggleCompleted: (id: string) => void;
   onContextMenu: (e: React.MouseEvent, taskId: string) => void;
@@ -105,14 +106,128 @@ function formatCreatedAt(ts: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** 递归子任务行：复选框 + 标题 + 子任务展开/折叠 + 嵌套层级（TR-7.1 无限层级） */
+function SubtaskRow({
+  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery,
+}: {
+  task: TaskWithSubtasks;
+  expandedSet: Set<string>;
+  onToggleExpanded: (id: string) => void;
+  onToggleCompleted: (id: string) => void;
+  onContextMenu: (e: React.MouseEvent, taskId: string) => void;
+  searchQuery: string;
+}) {
+  const expanded = expandedSet.has(task.id);
+  const hasChildren = task.subtasks.length > 0;
+
+  return (
+    <div>
+      <div
+        style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px' }}
+        onContextMenu={(e) => onContextMenu(e, task.id)}
+      >
+        <div style={{ position: 'absolute', left: -12, top: 14, width: 12, height: 1, background: 'var(--border)', opacity: 0.4 }} />
+        {/* 复选框 */}
+        <div
+          onClick={() => onToggleCompleted(task.id)}
+          style={{
+            width: 15, height: 15, borderRadius: '50%',
+            background: task.completed ? 'var(--state-success)' : 'transparent',
+            border: `1.5px solid ${task.completed ? 'var(--state-success)' : 'var(--muted-foreground)'}`,
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            color: 'var(--state-success-foreground)',
+          }}
+        >
+          {task.completed && <Check style={{ width: 9, height: 9 }} />}
+        </div>
+        <span
+          style={{
+            fontSize: 12.5,
+            color: task.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
+            textDecoration: task.completed ? 'line-through' : 'none',
+            flex: 1, minWidth: 0,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          <Highlight text={task.title} query={searchQuery} />
+        </span>
+        {/* 子任务展开/折叠 + 进度 */}
+        {hasChildren && (
+          <>
+            <span
+              onClick={(e) => { e.stopPropagation(); onToggleExpanded(task.id); }}
+              style={{ display: 'inline-flex', cursor: 'pointer', flexShrink: 0 }}
+            >
+              {expanded
+                ? <ChevronDown style={{ width: 11, height: 11, color: 'var(--icon-muted)' }} />
+                : <ChevronRight style={{ width: 11, height: 11, color: 'var(--icon-muted)' }} />}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--muted-foreground)', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 500 }}>
+              {task.subtasks.filter((s) => s.completed).length}/{task.subtasks.length}
+            </span>
+          </>
+        )}
+      </div>
+      {hasChildren && expanded && (
+        <div style={{ marginLeft: 18, position: 'relative' }}>
+          <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.4 }} />
+          <SubtaskList
+            tasks={task.subtasks}
+            expandedSet={expandedSet}
+            onToggleExpanded={onToggleExpanded}
+            onToggleCompleted={onToggleCompleted}
+            onContextMenu={onContextMenu}
+            searchQuery={searchQuery}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 递归子任务列表 */
+function SubtaskList({
+  tasks, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery,
+}: {
+  tasks: TaskWithSubtasks[];
+  expandedSet: Set<string>;
+  onToggleExpanded: (id: string) => void;
+  onToggleCompleted: (id: string) => void;
+  onContextMenu: (e: React.MouseEvent, taskId: string) => void;
+  searchQuery: string;
+}) {
+  return (
+    <>
+      {tasks.map((sub) => (
+        <SubtaskRow
+          key={sub.id}
+          task={sub}
+          expandedSet={expandedSet}
+          onToggleExpanded={onToggleExpanded}
+          onToggleCompleted={onToggleCompleted}
+          onContextMenu={onContextMenu}
+          searchQuery={searchQuery}
+        />
+      ))}
+    </>
+  );
+}
+
 /**
  * 任务卡片：复选框 + 标题 + 优先级 + 日期徽章
  * 点击任务行展开详情（备注、时间信息）；子任务列表独立展开
  */
 export default function TaskItem({
-  task, expanded, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery,
+  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery,
 }: TaskItemProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const expanded = expandedSet.has(task.id);
   const hasChildren = task.subtasks.length > 0;
   const hasDetails = task.remark.trim().length > 0 || task.startDate !== null || task.deadline !== null;
 
@@ -268,40 +383,18 @@ export default function TaskItem({
         </div>
       )}
 
-      {/* 子任务 */}
+      {/* 子任务（递归，支持无限层级） */}
       {hasChildren && expanded && (
         <div style={{ marginLeft: 18, position: 'relative' }}>
           <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.4 }} />
-          {task.subtasks.map((sub) => (
-            <div key={sub.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px' }}>
-              <div style={{ position: 'absolute', left: -12, top: 14, width: 12, height: 1, background: 'var(--border)', opacity: 0.4 }} />
-              <div
-                onClick={() => onToggleCompleted(sub.id)}
-                style={{
-                  width: 15, height: 15, borderRadius: '50%',
-                  background: sub.completed ? 'var(--state-success)' : 'transparent',
-                  border: `1.5px solid ${sub.completed ? 'var(--state-success)' : 'var(--muted-foreground)'}`,
-                  flexShrink: 0,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  color: 'var(--state-success-foreground)',
-                }}
-              >
-                {sub.completed && <Check style={{ width: 9, height: 9 }} />}
-              </div>
-              <span
-                style={{
-                  fontSize: 12.5,
-                  color: sub.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
-                  textDecoration: sub.completed ? 'line-through' : 'none',
-                }}
-              >
-                <Highlight text={sub.title} query={searchQuery} />
-              </span>
-            </div>
-          ))}
+          <SubtaskList
+            tasks={task.subtasks}
+            expandedSet={expandedSet}
+            onToggleExpanded={onToggleExpanded}
+            onToggleCompleted={onToggleCompleted}
+            onContextMenu={onContextMenu}
+            searchQuery={searchQuery}
+          />
         </div>
       )}
     </div>

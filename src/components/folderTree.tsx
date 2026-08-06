@@ -37,7 +37,7 @@ export default function FolderTree({
         <TaskItem
           key={task.id}
           task={task}
-          expanded={expandedTasks.has(task.id)}
+          expandedSet={expandedTasks}
           onToggleExpanded={onToggleTaskExpanded}
           onToggleCompleted={onToggleCompleted}
           onContextMenu={onContextMenuTask}
@@ -131,7 +131,7 @@ export default function FolderTree({
                   <TaskItem
                     key={task.id}
                     task={task}
-                    expanded={expandedTasks.has(task.id)}
+                    expandedSet={expandedTasks}
                     onToggleExpanded={onToggleTaskExpanded}
                     onToggleCompleted={onToggleCompleted}
                     onContextMenu={onContextMenuTask}

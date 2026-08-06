@@ -15,6 +15,7 @@ type DialogState =
   | { type: 'create-folder'; parentId: string | null }
   | { type: 'rename-folder'; folderId: string; defaultValue: string }
   | { type: 'delete-folder'; folderId: string; name: string }
+  | { type: 'add-subtask'; taskId: string; folderId: string | null }
   | null;
 
 /** 可撤销的最近一次操作：仅任务完成与任务恢复 */
@@ -73,24 +74,22 @@ function App() {
 
   // ===== 任务操作 =====
 
-  /** 在文件夹树、未分类任务、已完成区中查找任务（含子任务） */
+  /** 在文件夹树、未分类任务、已完成区中查找任务（含任意层级子任务，递归） */
   const findTaskAnywhere = (id: string): Task | undefined => {
-    const findInTree = (nodes: FolderNode[]): Task | undefined => {
-      for (const n of nodes) {
-        const found = n.tasks.find((t) => t.id === id);
-        if (found) return found;
-        const sub = n.tasks.find((t) => t.subtasks.some((s) => s.id === id));
-        if (sub) return sub;
-        const child = findInTree(n.children);
-        if (child) return child;
-      }
-      return undefined;
-    };
     const findInTasks = (list: TaskWithSubtasks[]): Task | undefined => {
       for (const t of list) {
         if (t.id === id) return t;
-        const sub = t.subtasks.find((s) => s.id === id);
+        const sub = findInTasks(t.subtasks);
         if (sub) return sub;
+      }
+      return undefined;
+    };
+    const findInTree = (nodes: FolderNode[]): Task | undefined => {
+      for (const n of nodes) {
+        const found = findInTasks(n.tasks);
+        if (found) return found;
+        const child = findInTree(n.children);
+        if (child) return child;
       }
       return undefined;
     };
@@ -313,6 +312,10 @@ function App() {
         onEditTask={(_taskId) => {
           setToast(`编辑功能开发中`);
         }}
+        onAddSubtask={(taskId) => {
+          const task = findTaskAnywhere(taskId);
+          setDialog({ type: 'add-subtask', taskId, folderId: task?.folderId ?? null });
+        }}
         onExpandAll={() => {
           const allFolderIds = new Set<string>();
           const collect = (nodes: FolderNode[]) => {
@@ -394,6 +397,20 @@ function App() {
           destructive
           onConfirm={async () => {
             await deleteFolder(dialog.folderId);
+            setDialog(null);
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'add-subtask' && (
+        <PromptDialog
+          title="添加子任务"
+          placeholder="子任务名称"
+          confirmText="添加"
+          onConfirm={async (name) => {
+            // 子任务继承父任务所在文件夹；完成后自动展开父任务便于查看
+            await createTask(name, dialog.folderId, { parentId: dialog.taskId });
+            setExpandedTasks((s) => new Set(s).add(dialog.taskId));
             setDialog(null);
           }}
           onCancel={() => setDialog(null)}
