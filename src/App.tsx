@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
 import CompletedSection from './components/completedSection';
@@ -8,7 +9,7 @@ import QuickCapture from './components/quickCapture';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
-import { FolderNode, Task, TaskWithSubtasks } from './data/types';
+import { FolderNode, Priority, Task, TaskWithSubtasks } from './data/types';
 
 /** 对话框状态机 */
 type DialogState =
@@ -153,8 +154,19 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   });
 
-  const handleCreateTask = async (title: string, folderId: string | null) => {
-    await createTask(title, folderId);
+  // 全局快捷键（Ctrl+Shift+Space）触发快速创建弹窗（Rust 侧注册后 emit 事件）
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('quick-capture-toggle', () => setCaptureOpen(true)).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
+  const handleCreateTask = async (
+    title: string,
+    folderId: string | null,
+    options?: { priority?: Priority; deadline?: number | null }
+  ) => {
+    await createTask(title, folderId, options);
     setCaptureOpen(false);
   };
 

@@ -53,3 +53,76 @@ export function deadlineUrgency(deadline: number): 'danger' | 'warning' | 'norma
   if (diffMs < 3 * day) return 'warning';
   return 'normal';
 }
+
+// ===== 自然语言日期解析（Quick Capture） =====
+
+const WEEK_CN: Record<string, number> = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+const NUM_CN: Record<string, number> = {
+  '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6,
+  '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12, '十三': 13, '十四': 14,
+  '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20,
+  '二十一': 21, '二十二': 22, '二十三': 23, '二十四': 24,
+};
+
+function addDays(d: Date, n: number): Date {
+  const copy = new Date(d);
+  copy.setDate(copy.getDate() + n);
+  return copy;
+}
+
+/** 阿拉伯或中文数字 → number */
+function toNumber(token: string): number | null {
+  if (/^\d{1,2}$/.test(token)) return parseInt(token, 10);
+  return NUM_CN[token] ?? null;
+}
+
+/**
+ * 解析自然语言中的日期/时间，返回截止时间戳（解析不到返回 null）。
+ * 支持：今天/明天/后天/月底/周X/下周一 + 上午/下午/晚上 + X点(Y分)（中文或数字）
+ * 例："明天下午三点" → 明天 15:00；"周五" → 本周五 23:59；"下午三点" → 今天 15:00
+ */
+export function parseNaturalDateTime(text: string): number | null {
+  const now = new Date();
+  let base: Date | null = null;
+
+  // 日期部分
+  if (/月底/.test(text)) {
+    base = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  } else if (/后天/.test(text)) {
+    base = addDays(now, 2);
+  } else if (/明天|明日/.test(text)) {
+    base = addDays(now, 1);
+  } else if (/今天|今日|今晚/.test(text)) {
+    base = now;
+  } else {
+    const wm = text.match(/(?:下个?周|周|星期|礼拜)([一二三四五六日天])/);
+    if (wm) {
+      let d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + WEEK_CN[wm[1]]);
+      if (/下个?周/.test(text)) d = addDays(d, 7);
+      if (d.getTime() < startOfDay(now.getTime())) d = addDays(d, 7);
+      base = d;
+    }
+  }
+
+  // 时间部分：上午/下午/晚上 + X点(Y分)
+  let hour: number | null = null;
+  let minute = 0;
+  const hm = text.match(/(上午|下午|晚上|凌晨)?\s*(\d{1,2}|[一二两三四五六七八九十]{1,3})\s*[点时:：]\s*(\d{1,2}|[一二两三四五六七八九十]{1,2})?\s*分?/);
+  if (hm) {
+    let h = toNumber(hm[2]);
+    if (h === null) h = 0; // 中文数字未命中（如"零"）时兜底
+    if ((hm[1] === '下午' || hm[1] === '晚上') && h < 12) h += 12;
+    hour = h;
+    if (hm[3]) minute = toNumber(hm[3]) ?? 0;
+  }
+
+  if (!base && hour === null) return null;
+
+  const target = base ? new Date(base) : new Date(now);
+  if (hour !== null) {
+    target.setHours(hour, minute, 0, 0);
+  } else {
+    target.setHours(23, 59, 0, 0); // 仅指定日期 → 当日结束作为截止
+  }
+  return target.getTime();
+}

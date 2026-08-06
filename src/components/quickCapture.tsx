@@ -1,14 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Folder as FolderIcon, ChevronDown, Calendar as CalendarIcon, Bell, Check, Star,
   Plus, Sparkles,
 } from 'lucide-react';
-import { FolderNode } from '../data/types';
+import { FolderNode, Priority } from '../data/types';
+import { parseNaturalDateTime, formatDeadline } from './utils/formatDate';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
   onClose: () => void;
-  onCreate: (title: string, folderId: string | null) => void;
+  onCreate: (
+    title: string,
+    folderId: string | null,
+    options: { priority?: Priority; deadline?: number | null }
+  ) => void;
 }
 
 const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '提前1天', '不提醒'];
@@ -36,11 +41,16 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
   flatten(folders, 0);
 
   const selectedFolder = flatFolders.find((f) => f.id === folderId);
-  const parsedDate = title.includes('明天') ? '明天下午三点' : null;
+
+  // 自然语言日期解析（实时，标题变化即更新）
+  const parsedDeadline = useMemo(() => parseNaturalDateTime(title), [title]);
 
   const handleCreate = () => {
     if (!title.trim()) return;
-    onCreate(title.trim(), folderId);
+    onCreate(title.trim(), folderId, {
+      priority: important ? 'important' : 'normal',
+      deadline: parsedDeadline,
+    });
   };
 
   return (
@@ -84,14 +94,16 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
             <ChevronDown style={{ width: 11, height: 11, color: 'var(--primary)', flexShrink: 0 }} />
           </div>
 
-          {/* 日期按钮 */}
+          {/* 日期按钮（显示解析出的日期） */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-            background: 'var(--brand-50)', border: '1px solid var(--brand-200)', cursor: 'pointer', fontSize: 12.5, color: 'var(--primary)',
+            background: parsedDeadline ? 'var(--brand-50)' : 'transparent',
+            border: `1px solid ${parsedDeadline ? 'var(--brand-200)' : 'var(--border)'}`,
+            cursor: 'default', fontSize: 12.5,
+            color: parsedDeadline ? 'var(--primary)' : 'var(--muted-foreground)',
           }}>
-            <CalendarIcon style={{ width: 13, height: 13, color: 'var(--primary)', flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>7月25日</span>
-            <ChevronDown style={{ width: 11, height: 11, color: 'var(--primary)', flexShrink: 0 }} />
+            <CalendarIcon style={{ width: 13, height: 13, flexShrink: 0 }} />
+            <span style={{ fontWeight: 600 }}>{parsedDeadline ? formatDeadline(parsedDeadline) : '添加日期'}</span>
           </div>
 
           {/* 提醒 */}
@@ -227,11 +239,11 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
         </div>
 
         {/* 解析日期预览 */}
-        {parsedDate && (
+        {parsedDeadline && (
           <div style={{ padding: '8px 24px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Sparkles style={{ width: 13, height: 13, color: 'var(--primary)', flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              识别到: {parsedDate}
+              识别到: {formatDeadline(parsedDeadline)}
             </span>
           </div>
         )}

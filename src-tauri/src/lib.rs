@@ -1,8 +1,9 @@
 use tauri::{
-    Manager,
+    Emitter, Manager,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     menu::{MenuBuilder, MenuItemBuilder},
 };
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[cfg(windows)]
 mod worker_w {
@@ -82,7 +83,24 @@ mod worker_w {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    // Ctrl+Shift+Space：显示窗口并通知前端打开快速创建
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.emit("quick-capture-toggle", ());
+                        }
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
+            // 注册全局快捷键：Ctrl+Shift+Space
+            let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
+            let _ = app.global_shortcut().register(shortcut);
             // 确保数据库目录存在（sqlx 不会自动创建父目录，否则 Database.load 失败）
             if let Ok(data_dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(data_dir.join("desktop-task-manager"));
