@@ -8,7 +8,7 @@ import QuickCapture from './components/quickCapture';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
-import { FolderNode, Task } from './data/types';
+import { FolderNode, Task, TaskWithSubtasks } from './data/types';
 
 /** 对话框状态机 */
 type DialogState =
@@ -17,10 +17,10 @@ type DialogState =
   | { type: 'delete-folder'; folderId: string; name: string }
   | null;
 
-/** 可撤销的最近一次操作 */
+/** 可撤销的最近一次操作：仅任务完成与任务恢复 */
 type LastAction =
   | { kind: 'completed'; taskId: string }
-  | { kind: 'deleted'; taskId: string }
+  | { kind: 'restored'; taskId: string }
   | null;
 
 function App() {
@@ -73,7 +73,7 @@ function App() {
 
   // ===== 任务操作 =====
 
-  /** 在文件夹树（含子任务）和已完成区中查找任务 */
+  /** 在文件夹树、未分类任务、已完成区中查找任务（含子任务） */
   const findTaskAnywhere = (id: string): Task | undefined => {
     const findInTree = (nodes: FolderNode[]): Task | undefined => {
       for (const n of nodes) {
@@ -86,7 +86,17 @@ function App() {
       }
       return undefined;
     };
-    return findInTree(folderTree) || completedTasks.find((t) => t.id === id);
+    const findInTasks = (list: TaskWithSubtasks[]): Task | undefined => {
+      for (const t of list) {
+        if (t.id === id) return t;
+        const sub = t.subtasks.find((s) => s.id === id);
+        if (sub) return sub;
+      }
+      return undefined;
+    };
+    return findInTree(folderTree)
+      || findInTasks(unclassifiedTasks)
+      || completedTasks.find((t) => t.id === id);
   };
 
   const handleToggleCompleted = async (id: string) => {
@@ -99,16 +109,15 @@ function App() {
   };
 
   const handleRestore = async (id: string) => {
+    const task = completedTasks.find((t) => t.id === id);
     await restoreTask(id);
-    setToast("已恢复 1 个任务");
+    if (task) {
+      setLastAction({ kind: 'restored', taskId: id });
+      setToast(`已恢复 "${task.title}"`);
+    }
   };
 
   const handleDeleteTask = async (id: string) => {
-    const task = findTaskAnywhere(id);
-    if (task) {
-      setLastAction({ kind: 'deleted', taskId: id });
-      setToast(`已删除 "${task.title}"`);
-    }
     await deleteTask(id);
   };
 
@@ -117,9 +126,9 @@ function App() {
     const { kind, taskId } = lastAction;
     setLastAction(null);
     if (kind === 'completed') {
-      await toggleCompleted(taskId); // 恢复未完成状态
+      await toggleCompleted(taskId); // 撤销完成：恢复未完成
     } else {
-      await restoreTask(taskId); // 恢复已删除任务
+      await toggleCompleted(taskId); // 撤销恢复：重新标记完成
     }
     setToast(null);
   };
@@ -127,7 +136,6 @@ function App() {
   const handleCreateTask = async (title: string, folderId: string | null) => {
     await createTask(title, folderId);
     setCaptureOpen(false);
-    setToast(`已创建 "${title}"`);
   };
 
   // ===== 搜索过滤（标题/备注匹配） =====
@@ -360,7 +368,6 @@ function App() {
           confirmText="创建"
           onConfirm={async (name) => {
             await createFolder(name, dialog.parentId);
-            setToast(`已创建文件夹 "${name}"`);
             setDialog(null);
           }}
           onCancel={() => setDialog(null)}
@@ -374,7 +381,6 @@ function App() {
           confirmText="保存"
           onConfirm={async (name) => {
             await renameFolder(dialog.folderId, name);
-            setToast(`已重命名为 "${name}"`);
             setDialog(null);
           }}
           onCancel={() => setDialog(null)}
@@ -388,7 +394,6 @@ function App() {
           destructive
           onConfirm={async () => {
             await deleteFolder(dialog.folderId);
-            setToast(`已删除文件夹 "${dialog.name}"`);
             setDialog(null);
           }}
           onCancel={() => setDialog(null)}

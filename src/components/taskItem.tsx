@@ -1,4 +1,5 @@
-import { Check, ChevronDown, ChevronRight, Clock, Calendar } from 'lucide-react';
+import { useState } from 'react';
+import { Check, ChevronDown, ChevronRight, Clock, Calendar, AlignLeft, History } from 'lucide-react';
 import { Task, TaskWithSubtasks } from '../data/types';
 import { formatDeadline, formatStartDate, deadlineUrgency } from './utils/formatDate';
 
@@ -27,7 +28,28 @@ function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** 日期徽章 */
+/** 截止时间颜色分级：逾期/1天内=红、3天内=橙、7天内=默认灰 */
+function deadlineColor(deadline: number): { bg: string; color: string } {
+  const urgency = deadlineUrgency(deadline);
+  if (urgency === 'danger') {
+    return {
+      bg: 'color-mix(in srgb, var(--destructive) 12%, transparent)',
+      color: 'var(--destructive)',
+    };
+  }
+  if (urgency === 'warning') {
+    return {
+      bg: 'color-mix(in srgb, #ff9500 12%, transparent)',
+      color: '#cc7a00',
+    };
+  }
+  return {
+    bg: 'color-mix(in srgb, var(--border) 25%, transparent)',
+    color: 'var(--muted-foreground)',
+  };
+}
+
+/** 日期徽章（开始 + 截止，含颜色渐变提醒） */
 function DateBadge({ task }: { task: Task }) {
   const showStart = task.startDate !== null;
   const showDeadline = task.deadline !== null;
@@ -38,15 +60,7 @@ function DateBadge({ task }: { task: Task }) {
     );
   }
 
-  const urgency = task.deadline !== null ? deadlineUrgency(task.deadline) : 'normal';
-  const deadlineBg =
-    urgency === 'danger' ? 'color-mix(in srgb, var(--destructive) 12%, transparent)' :
-    urgency === 'warning' ? 'color-mix(in srgb, #ff9500 12%, transparent)' :
-    'color-mix(in srgb, var(--border) 25%, transparent)';
-  const deadlineColor =
-    urgency === 'danger' ? 'var(--destructive)' :
-    urgency === 'warning' ? '#cc7a00' :
-    'var(--muted-foreground)';
+  const deadlineStyle = task.deadline !== null ? deadlineColor(task.deadline) : null;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 14 }}>
@@ -61,11 +75,11 @@ function DateBadge({ task }: { task: Task }) {
           <span style={{ color: 'var(--muted-foreground)' }}>{formatStartDate(task.startDate!)}</span>
         </span>
       )}
-      {showDeadline && (
+      {showDeadline && deadlineStyle && (
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
           padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-          background: deadlineBg, color: deadlineColor,
+          background: deadlineStyle.bg, color: deadlineStyle.color,
         }}>
           <Clock style={{ width: 10, height: 10 }} />
           <span>{formatDeadline(task.deadline!)}</span>
@@ -75,13 +89,32 @@ function DateBadge({ task }: { task: Task }) {
   );
 }
 
+/** 详情行：图标 + 标签 + 值 */
+function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {icon}
+      <span style={{ fontSize: 12, color: 'var(--muted-foreground)', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12.5, color: 'var(--text-600)', wordBreak: 'break-all' }}>{value}</span>
+    </div>
+  );
+}
+
+function formatCreatedAt(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 /**
- * 任务项：复选框 + 标题 + 优先级圆点 + 日期徽章 + 备注折叠 + 子任务
+ * 任务卡片：复选框 + 标题 + 优先级 + 日期徽章
+ * 点击任务行展开详情（备注、时间信息）；子任务列表独立展开
  */
 export default function TaskItem({
   task, expanded, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery,
 }: TaskItemProps) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const hasChildren = task.subtasks.length > 0;
+  const hasDetails = task.remark.trim().length > 0 || task.startDate !== null || task.deadline !== null;
 
   return (
     <div style={{ position: 'relative' }}>
@@ -98,12 +131,30 @@ export default function TaskItem({
           gap: 10,
           padding: '8px 8px 4px',
           opacity: task.startDate !== null && task.startDate > Date.now() ? 0.65 : 1,
+          borderRadius: 'calc(var(--radius) * 0.5)',
+          cursor: hasDetails ? 'pointer' : 'default',
+          transition: 'background-color 0.15s ease',
         }}
+        onClick={() => { if (hasDetails) setDetailsOpen(!detailsOpen); }}
         onContextMenu={(e) => onContextMenu(e, task.id)}
+        onMouseOver={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 45%, transparent)'; }}
+        onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
       >
         {/* 复选框 */}
         <div
-          onClick={() => onToggleCompleted(task.id)}
+          onClick={(e) => { e.stopPropagation(); onToggleCompleted(task.id); }}
+          onMouseOver={(e) => {
+            if (!task.completed) {
+              e.currentTarget.style.borderColor = 'var(--primary)';
+              e.currentTarget.style.background = 'color-mix(in srgb, var(--primary) 10%, transparent)';
+            }
+          }}
+          onMouseOut={(e) => {
+            if (!task.completed) {
+              e.currentTarget.style.borderColor = task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)';
+              e.currentTarget.style.background = task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent';
+            }
+          }}
           style={{
             width: 18, height: 18, borderRadius: '50%',
             border: task.completed
@@ -145,9 +196,18 @@ export default function TaskItem({
             >
               <Highlight text={task.title} query={searchQuery} />
             </span>
+            {/* 详情展开指示 */}
+            {hasDetails && (
+              <span style={{ display: 'inline-flex', flexShrink: 0, opacity: 0.7 }}>
+                {detailsOpen
+                  ? <ChevronDown style={{ width: 12, height: 12, color: 'var(--icon-muted)' }} />
+                  : <ChevronRight style={{ width: 12, height: 12, color: 'var(--icon-muted)' }} />}
+              </span>
+            )}
+            {/* 子任务展开 */}
             {hasChildren && (
               <span
-                onClick={() => onToggleExpanded(task.id)}
+                onClick={(e) => { e.stopPropagation(); onToggleExpanded(task.id); }}
                 style={{ display: 'inline-flex', cursor: 'pointer', flexShrink: 0 }}
               >
                 {expanded
@@ -167,23 +227,44 @@ export default function TaskItem({
         </div>
       </div>
 
-      {/* 备注折叠面板 */}
-      {task.remark && (
+      {/* 详情面板（备注 + 时间信息） */}
+      {hasDetails && detailsOpen && (
         <div style={{
-          margin: '4px 8px 6px 36px',
-          padding: '8px 12px',
+          margin: '2px 8px 6px 36px',
+          padding: '10px 12px',
           borderRadius: 'calc(var(--radius) * 0.5)',
           background: 'color-mix(in srgb, var(--accent) 70%, transparent)',
           border: '0.5px solid color-mix(in srgb, var(--border) 50%, transparent)',
-          cursor: 'pointer',
           display: 'flex',
-          alignItems: 'flex-start',
+          flexDirection: 'column',
           gap: 6,
-        }}
-        title="点击折叠备注"
-        >
-          <ChevronDown style={{ width: 11, height: 11, color: 'var(--muted-foreground)', flexShrink: 0, marginTop: 2 }} />
-          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-600)', lineHeight: 1.5 }}>{task.remark}</p>
+        }}>
+          {task.remark.trim() && (
+            <DetailRow
+              icon={<AlignLeft style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
+              label="备注"
+              value={task.remark}
+            />
+          )}
+          {task.startDate !== null && (
+            <DetailRow
+              icon={<Calendar style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
+              label="开始"
+              value={formatStartDate(task.startDate)}
+            />
+          )}
+          {task.deadline !== null && (
+            <DetailRow
+              icon={<Clock style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
+              label="截止"
+              value={formatDeadline(task.deadline)}
+            />
+          )}
+          <DetailRow
+            icon={<History style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
+            label="创建"
+            value={formatCreatedAt(task.createdAt)}
+          />
         </div>
       )}
 
