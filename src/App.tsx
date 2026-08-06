@@ -18,10 +18,11 @@ type DialogState =
   | { type: 'add-subtask'; taskId: string; folderId: string | null }
   | null;
 
-/** 可撤销的最近一次操作：仅任务完成与任务恢复 */
+/** 可撤销的最近一次操作：任务完成、任务恢复、任务删除 */
 type LastAction =
   | { kind: 'completed'; taskId: string }
   | { kind: 'restored'; taskId: string }
+  | { kind: 'deleted'; taskId: string }
   | null;
 
 function App() {
@@ -117,7 +118,12 @@ function App() {
   };
 
   const handleDeleteTask = async (id: string) => {
+    const task = findTaskAnywhere(id);
     await deleteTask(id);
+    if (task) {
+      setLastAction({ kind: 'deleted', taskId: id });
+      setToast(`已删除 "${task.title}"`);
+    }
   };
 
   const handleUndo = async () => {
@@ -126,11 +132,26 @@ function App() {
     setLastAction(null);
     if (kind === 'completed') {
       await toggleCompleted(taskId); // 撤销完成：恢复未完成
-    } else {
+    } else if (kind === 'restored') {
       await toggleCompleted(taskId); // 撤销恢复：重新标记完成
+    } else {
+      await restoreTask(taskId); // 撤销删除：恢复任务到原位置
     }
     setToast(null);
   };
+
+  // Ctrl+Z 快捷键撤销（输入框内不触发，避免干扰文本编辑）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey && e.key.toLowerCase() === 'z')) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      handleUndo();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   const handleCreateTask = async (title: string, folderId: string | null) => {
     await createTask(title, folderId);
