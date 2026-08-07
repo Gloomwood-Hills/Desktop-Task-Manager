@@ -514,7 +514,7 @@ function App() {
             expandedFolders={expandedFolders}
             expandedTasks={expandedTasks}
             searchQuery={searchQuery}
-            outerNameSort={settings?.sortType === 'name'}
+            sortType={settings?.sortType ?? 'deadline'}
             importantTop={settings?.importantTop ?? false}
             manualSort={settings?.sortType === 'manual'}
             onReorderTasks={reorderTasks}

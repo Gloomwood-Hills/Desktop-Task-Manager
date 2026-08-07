@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Cloud, Check } from 'lucide-react';
+import { X, Cloud } from 'lucide-react';
 import { Settings, SortType } from '../data/types';
 
 export type ThemeMode = 'light' | 'dark';
@@ -42,10 +42,8 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   // 从持久化设置初始化
   const [glassEffect, setGlassEffect] = useState(settings?.glassEffect ?? true);
   const [transparency, setTransparency] = useState(Math.round((settings?.transparency ?? 0.8) * 100));
-  const [deadlineColor, setDeadlineColor] = useState('red');
   const [sortType, setSortType] = useState<SortType>(settings?.sortType ?? 'deadline');
   const [priorityTop, setPriorityTop] = useState(settings?.importantTop ?? false);
-  const [hideNotStarted, setHideNotStarted] = useState(true);
   const [reminderOffset, setReminderOffset] = useState(settings?.reminderOffset ?? 86400);
   const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
   const [autoPin, setAutoPin] = useState(settings?.autoPin ?? true);
@@ -102,13 +100,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
     color: 'var(--foreground)',
     fontFamily: 'var(--font-sans)',
   };
-
-  const colorSchemes = [
-    { id: 'red', bg: 'var(--state-error)', label: '红色方案' },
-    { id: 'yellow', bg: '#ff9500', label: '黄色方案' },
-    { id: 'blue', bg: 'var(--primary)', label: '蓝色方案' },
-    { id: 'green', bg: 'var(--state-success)', label: '绿色方案' },
-  ];
 
   return (
     <>
@@ -251,30 +242,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 <p style={descStyle}>调整窗口背景的不透明程度</p>
               </div>
 
-              {/* 截止日期配色 */}
-              <div>
-                <label style={labelStyle}>截止日期配色</label>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginTop: 8 }}>
-                  {colorSchemes.map((c) => (
-                    <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                      <button
-                        onClick={() => setDeadlineColor(c.id)}
-                        style={{
-                          width: 32, height: 32, borderRadius: '50%', border: 'none',
-                          background: c.bg, cursor: 'pointer', padding: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}
-                        aria-label={c.label}
-                      >
-                        {deadlineColor === c.id && <Check style={{ width: 14, height: 14, color: '#fff' }} />}
-                      </button>
-                      <span style={{ fontSize: 11, whiteSpace: 'nowrap', color: 'var(--muted-foreground)' }}>{c.label}</span>
-                    </div>
-                  ))}
-                </div>
-                <p style={descStyle}>用于标记即将到期的任务颜色</p>
-              </div>
-
               <div style={rowStyle}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <label style={labelStyle}>开机自启动</label>
@@ -320,17 +287,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 <div style={switchStyle} onClick={() => { setPriorityTop(!priorityTop); onChange({ importantTop: !priorityTop }); }}>
                   <span style={switchTrack(priorityTop)} />
                   <span style={{ ...switchThumb, transform: priorityTop ? 'translateX(20px)' : 'none' }} />
-                </div>
-              </div>
-
-              <div style={rowStyle}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <label style={labelStyle}>隐藏未开始任务</label>
-                  <p style={descStyle}>开始日期之前的任务不显示在列表中</p>
-                </div>
-                <div style={switchStyle} onClick={() => setHideNotStarted(!hideNotStarted)}>
-                  <span style={switchTrack(hideNotStarted)} />
-                  <span style={{ ...switchThumb, transform: hideNotStarted ? 'translateX(20px)' : 'none' }} />
                 </div>
               </div>
             </section>

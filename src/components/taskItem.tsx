@@ -29,24 +29,24 @@ export function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** 截止时间颜色分级：逾期/1天内=红、3天内=橙、7天内=默认灰 */
+/** 截止时间红色渐变：离截止越近颜色越深（>=3天=浅红、1-3天=中红、<1天/逾期=深红） */
 function deadlineColor(deadline: number): { bg: string; color: string } {
   const urgency = deadlineUrgency(deadline);
   if (urgency === 'danger') {
     return {
-      bg: 'color-mix(in srgb, var(--destructive) 12%, transparent)',
-      color: 'var(--destructive)',
+      bg: 'color-mix(in srgb, #d92d20 16%, transparent)',
+      color: '#ff6b5e',
     };
   }
   if (urgency === 'warning') {
     return {
-      bg: 'color-mix(in srgb, #ff9500 12%, transparent)',
-      color: '#cc7a00',
+      bg: 'color-mix(in srgb, #f04438 12%, transparent)',
+      color: '#ff8570',
     };
   }
   return {
-    bg: 'color-mix(in srgb, var(--border) 25%, transparent)',
-    color: 'var(--muted-foreground)',
+    bg: 'color-mix(in srgb, #ff9a8b 10%, transparent)',
+    color: '#ffb3a8',
   };
 }
 
@@ -90,13 +90,13 @@ function DateBadge({ task }: { task: Task }) {
   );
 }
 
-/** 详情行：图标 + 标签 + 值 */
+/** 详情行：图标 + 标签 + 值（备注/时间信息使用前景色，非灰色） */
 function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       {icon}
-      <span style={{ fontSize: 12, color: 'var(--muted-foreground)', flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 12.5, color: 'var(--text-600)', wordBreak: 'break-all' }}>{value}</span>
+      <span style={{ fontSize: 12, color: 'var(--foreground)', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12.5, color: 'var(--foreground)', wordBreak: 'break-all' }}>{value}</span>
     </div>
   );
 }

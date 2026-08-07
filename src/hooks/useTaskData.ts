@@ -4,7 +4,7 @@ import { FolderService } from '../services/FolderService';
 import { TaskService } from '../services/TaskService';
 import { SettingsService } from '../services/SettingsService';
 import { WindowStateService } from '../services/WindowStateService';
-import { buildFolderTree, buildTaskTree, sortTasksByType } from '../data/utils';
+import { buildFolderTree, buildTaskTree, sortTasksByType, sortFolders } from '../data/utils';
 import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings, WindowState } from '../data/types';
 
 export interface UseTaskData {
@@ -84,7 +84,8 @@ export function useTaskData(): UseTaskData {
       const sortFolderNode = (node: FolderNode): FolderNode => ({
         ...node,
         tasks: sortTaskList(node.tasks),
-        children: node.children.map(sortFolderNode),
+        // 同级子文件夹也按当前默认排序方式排序（manual 保持 sortOrder）
+        children: sortFolders(node.children.map(sortFolderNode), sortType),
       });
       setFolderTree(cleanTree.map(sortFolderNode));
       // 未分类任务（folderId 为 null）：顶层显示，与文件夹同级

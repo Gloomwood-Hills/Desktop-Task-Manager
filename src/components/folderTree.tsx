@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, GripVertical } from 'lucide-react';
-import { FolderNode, TaskWithSubtasks } from '../data/types';
+import { FolderNode, TaskWithSubtasks, SortType } from '../data/types';
 import { compareByName } from '../data/utils';
 import TaskItem, { Highlight } from './taskItem';
 
@@ -11,9 +11,9 @@ interface FolderTreeProps {
   expandedFolders: Set<string>;
   expandedTasks: Set<string>;
   searchQuery: string;
-  /** 名称排序时：外层未分类任务与文件夹按名称合并排序 */
-  outerNameSort?: boolean;
-  /** 重要任务置顶：名称排序合并外层时重要任务仍置顶在前 */
+  /** 默认排序方式：name/deadline/createdAt 时顶层未分类任务与文件夹合并排序；manual 保持各自容器顺序 */
+  sortType: SortType;
+  /** 重要任务置顶：重要未分类任务优先，含重要任务的文件夹次优先，其余默认排序 */
   importantTop?: boolean;
   /** 手动排序模式：允许拖动任务/文件夹调整顺序 */
   manualSort?: boolean;
@@ -32,6 +32,16 @@ function countTasks(folder: FolderNode): number {
   const children = folder.children.reduce((acc, c) => acc + countTasks(c), 0);
   return own + children;
 }
+
+/** 文件夹内是否存在未完成的重要任务（含任意层级子任务） */
+function folderHasImportant(folder: FolderNode): boolean {
+  const walk = (tasks: TaskWithSubtasks[]): boolean =>
+    tasks.some((t) => (t.priority === 'important' && !t.completed) || walk(t.subtasks));
+  return walk(folder.tasks) || folder.children.some(folderHasImportant);
+}
+
+/** 顶层混合项：未分类任务或文件夹 */
+type OuterItem = { kind: 'task'; task: TaskWithSubtasks } | { kind: 'folder'; folder: FolderNode };
 
 /** 拖动中的交互状态（存于 ref，供 window 监听器读取最新值） */
 interface DragState {
@@ -64,7 +74,7 @@ const DRAG_THRESHOLD = 6;
  */
 export default function FolderTree({
   folders, rootTasks = [], expandedFolders, expandedTasks, searchQuery,
-  outerNameSort = false, importantTop = false, manualSort = false, onReorderTasks, onReorderFolders,
+  sortType, importantTop = false, manualSort = false, onReorderTasks, onReorderFolders,
   onToggleFolder, onToggleTaskExpanded, onToggleCompleted, onContextMenuTask, onContextMenuFolder,
 }: FolderTreeProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -76,24 +86,43 @@ export default function FolderTree({
   const rootIds = rootTasks.map((t) => t.id);
   const rootFolderIds = folders.map((f) => f.id);
 
-  // 名称排序：外层未分类任务 + 文件夹按名称合并排序（A-Z，拉丁字母在前）
+  // 顶层混合排序（name/deadline/createdAt）：未分类任务与文件夹同等级别按默认方式排序；
+  // importantTop 时分区：重要未分类任务 → 含重要任务文件夹 → 普通未分类任务 → 普通文件夹
   const mergedOuter = useMemo(() => {
-    if (!outerNameSort) return null;
-    const name = (item: { kind: 'task'; task: TaskWithSubtasks } | { kind: 'folder'; folder: FolderNode }): string =>
-      item.kind === 'task' ? item.task.title : item.folder.name;
-    const all: Array<{ kind: 'task'; task: TaskWithSubtasks } | { kind: 'folder'; folder: FolderNode }> = [
+    if (sortType === 'manual') return null;
+    const name = (i: OuterItem): string => (i.kind === 'task' ? i.task.title : i.folder.name);
+    const compare = (a: OuterItem, b: OuterItem): number => {
+      switch (sortType) {
+        case 'name':
+          return compareByName(name(a), name(b));
+        case 'createdAt': {
+          const at = a.kind === 'task' ? a.task.createdAt : a.folder.createdAt;
+          const bt = b.kind === 'task' ? b.task.createdAt : b.folder.createdAt;
+          return bt - at;
+        }
+        case 'deadline': {
+          const ad = a.kind === 'task' ? a.task.deadline : null;
+          const bd = b.kind === 'task' ? b.task.deadline : null;
+          if (ad === null && bd === null) return compareByName(name(a), name(b));
+          if (ad === null) return 1;
+          if (bd === null) return -1;
+          return ad - bd;
+        }
+        default:
+          return 0;
+      }
+    };
+    const all: OuterItem[] = [
       ...rootTasks.map((task) => ({ kind: 'task' as const, task })),
       ...folders.map((folder) => ({ kind: 'folder' as const, folder })),
     ];
-    const byName = (a: typeof all[number], b: typeof all[number]) => compareByName(name(a), name(b));
-    if (importantTop) {
-      // 重要任务仍置顶在前，其余（普通任务 + 文件夹）按名称排序
-      const important = all.filter((i) => i.kind === 'task' && i.task.priority === 'important');
-      const rest = all.filter((i) => !(i.kind === 'task' && i.task.priority === 'important'));
-      return [...important.sort(byName), ...rest.sort(byName)];
-    }
-    return all.sort(byName);
-  }, [rootTasks, folders, outerNameSort, importantTop]);
+    if (!importantTop) return all.sort(compare);
+    const isImp = (i: OuterItem): boolean =>
+      i.kind === 'task' ? i.task.priority === 'important' : folderHasImportant(i.folder);
+    const imp = all.filter(isImp).sort(compare);
+    const norm = all.filter((i) => !isImp(i)).sort(compare);
+    return [...imp, ...norm];
+  }, [rootTasks, folders, sortType, importantTop]);
 
   // ===== 鼠标事件驱动拖动 =====
 

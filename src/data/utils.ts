@@ -111,6 +111,25 @@ export function sortTasksByType<T extends Task>(tasks: T[], sortType: SortType, 
   return [...sortCore(important), ...sortCore(normal)];
 }
 
+/**
+ * 按设置排序文件夹（同级）
+ * - manual 维持 sortOrder 顺序；deadline 无自然语义，按名称兜底
+ * - 与 sortTasksByType 配合：未分类任务与文件夹在顶层按同种排序方式混排
+ */
+export function sortFolders<T extends Folder>(folders: T[], sortType: SortType): T[] {
+  const list = [...folders];
+  switch (sortType) {
+    case 'name':
+    case 'deadline':
+      return list.sort((a, b) => compareByName(a.name, b.name));
+    case 'createdAt':
+      return list.sort((a, b) => b.createdAt - a.createdAt);
+    case 'manual':
+    default:
+      return list.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+}
+
 /** 从扁平 folders + tasks 构建 FolderNode 树 */
 export function buildFolderTree(folders: Folder[], tasks: Task[]): FolderNode[] {
   const folderMap = new Map<string, FolderNode>();
