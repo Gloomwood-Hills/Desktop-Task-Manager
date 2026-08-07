@@ -54,6 +54,31 @@ export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
 }
 
 /**
+ * 名称排序比较器（A-Z 直觉排序，适合中英文混排）：
+ * - 拉丁字母开头在前（不区分大小写 A-Z）
+ * - 数字开头次之（按数值）
+ * - 中文开头最后（按拼音）
+ */
+export function compareByName(a: string, b: string): number {
+  const rank = (s: string): number => (/^[A-Za-z]/.test(s) ? 0 : /^[0-9]/.test(s) ? 1 : 2);
+  const ra = rank(a);
+  const rb = rank(b);
+  if (ra !== rb) return ra - rb;
+  if (ra === 0) {
+    const al = a.toLowerCase();
+    const bl = b.toLowerCase();
+    if (al !== bl) return al < bl ? -1 : 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  if (ra === 1) {
+    const na = Number(a.match(/^\d+/)?.[0] ?? 0);
+    const nb = Number(b.match(/^\d+/)?.[0] ?? 0);
+    if (na !== nb) return na - nb;
+  }
+  return a.localeCompare(b, 'zh');
+}
+
+/**
  * 按设置排序任务列表
  * - manual 维持 sortOrder 顺序（原序）
  * - importantTop 为 true 时先按优先级分区（重要在前），再在各分区内按 sortType 排序
@@ -63,7 +88,7 @@ export function sortTasksByType<T extends Task>(tasks: T[], sortType: SortType, 
   const sortCore = (arr: T[]): T[] => {
     switch (sortType) {
       case 'name':
-        return arr.sort((a, b) => a.title.localeCompare(b.title, 'zh'));
+        return arr.sort((a, b) => compareByName(a.title, b.title));
       case 'deadline':
         return arr.sort((a, b) => {
           if (a.deadline === null && b.deadline === null) return 0;

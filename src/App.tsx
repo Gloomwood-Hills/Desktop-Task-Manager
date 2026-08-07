@@ -323,6 +323,7 @@ function App() {
             expandedTasks={expandedTasks}
             searchQuery={searchQuery}
             outerNameSort={settings?.sortType === 'name'}
+            importantTop={settings?.importantTop ?? false}
             manualSort={settings?.sortType === 'manual'}
             onReorderTasks={reorderTasks}
             onReorderFolders={reorderFolders}

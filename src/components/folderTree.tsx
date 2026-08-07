@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, GripVertical } from 'lucide-react';
 import { FolderNode, TaskWithSubtasks } from '../data/types';
+import { compareByName } from '../data/utils';
 import TaskItem, { Highlight } from './taskItem';
 
 interface FolderTreeProps {
@@ -12,6 +13,8 @@ interface FolderTreeProps {
   searchQuery: string;
   /** 名称排序时：外层未分类任务与文件夹按名称合并排序 */
   outerNameSort?: boolean;
+  /** 重要任务置顶：名称排序合并外层时重要任务仍置顶在前 */
+  importantTop?: boolean;
   /** 手动排序模式：允许拖动任务/文件夹调整顺序 */
   manualSort?: boolean;
   onReorderTasks?: (orderedIds: string[]) => void;
@@ -61,7 +64,7 @@ const DRAG_THRESHOLD = 6;
  */
 export default function FolderTree({
   folders, rootTasks = [], expandedFolders, expandedTasks, searchQuery,
-  outerNameSort = false, manualSort = false, onReorderTasks, onReorderFolders,
+  outerNameSort = false, importantTop = false, manualSort = false, onReorderTasks, onReorderFolders,
   onToggleFolder, onToggleTaskExpanded, onToggleCompleted, onContextMenuTask, onContextMenuFolder,
 }: FolderTreeProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -73,19 +76,24 @@ export default function FolderTree({
   const rootIds = rootTasks.map((t) => t.id);
   const rootFolderIds = folders.map((f) => f.id);
 
-  // 名称排序：外层未分类任务 + 文件夹按名称合并排序（A-Z）
+  // 名称排序：外层未分类任务 + 文件夹按名称合并排序（A-Z，拉丁字母在前）
   const mergedOuter = useMemo(() => {
     if (!outerNameSort) return null;
+    const name = (item: { kind: 'task'; task: TaskWithSubtasks } | { kind: 'folder'; folder: FolderNode }): string =>
+      item.kind === 'task' ? item.task.title : item.folder.name;
     const all: Array<{ kind: 'task'; task: TaskWithSubtasks } | { kind: 'folder'; folder: FolderNode }> = [
       ...rootTasks.map((task) => ({ kind: 'task' as const, task })),
       ...folders.map((folder) => ({ kind: 'folder' as const, folder })),
     ];
-    return all.sort((a, b) => {
-      const nameA = a.kind === 'task' ? a.task.title : a.folder.name;
-      const nameB = b.kind === 'task' ? b.task.title : b.folder.name;
-      return nameA.localeCompare(nameB, 'zh');
-    });
-  }, [rootTasks, folders, outerNameSort]);
+    const byName = (a: typeof all[number], b: typeof all[number]) => compareByName(name(a), name(b));
+    if (importantTop) {
+      // 重要任务仍置顶在前，其余（普通任务 + 文件夹）按名称排序
+      const important = all.filter((i) => i.kind === 'task' && i.task.priority === 'important');
+      const rest = all.filter((i) => !(i.kind === 'task' && i.task.priority === 'important'));
+      return [...important.sort(byName), ...rest.sort(byName)];
+    }
+    return all.sort(byName);
+  }, [rootTasks, folders, outerNameSort, importantTop]);
 
   // ===== 鼠标事件驱动拖动 =====
 
