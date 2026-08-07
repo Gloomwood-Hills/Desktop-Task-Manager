@@ -3,8 +3,9 @@ import { getDatabase } from '../data/database';
 import { FolderService } from '../services/FolderService';
 import { TaskService } from '../services/TaskService';
 import { SettingsService } from '../services/SettingsService';
+import { WindowStateService } from '../services/WindowStateService';
 import { buildFolderTree, buildTaskTree, sortTasksByType } from '../data/utils';
-import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings } from '../data/types';
+import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings, WindowState } from '../data/types';
 
 export interface UseTaskData {
   folderTree: FolderNode[];
@@ -14,11 +15,15 @@ export interface UseTaskData {
   allFolders: Folder[];
   theme: Theme;
   settings: Settings | null;
+  /** 窗口状态（位置/大小/折叠文件夹），Task 14 持久化 */
+  windowState: WindowState | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
   setTheme: (theme: Theme) => Promise<void>;
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
+  /** 保存窗口状态（位置/大小/折叠文件夹） */
+  saveWindowState: (patch: Partial<WindowState>) => Promise<void>;
   createTask: (title: string, folderId: string | null, options?: {
     remark?: string; parentId?: string | null; startDate?: number | null;
     deadline?: number | null; priority?: Priority;
@@ -47,12 +52,14 @@ export function useTaskData(): UseTaskData {
   const [allFolders, setAllFolders] = useState<Folder[]>([]);
   const [theme, setThemeState] = useState<Theme>('light');
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [windowState, setWindowState] = useState<WindowState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const folderServiceRef = useRef<FolderService | null>(null);
   const taskServiceRef = useRef<TaskService | null>(null);
   const settingsServiceRef = useRef<SettingsService | null>(null);
+  const windowStateServiceRef = useRef<WindowStateService | null>(null);
   /** 排序等设置经 ref 供 refresh 读取，避免刷新时重建服务 */
   const settingsRef = useRef<Settings | null>(null);
 
@@ -107,6 +114,7 @@ export function useTaskData(): UseTaskData {
         folderServiceRef.current = new FolderService(db);
         taskServiceRef.current = new TaskService(db);
         settingsServiceRef.current = new SettingsService(db);
+        windowStateServiceRef.current = new WindowStateService(db);
 
         // 加载设置
         const settings = await settingsServiceRef.current.getSettings();
@@ -115,6 +123,10 @@ export function useTaskData(): UseTaskData {
           setSettings(settings);
           setThemeState(settings.theme);
         }
+
+        // 加载窗口状态（位置/大小/折叠文件夹）
+        const windowState = await windowStateServiceRef.current.getWindowState();
+        if (windowState && !cancelled) setWindowState(windowState);
 
         await refresh();
       } catch (e) {
@@ -143,6 +155,12 @@ export function useTaskData(): UseTaskData {
       await refresh(); // 排序等变化时重建任务树
     }
   }, [refresh]);
+
+  const saveWindowState = useCallback(async (patch: Partial<WindowState>) => {
+    if (!windowStateServiceRef.current) return;
+    const updated = await windowStateServiceRef.current.saveWindowState(patch);
+    if (updated) setWindowState(updated);
+  }, []);
 
   const createTask = useCallback(async (
     title: string, folderId: string | null, options?: {
@@ -223,8 +241,8 @@ export function useTaskData(): UseTaskData {
   }, [refresh]);
 
   return {
-    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
-    refresh, setTheme, updateSettings, createTask, toggleCompleted, updateTask,
+    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, windowState, loading, error,
+    refresh, setTheme, updateSettings, saveWindowState, createTask, toggleCompleted, updateTask,
     deleteTask, restoreTask, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   };
 }

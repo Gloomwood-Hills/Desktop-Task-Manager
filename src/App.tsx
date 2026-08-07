@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
@@ -12,7 +12,7 @@ import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
-import { FolderNode, Priority, Task, TaskWithSubtasks } from './data/types';
+import { FolderNode, Priority, Task, TaskWithSubtasks, WindowState } from './data/types';
 import { formatDeadline } from './components/utils/formatDate';
 
 /** 对话框状态机 */
@@ -32,8 +32,8 @@ type LastAction =
 
 function App() {
   const {
-    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
-    refresh, setTheme, updateSettings, createTask, toggleCompleted, updateTask,
+    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, windowState, loading, error,
+    refresh, setTheme, updateSettings, saveWindowState, createTask, toggleCompleted, updateTask,
     deleteTask, restoreTask, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   } = useTaskData();
 
@@ -197,6 +197,87 @@ function App() {
     return () => { unlisten?.(); };
   }, []);
 
+  // ===== 窗口状态持久化（Task 14）：位置/大小 + 文件夹展开状态 =====
+
+  /** 递归收集所有文件夹 id */
+  const collectFolderIds = (nodes: FolderNode[]): string[] => {
+    const ids: string[] = [];
+    const walk = (list: FolderNode[]) => {
+      for (const n of list) {
+        ids.push(n.id);
+        walk(n.children);
+      }
+    };
+    walk(nodes);
+    return ids;
+  };
+
+  /** Rust WorkerW attach 完成后置为 true（此时坐标空间固定，可恢复/保存几何） */
+  const [attached, setAttached] = useState(false);
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('window-attached', () => setAttached(true)).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
+  // 几何防抖保存（拖动/缩放高频触发，300ms 合并写库）
+  const geomPending = useRef<Partial<WindowState>>({});
+  const geomTimer = useRef<number | null>(null);
+  const queueGeomSave = (patch: Partial<WindowState>) => {
+    geomPending.current = { ...geomPending.current, ...patch };
+    if (geomTimer.current !== null) clearTimeout(geomTimer.current);
+    geomTimer.current = window.setTimeout(() => {
+      const pending = geomPending.current;
+      geomPending.current = {};
+      saveWindowState(pending);
+    }, 300);
+  };
+
+  // 仅首次恢复几何（避免保存后的 windowState 更新反复触发恢复覆盖用户操作）
+  const geomRestored = useRef(false);
+  useEffect(() => {
+    if (geomRestored.current || !attached || !windowState) return;
+    geomRestored.current = true;
+    const win = getCurrentWindow();
+    win.setPosition(new PhysicalPosition(windowState.x, windowState.y)).catch(() => {});
+    win.setSize(new PhysicalSize(windowState.width, windowState.height)).catch(() => {});
+  }, [attached, windowState]);
+
+  // attach 完成后监听移动/缩放 → 防抖保存
+  useEffect(() => {
+    if (!attached) return;
+    const win = getCurrentWindow();
+    const unMoved = win.onMoved(({ payload }) => queueGeomSave({ x: payload.x, y: payload.y }));
+    const unResized = win.onResized(({ payload }) => queueGeomSave({ width: payload.width, height: payload.height }));
+    return () => {
+      unMoved.then((fn) => fn());
+      unResized.then((fn) => fn());
+    };
+  }, [attached, saveWindowState]);
+
+  // 首次数据加载后，从保存的折叠集合恢复展开状态（默认全展开）
+  const expandRestored = useRef(false);
+  useEffect(() => {
+    if (expandRestored.current || loading || !windowState || folderTree.length === 0) return;
+    expandRestored.current = true;
+    const all = collectFolderIds(folderTree);
+    const collapsed = new Set(windowState.collapsedFolders);
+    setExpandedFolders(new Set(all.filter((id) => !collapsed.has(id))));
+  }, [loading, windowState, folderTree]);
+
+  // 展开状态变化 → 防抖保存折叠文件夹集合（新增文件夹默认展开，不入折叠集）
+  const expandTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!expandRestored.current) return;
+    const all = collectFolderIds(folderTree);
+    if (all.length === 0) return;
+    const collapsed = all.filter((id) => !expandedFolders.has(id));
+    if (expandTimer.current !== null) clearTimeout(expandTimer.current);
+    expandTimer.current = window.setTimeout(() => {
+      saveWindowState({ collapsedFolders: collapsed });
+    }, 300);
+  }, [expandedFolders, folderTree, saveWindowState]);
+
   // ===== 任务提醒（Task 13）：到达提前提醒窗口触发 Windows 通知 + 可选自动置顶 =====
 
   /** 收集所有活动任务（含任意层级子任务） */
@@ -226,28 +307,41 @@ function App() {
     ensurePermission();
 
     const checkReminders = async () => {
-      const s = settingsLatest.current;
-      if (!s || !s.reminderEnabled) return;
-      const offset = s.reminderOffset ?? 86400;
-      if (offset <= 0) return;
-      const now = Date.now();
-      for (const t of collectAllTasks()) {
-        if (t.completed || t.deadline === null || notified.has(t.id)) continue;
-        const lead = t.deadline - now;
-        if (lead <= 0 || lead > offset) continue; // 仅在提前提醒窗口内
-        notified.add(t.id);
-        const body = `「${t.title}」将于 ${formatDeadline(t.deadline)} 截止`;
-        sendNotification({ title: '任务提醒', body });
-        setToast(body);
-        // 提醒后自动置顶：标记"重要"使其排到列表前列
-        if (s.autoPin && t.priority !== 'important') {
-          await updateTask(t.id, { priority: 'important' });
+      try {
+        const s = settingsLatest.current;
+        if (!s) return;
+        if (!s.reminderEnabled) return;
+        const offset = s.reminderOffset ?? 86400;
+        if (offset <= 0) return;
+        // offset 单位为秒，deadline/now 为毫秒，统一转为毫秒比较
+        const offsetMs = offset * 1000;
+        const now = Date.now();
+        const tasks = collectAllTasks();
+        for (const t of tasks) {
+          if (t.completed || t.deadline === null || notified.has(t.id)) continue;
+          const lead = t.deadline - now;
+          // 提醒窗口：截止前 offset 至 截止后 offset（刚过期的任务也提醒一次，久远过期不打扰）
+          if (lead > offsetMs || lead < -offsetMs) continue;
+          notified.add(t.id);
+          const due = lead <= 0;
+          const body = due
+            ? `「${t.title}」已到截止时间（${formatDeadline(t.deadline)}）`
+            : `「${t.title}」将于 ${formatDeadline(t.deadline)} 截止`;
+          // 应用内提示先行（系统通知不可用/失败时仍可见）
+          setToast(body);
+          try {
+            await sendNotification({ title: '任务提醒', body });
+          } catch { /* 系统通知失败不影响应用内提示与自动置顶 */ }
+          // 提醒后自动置顶：标记"重要"使其排到列表前列
+          if (s.autoPin && t.priority !== 'important') {
+            await updateTask(t.id, { priority: 'important' });
+          }
         }
-      }
+      } catch { /* 提醒异常静默忽略，不影响主流程 */ }
     };
 
     checkReminders();
-    const timer = setInterval(checkReminders, 30_000);
+    const timer = setInterval(checkReminders, 15_000);
     return () => clearInterval(timer);
   }, [updateTask]);
 

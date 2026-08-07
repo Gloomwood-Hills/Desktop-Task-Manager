@@ -174,9 +174,12 @@ pub fn run() {
                     if let Ok(hwnd) = window.hwnd() {
                         // HWND.0 is the raw pointer; cast to isize for Send
                         let hwnd_raw = hwnd.0 as isize;
+                        let app_handle = app.handle().clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(1500));
                             unsafe { worker_w::attach(hwnd_raw); }
+                            // 通知前端窗口已附加到桌面层，可恢复/保存窗口几何
+                            let _ = app_handle.emit("window-attached", ());
                         });
                     }
                 }
