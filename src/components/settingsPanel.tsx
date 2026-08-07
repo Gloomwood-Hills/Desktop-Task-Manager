@@ -12,12 +12,13 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type TabId = '外观' | '排序' | '提醒' | '同步';
+type TabId = '外观' | '排序' | '提醒' | '使用说明' | '同步';
 
 const TABS: { id: TabId; disabled?: boolean }[] = [
   { id: '外观' },
   { id: '排序' },
   { id: '提醒' },
+  { id: '使用说明' },
   { id: '同步', disabled: true },
 ];
 
@@ -349,6 +350,42 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <span style={{ ...switchThumb, transform: autoPin ? 'translateX(20px)' : 'none' }} />
                 </div>
               </div>
+            </section>
+          )}
+
+          {/* ===== 使用说明 ===== */}
+          {tab === '使用说明' && (
+            <section>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', marginBottom: 12 }}>基本操作</div>
+              {[
+                ['新建任务', '在窗口底部点击"+ 添加任务"，或在顶部输入框直接输入标题后回车。'],
+                ['自然语言日期', '支持"明天"、"后天"、"下周一"、"月底"、"8月9日"、"2026.8.9"、"一小时后"等，并可在"今天下午三点"中解析具体时间。'],
+                ['文件夹', '右键任务可选择"移动到文件夹"；右键文件夹可新建子文件夹、重命名、删除。'],
+                ['重要任务', '新建/编辑任务时可勾选"重要"，重要任务将置顶显示。'],
+                ['完成与恢复', '点击任务左侧复选框标记完成；已完成任务可在底部"已完成"区域查看，支持右键恢复。'],
+              ].map(([title, desc]) => (
+                <div key={title} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--foreground)' }}>{title}</div>
+                  <p style={{ fontSize: 12, margin: '3px 0 0', color: 'var(--muted-foreground)', lineHeight: 1.6 }}>{desc}</p>
+                </div>
+              ))}
+
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', margin: '20px 0 12px' }}>排序与提醒</div>
+              {[
+                ['排序方式', '在"排序"页可设置默认排序（按创建时间/截止时间/名称/手动）；手动排序时可直接拖拽任务调整顺序。'],
+                ['提醒', '在"提醒"页设置提前提醒时间与是否开启系统通知；任务到达提醒时间后应用内弹窗提示，并可选择自动置顶。'],
+                ['截止时间渐变', '在"外观"页开启"截止时间按日期渐变"后，截止日期随临近由白色渐变为红色；关闭则直接显示红色。'],
+              ].map(([title, desc]) => (
+                <div key={title} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--foreground)' }}>{title}</div>
+                  <p style={{ fontSize: 12, margin: '3px 0 0', color: 'var(--muted-foreground)', lineHeight: 1.6 }}>{desc}</p>
+                </div>
+              ))}
+
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', margin: '20px 0 12px' }}>数据说明</div>
+              <p style={{ fontSize: 12, margin: 0, color: 'var(--muted-foreground)', lineHeight: 1.6 }}>
+                所有数据仅保存在本机应用数据目录（SQLite），不会上传到任何服务器。卸载应用时如需保留数据，请使用卸载脚本的保留数据选项；如需彻底清除，可删除数据目录。
+              </p>
             </section>
           )}
 

@@ -39,10 +39,8 @@ function App() {
   } = useTaskData();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    () => new Set(['folder-ky', 'folder-lw', 'folder-sy', 'folder-gp', 'folder-sh'])
-  );
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set(['task-lw1']));
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set());
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
