@@ -17,12 +17,23 @@ interface QuickCaptureProps {
 }
 
 const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '提前1天', '不提醒'];
+const DATE_QUICK = ['今天', '明天', '后天', '下周一', '月底'];
+
+/** 时间戳 → datetime-local 输入值（本地时区） */
+function toLocalInputValue(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 /** 新建任务弹窗（Quick Capture，对齐设计稿 quick-capture） */
 export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptureProps) {
   const [title, setTitle] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
+  /** 手动选择的截止时间；null 时回退到标题自然语言解析 */
+  const [manualDeadline, setManualDeadline] = useState<number | null>(null);
   const [reminderOn, setReminderOn] = useState(true);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderValue, setReminderValue] = useState(REMINDER_OPTIONS[0]);
@@ -44,12 +55,14 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
 
   // 自然语言日期解析（实时，标题变化即更新）
   const parsedDeadline = useMemo(() => parseNaturalDateTime(title), [title]);
+  // 手动选择优先，其次标题解析
+  const effectiveDeadline = manualDeadline ?? parsedDeadline;
 
   const handleCreate = () => {
     if (!title.trim()) return;
     onCreate(title.trim(), folderId, {
       priority: important ? 'important' : 'normal',
-      deadline: parsedDeadline,
+      deadline: effectiveDeadline,
     });
   };
 
@@ -94,16 +107,20 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
             <ChevronDown style={{ width: 11, height: 11, color: 'var(--primary)', flexShrink: 0 }} />
           </div>
 
-          {/* 日期按钮（显示解析出的日期） */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-            background: parsedDeadline ? 'var(--brand-50)' : 'transparent',
-            border: `1px solid ${parsedDeadline ? 'var(--brand-200)' : 'var(--border)'}`,
-            cursor: 'default', fontSize: 12.5,
-            color: parsedDeadline ? 'var(--primary)' : 'var(--muted-foreground)',
-          }}>
+          {/* 日期按钮（手动选择或显示解析日期） */}
+          <div
+            onClick={() => { setDateOpen(!dateOpen); setFolderOpen(false); setReminderOpen(false); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
+              background: effectiveDeadline ? 'var(--brand-50)' : 'transparent',
+              border: `1px solid ${effectiveDeadline ? 'var(--brand-200)' : 'var(--border)'}`,
+              cursor: 'pointer', fontSize: 12.5,
+              color: effectiveDeadline ? 'var(--primary)' : 'var(--muted-foreground)',
+            }}
+          >
             <CalendarIcon style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{parsedDeadline ? formatDeadline(parsedDeadline) : '添加日期'}</span>
+            <span style={{ fontWeight: 600 }}>{effectiveDeadline ? formatDeadline(effectiveDeadline) : '添加日期'}</span>
+            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
           </div>
 
           {/* 提醒 */}
@@ -172,6 +189,76 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
                   {f.id === folderId && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* 展开面板：日期选择 */}
+        {dateOpen && (
+          <div style={{ padding: '10px 24px 0' }}>
+            <div style={{
+              borderRadius: 14,
+              background: 'rgba(255,255,255,0.78)',
+              backdropFilter: 'blur(40px) saturate(1.8)',
+              WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+              boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
+              padding: 6,
+              display: 'inline-flex',
+              flexDirection: 'column',
+            }}>
+              {DATE_QUICK.map((label) => {
+                const ts = parseNaturalDateTime(label);
+                const active = manualDeadline === ts;
+                return (
+                  <div
+                    key={label}
+                    onClick={() => { setManualDeadline(ts); setDateOpen(false); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
+                      cursor: 'pointer', fontSize: 12.5,
+                      color: active ? 'var(--primary)' : 'var(--muted-foreground)',
+                      background: active ? 'var(--brand-50)' : 'transparent',
+                    }}
+                  >
+                    <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
+                    {ts && (
+                      <span style={{ fontSize: 11, opacity: 0.8 }}>{formatDeadline(ts)}</span>
+                    )}
+                    {active && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+                  </div>
+                );
+              })}
+              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
+              {/* 自定义时间 */}
+              <div style={{ padding: '7px 12px' }}>
+                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
+                <input
+                  type="datetime-local"
+                  value={manualDeadline !== null ? toLocalInputValue(manualDeadline) : ''}
+                  onChange={(e) => {
+                    if (e.target.value) setManualDeadline(new Date(e.target.value).getTime());
+                  }}
+                  style={{
+                    width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
+                    border: '1px solid var(--input)', borderRadius: 8,
+                    background: 'var(--background)', color: 'inherit',
+                    fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
+                  }}
+                />
+              </div>
+              {/* 清除日期 */}
+              <div
+                onClick={() => { setManualDeadline(null); setDateOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
+                  cursor: 'pointer', fontSize: 12.5,
+                  color: manualDeadline === null ? 'var(--primary)' : 'var(--muted-foreground)',
+                  background: manualDeadline === null ? 'var(--brand-50)' : 'transparent',
+                }}
+              >
+                <span style={{ fontWeight: manualDeadline === null ? 600 : 500 }}>无截止日期</span>
+                {manualDeadline === null && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+              </div>
             </div>
           </div>
         )}
