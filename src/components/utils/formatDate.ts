@@ -55,14 +55,6 @@ export function formatCompletedAt(ts: number): string {
 }
 
 /** 截止时间徽章颜色分级：逾期=红、1天内=红、3天内=橙、7天内=默认 */
-export function deadlineUrgency(deadline: number): 'danger' | 'warning' | 'normal' {
-  const now = Date.now();
-  const diffMs = deadline - now;
-  if (diffMs < day) return 'danger';
-  if (diffMs < 3 * day) return 'warning';
-  return 'normal';
-}
-
 // ===== 自然语言日期解析（Quick Capture） =====
 
 const WEEK_CN: Record<string, number> = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
@@ -92,6 +84,16 @@ function toNumber(token: string): number | null {
  */
 export function parseNaturalDateTime(text: string): number | null {
   const now = new Date();
+
+  // 相对时间：X小时后（如"一小时后"），精确到具体时刻
+  const afterHours = text.match(/(\d{1,2}|[一二两三四五六七八九十]{1,2})\s*个小时?后/);
+  if (afterHours) {
+    const n = toNumber(afterHours[1]);
+    if (n !== null && n > 0) {
+      return new Date(now.getTime() + n * 3600 * 1000).getTime();
+    }
+  }
+
   let base: Date | null = null;
 
   // 日期部分

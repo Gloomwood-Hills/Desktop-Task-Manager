@@ -17,7 +17,10 @@ interface QuickCaptureProps {
 }
 
 const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '提前1天', '不提醒'];
-const DATE_QUICK = ['今天', '明天', '后天', '下周一', '月底'];
+/** 开始时间快捷项（日期语义，归一化为当日 00:00） */
+const DATE_QUICK_START = ['今天', '明天', '后天', '下周一', '月底'];
+/** 截止时间快捷项：一小时后为具体时刻，其余为日期 */
+const DATE_QUICK_DEADLINE = ['一小时后', '明天', '后天', '下周一', '月底'];
 
 /** 时间戳 → datetime-local 输入值（本地时区） */
 function toLocalInputValue(ts: number): string {
@@ -321,7 +324,7 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
               display: 'inline-flex',
               flexDirection: 'column',
             }}>
-              {DATE_QUICK.map((label) => {
+              {DATE_QUICK_START.map((label) => {
                 const raw = parseNaturalDateTime(label);
                 // 开始时间快捷项归一化为当日 00:00（开始日期语义）
                 const ts = raw !== null ? new Date(raw).setHours(0, 0, 0, 0) : null;
@@ -393,7 +396,7 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
               display: 'inline-flex',
               flexDirection: 'column',
             }}>
-              {DATE_QUICK.map((label) => {
+              {DATE_QUICK_DEADLINE.map((label) => {
                 const ts = parseNaturalDateTime(label);
                 const active = manualDeadline === ts;
                 return (

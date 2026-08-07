@@ -9,7 +9,10 @@ interface EditTaskDialogProps {
   onClose: () => void;
 }
 
-const DATE_QUICK = ['今天', '明天', '后天', '下周一', '月底'];
+/** 开始时间快捷项（日期语义，归一化为当日 00:00） */
+const DATE_QUICK_START = ['今天', '明天', '后天', '下周一', '月底'];
+/** 截止时间快捷项：一小时后为具体时刻，其余为日期 */
+const DATE_QUICK_DEADLINE = ['一小时后', '明天', '后天', '下周一', '月底'];
 
 /** 时间戳 → datetime-local 输入值（本地时区） */
 function toLocalInputValue(ts: number): string {
@@ -55,7 +58,9 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
     setValue: (v: number | null) => void,
     close: () => void,
     normalizeToDayStart: boolean,
-  ) => (
+  ) => {
+    const quicks = normalizeToDayStart ? DATE_QUICK_START : DATE_QUICK_DEADLINE;
+    return (
     <div style={{
       borderRadius: 14,
       background: 'rgba(255,255,255,0.78)',
@@ -66,7 +71,7 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
       display: 'inline-flex',
       flexDirection: 'column',
     }}>
-      {DATE_QUICK.map((label) => {
+      {quicks.map((label) => {
         const raw = parseNaturalDateTime(label);
         const ts = raw !== null && normalizeToDayStart ? new Date(raw).setHours(0, 0, 0, 0) : raw;
         const active = value === ts;
@@ -115,7 +120,8 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
         {value === null && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div style={{

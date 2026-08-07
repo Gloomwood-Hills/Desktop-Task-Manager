@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Clock, Calendar, AlignLeft, History } from 'lucide-react';
 import { Task, TaskWithSubtasks } from '../data/types';
-import { formatDeadline, formatStartDate, deadlineUrgency } from './utils/formatDate';
+import { formatDeadline, formatStartDate } from './utils/formatDate';
 
 interface TaskItemProps {
   task: TaskWithSubtasks;
@@ -29,24 +29,22 @@ export function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** 截止时间红色渐变：离截止越近颜色越深（>=3天=浅红、1-3天=中红、<1天/逾期=深红） */
+/** 截止时间颜色渐变：距截止 >=7天为纯白，剩余1天时为 #FF3333，期间线性插值（逾期保持 #FF3333） */
 function deadlineColor(deadline: number): { bg: string; color: string } {
-  const urgency = deadlineUrgency(deadline);
-  if (urgency === 'danger') {
-    return {
-      bg: 'color-mix(in srgb, #d92d20 16%, transparent)',
-      color: '#ff6b5e',
-    };
-  }
-  if (urgency === 'warning') {
-    return {
-      bg: 'color-mix(in srgb, #f04438 12%, transparent)',
-      color: '#ff8570',
-    };
-  }
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const remain = deadline - now;
+  let t: number; // 0=纯白，1=#FF3333
+  if (remain <= day) t = 1;
+  else if (remain >= 7 * day) t = 0;
+  else t = (7 * day - remain) / (6 * day);
+  const r = 255;
+  const g = Math.round(255 - 204 * t); // 255 → 51
+  const b = Math.round(255 - 204 * t); // 255 → 51
+  const color = `rgb(${r}, ${g}, ${b})`;
   return {
-    bg: 'color-mix(in srgb, #ff9a8b 10%, transparent)',
-    color: '#ffb3a8',
+    bg: `color-mix(in srgb, ${color} 16%, transparent)`,
+    color,
   };
 }
 
