@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { X, Cloud, Check } from 'lucide-react';
+import { Settings, SortType } from '../data/types';
 
 export type ThemeMode = 'light' | 'dark';
 
 interface SettingsPanelProps {
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
+  settings: Settings | null;
+  onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
 }
 
@@ -18,20 +21,34 @@ const TABS: { id: TabId; disabled?: boolean }[] = [
   { id: '同步', disabled: true },
 ];
 
-const SORT_OPTIONS = ['手动排序', '按优先级', '按截止时间', '按创建时间'];
-const REMINDER_OPTIONS = ['提前1天', '提前3小时', '提前1小时', '提前30分钟', '不提醒'];
+const SORT_OPTIONS: { label: string; value: SortType }[] = [
+  { label: '按创建时间', value: 'createdAt' },
+  { label: '按截止时间', value: 'deadline' },
+  { label: '按优先级', value: 'priority' },
+  { label: '按名称', value: 'name' },
+  { label: '手动排序', value: 'manual' },
+];
+
+const REMINDER_OPTIONS: { label: string; value: number }[] = [
+  { label: '提前1天', value: 86400 },
+  { label: '提前3小时', value: 10800 },
+  { label: '提前1小时', value: 3600 },
+  { label: '提前30分钟', value: 1800 },
+  { label: '不提醒', value: 0 },
+];
 
 /** 设置面板（右侧滑入，对齐设计稿 settings） */
-export default function SettingsPanel({ theme, onThemeChange, onClose }: SettingsPanelProps) {
+export default function SettingsPanel({ theme, onThemeChange, settings, onChange, onClose }: SettingsPanelProps) {
   const [tab, setTab] = useState<TabId>('外观');
-  const [glassEffect, setGlassEffect] = useState(true);
-  const [transparency, setTransparency] = useState(85);
+  // 从持久化设置初始化
+  const [glassEffect, setGlassEffect] = useState(settings?.glassEffect ?? true);
+  const [transparency, setTransparency] = useState(Math.round((settings?.transparency ?? 0.8) * 100));
   const [deadlineColor, setDeadlineColor] = useState('red');
-  const [sortType, setSortType] = useState('手动排序');
+  const [sortType, setSortType] = useState<SortType>(settings?.sortType ?? 'deadline');
   const [priorityTop, setPriorityTop] = useState(true);
   const [hideNotStarted, setHideNotStarted] = useState(true);
-  const [reminderType, setReminderType] = useState('提前30分钟');
-  const [winNotify, setWinNotify] = useState(true);
+  const [reminderOffset, setReminderOffset] = useState(settings?.reminderOffset ?? 86400);
+  const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
   const [autoPin, setAutoPin] = useState(true);
 
   const switchStyle: React.CSSProperties = {
@@ -99,6 +116,7 @@ export default function SettingsPanel({ theme, onThemeChange, onClose }: Setting
       <div style={{
         position: 'fixed', inset: 0, zIndex: 2,
         background: 'rgba(0,0,0,0.15)',
+        animation: 'settings-scrim-fade 0.2s ease',
       }} onClick={onClose} />
 
       {/* 设置面板 */}
@@ -110,6 +128,7 @@ export default function SettingsPanel({ theme, onThemeChange, onClose }: Setting
         maxWidth: '92%',
         display: 'flex',
         flexDirection: 'column',
+        animation: 'settings-slide-in 0.22s cubic-bezier(0.32, 0.72, 0, 1)',
         background: 'color-mix(in srgb, var(--background) 82%, transparent)',
         WebkitBackdropFilter: 'saturate(180%) blur(60px)',
         backdropFilter: 'saturate(180%) blur(60px)',
@@ -199,7 +218,7 @@ export default function SettingsPanel({ theme, onThemeChange, onClose }: Setting
                   <label style={labelStyle}>毛玻璃效果</label>
                   <p style={descStyle}>窗口背景启用 Mica 半透明效果</p>
                 </div>
-                <div style={switchStyle} onClick={() => setGlassEffect(!glassEffect)}>
+                <div style={switchStyle} onClick={() => { setGlassEffect(!glassEffect); onChange({ glassEffect: !glassEffect }); }}>
                   <span style={switchTrack(glassEffect)} />
                   <span style={{ ...switchThumb, transform: glassEffect ? 'translateX(20px)' : 'none' }} />
                 </div>
@@ -218,7 +237,11 @@ export default function SettingsPanel({ theme, onThemeChange, onClose }: Setting
                   min={20}
                   max={100}
                   value={transparency}
-                  onChange={(e) => setTransparency(Number(e.target.value))}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setTransparency(v);
+                    onChange({ transparency: v / 100 });
+                  }}
                   style={{
                     width: '100%', height: 6, borderRadius: 999, appearance: 'none', cursor: 'pointer',
                     background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${(transparency - 20) / 80 * 100}%, var(--border) ${(transparency - 20) / 80 * 100}%, var(--border) 100%)`,
@@ -262,11 +285,15 @@ export default function SettingsPanel({ theme, onThemeChange, onClose }: Setting
                 <div style={selectWrapper}>
                   <select
                     value={sortType}
-                    onChange={(e) => setSortType(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value as SortType;
+                      setSortType(v);
+                      onChange({ sortType: v });
+                    }}
                     style={{ ...selectStyle, marginTop: 8 }}
                     aria-label="默认排序方式"
                   >
-                    {SORT_OPTIONS.map((opt) => <option key={opt}>{opt}</option>)}
+                    {SORT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                   <span style={{ position: 'absolute', right: 12, top: 'calc(50% + 4px)', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--icon-muted)' }}>
                     <span style={{ fontSize: 12 }}>▼</span>
@@ -305,12 +332,16 @@ export default function SettingsPanel({ theme, onThemeChange, onClose }: Setting
                 <label style={labelStyle}>默认提醒时间</label>
                 <div style={selectWrapper}>
                   <select
-                    value={reminderType}
-                    onChange={(e) => setReminderType(e.target.value)}
+                    value={reminderOffset}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setReminderOffset(v);
+                      onChange({ reminderOffset: v });
+                    }}
                     style={{ ...selectStyle, marginTop: 8 }}
                     aria-label="默认提醒时间"
                   >
-                    {REMINDER_OPTIONS.map((opt) => <option key={opt}>{opt}</option>)}
+                    {REMINDER_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                   <span style={{ position: 'absolute', right: 12, top: 'calc(50% + 4px)', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--icon-muted)' }}>
                     <span style={{ fontSize: 12 }}>▼</span>
@@ -323,7 +354,7 @@ export default function SettingsPanel({ theme, onThemeChange, onClose }: Setting
                   <label style={labelStyle}>开启 Windows 通知</label>
                   <p style={descStyle}>在系统通知中心显示任务提醒</p>
                 </div>
-                <div style={switchStyle} onClick={() => setWinNotify(!winNotify)}>
+                <div style={switchStyle} onClick={() => { setWinNotify(!winNotify); onChange({ reminderEnabled: !winNotify }); }}>
                   <span style={switchTrack(winNotify)} />
                   <span style={{ ...switchThumb, transform: winNotify ? 'translateX(20px)' : 'none' }} />
                 </div>

@@ -28,8 +28,8 @@ type LastAction =
 
 function App() {
   const {
-    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, loading, error,
-    setTheme, createTask, toggleCompleted, deleteTask, restoreTask,
+    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
+    setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask,
     createFolder, renameFolder, deleteFolder,
   } = useTaskData();
 
@@ -243,6 +243,10 @@ function App() {
     );
   }
 
+  // 外观设置：毛玻璃 + 透明度（设置面板持久化后生效）
+  const glassEnabled = settings?.glassEffect ?? true;
+  const transparency = Math.round((settings?.transparency ?? 0.8) * 100);
+
   return (
     <div
       className={theme}
@@ -272,9 +276,13 @@ function App() {
         display: 'flex',
         flexDirection: 'column',
         borderRadius: 'calc(var(--radius) * 1.1)',
-        background: 'color-mix(in srgb, var(--background) 85%, transparent)',
-        WebkitBackdropFilter: 'saturate(180%) blur(40px)',
-        backdropFilter: 'saturate(180%) blur(40px)',
+        background: glassEnabled
+          ? `color-mix(in srgb, var(--background) ${transparency}%, transparent)`
+          : 'var(--background)',
+        ...(glassEnabled ? {
+          WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+          backdropFilter: 'saturate(180%) blur(40px)',
+        } : {}),
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px color-mix(in srgb, var(--border) 40%, transparent)',
         overflow: 'hidden',
         border: '0.5px solid color-mix(in srgb, var(--border) 30%, transparent)',
@@ -395,6 +403,8 @@ function App() {
         <SettingsPanel
           theme={theme as ThemeMode}
           onThemeChange={(t) => setTheme(t)}
+          settings={settings}
+          onChange={updateSettings}
           onClose={() => setSettingsOpen(false)}
         />
       )}

@@ -1,4 +1,4 @@
-import { Task, TaskWithSubtasks, Folder, FolderNode } from './types';
+import { Task, TaskWithSubtasks, Folder, FolderNode, SortType } from './types';
 
 export function mapBooleanFields<T extends object>(
   row: T,
@@ -51,6 +51,32 @@ export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
   });
 
   return rootTasks;
+}
+
+/** 按设置排序任务列表（默认创建时间倒序；manual 维持原顺序） */
+export function sortTasksByType<T extends Task>(tasks: T[], sortType: SortType): T[] {
+  const list = [...tasks];
+  switch (sortType) {
+    case 'name':
+      return list.sort((a, b) => a.title.localeCompare(b.title, 'zh'));
+    case 'deadline':
+      return list.sort((a, b) => {
+        if (a.deadline === null && b.deadline === null) return 0;
+        if (a.deadline === null) return 1;
+        if (b.deadline === null) return -1;
+        return a.deadline - b.deadline;
+      });
+    case 'priority':
+      return list.sort((a, b) => {
+        const rank = (t: Task) => (t.priority === 'important' ? 0 : 1);
+        return rank(a) - rank(b);
+      });
+    case 'manual':
+      return list;
+    case 'createdAt':
+    default:
+      return list.sort((a, b) => b.createdAt - a.createdAt);
+  }
 }
 
 /** 从扁平 folders + tasks 构建 FolderNode 树 */

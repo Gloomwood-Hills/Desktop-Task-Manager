@@ -3,8 +3,8 @@ import { getDatabase } from '../data/database';
 import { FolderService } from '../services/FolderService';
 import { TaskService } from '../services/TaskService';
 import { SettingsService } from '../services/SettingsService';
-import { buildFolderTree, buildTaskTree } from '../data/utils';
-import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority } from '../data/types';
+import { buildFolderTree, buildTaskTree, sortTasksByType } from '../data/utils';
+import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings } from '../data/types';
 
 export interface UseTaskData {
   folderTree: FolderNode[];
@@ -13,10 +13,12 @@ export interface UseTaskData {
   completedTasks: Task[];
   allFolders: Folder[];
   theme: Theme;
+  settings: Settings | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
   setTheme: (theme: Theme) => Promise<void>;
+  updateSettings: (patch: Partial<Settings>) => Promise<void>;
   createTask: (title: string, folderId: string | null, options?: {
     remark?: string; parentId?: string | null; startDate?: number | null;
     deadline?: number | null; priority?: Priority;
@@ -35,12 +37,15 @@ export function useTaskData(): UseTaskData {
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
   const [allFolders, setAllFolders] = useState<Folder[]>([]);
   const [theme, setThemeState] = useState<Theme>('light');
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const folderServiceRef = useRef<FolderService | null>(null);
   const taskServiceRef = useRef<TaskService | null>(null);
   const settingsServiceRef = useRef<SettingsService | null>(null);
+  /** 排序等设置经 ref 供 refresh 读取，避免刷新时重建服务 */
+  const settingsRef = useRef<Settings | null>(null);
 
   const refresh = useCallback(async () => {
     if (!folderServiceRef.current || !taskServiceRef.current) return;
@@ -55,11 +60,21 @@ export function useTaskData(): UseTaskData {
       // 子任务保留在父任务下（划线样式），保证父任务进度统计 x/y 正确
       const fullTree = buildFolderTree(folders, tasks);
       const cleanTree = fullTree.map(cleanFolderRoot);
-      setFolderTree(cleanTree);
+      // 按设置排序（递归应用到子任务与子文件夹）
+      const sortType = settingsRef.current?.sortType ?? 'deadline';
+      const sortTaskList = (list: TaskWithSubtasks[]): TaskWithSubtasks[] =>
+        sortTasksByType(list, sortType)
+          .map((t) => ({ ...t, subtasks: sortTaskList(t.subtasks) }));
+      const sortFolderNode = (node: FolderNode): FolderNode => ({
+        ...node,
+        tasks: sortTaskList(node.tasks),
+        children: node.children.map(sortFolderNode),
+      });
+      setFolderTree(cleanTree.map(sortFolderNode));
       // 未分类任务（folderId 为 null）：顶层显示，与文件夹同级
       const unclassifiedTree = buildTaskTree(tasks.filter((t) => t.folderId === null))
         .filter((t) => !t.completed);
-      setUnclassifiedTasks(unclassifiedTree);
+      setUnclassifiedTasks(sortTaskList(unclassifiedTree));
       setCompletedTasks(completed);
     } catch (e) {
       setError((e as Error).message);
@@ -87,6 +102,8 @@ export function useTaskData(): UseTaskData {
         // 加载设置
         const settings = await settingsServiceRef.current.getSettings();
         if (settings && !cancelled) {
+          settingsRef.current = settings;
+          setSettings(settings);
           setThemeState(settings.theme);
         }
 
@@ -106,6 +123,17 @@ export function useTaskData(): UseTaskData {
       await settingsServiceRef.current.setTheme(newTheme);
     }
   }, []);
+
+  const updateSettings = useCallback(async (patch: Partial<Settings>) => {
+    if (!settingsServiceRef.current) return;
+    const updated = await settingsServiceRef.current.updateSettings(patch);
+    if (updated) {
+      settingsRef.current = updated;
+      setSettings(updated);
+      if (updated.theme) setThemeState(updated.theme);
+      await refresh(); // 排序等变化时重建任务树
+    }
+  }, [refresh]);
 
   const createTask = useCallback(async (
     title: string, folderId: string | null, options?: {
@@ -162,8 +190,8 @@ export function useTaskData(): UseTaskData {
   }, [refresh]);
 
   return {
-    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, loading, error,
-    refresh, setTheme, createTask, toggleCompleted, deleteTask, restoreTask,
+    folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
+    refresh, setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask,
     createFolder, renameFolder, deleteFolder,
   };
 }
