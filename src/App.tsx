@@ -164,7 +164,7 @@ function App() {
   const handleCreateTask = async (
     title: string,
     folderId: string | null,
-    options?: { priority?: Priority; deadline?: number | null }
+    options?: { priority?: Priority; startDate?: number | null; deadline?: number | null }
   ) => {
     await createTask(title, folderId, options);
     setCaptureOpen(false);

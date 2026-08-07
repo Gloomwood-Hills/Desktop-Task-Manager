@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  Folder as FolderIcon, ChevronDown, Calendar as CalendarIcon, Bell, Check, Star,
+  Folder as FolderIcon, ChevronDown, Calendar as CalendarIcon, CalendarClock, Bell, Check, Star,
   Plus, Sparkles,
 } from 'lucide-react';
 import { FolderNode, Priority } from '../data/types';
@@ -12,7 +12,7 @@ interface QuickCaptureProps {
   onCreate: (
     title: string,
     folderId: string | null,
-    options: { priority?: Priority; deadline?: number | null }
+    options: { priority?: Priority; startDate?: number | null; deadline?: number | null }
   ) => void;
 }
 
@@ -34,6 +34,10 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
   const [dateOpen, setDateOpen] = useState(false);
   /** 手动选择的截止时间；null 时回退到标题自然语言解析 */
   const [manualDeadline, setManualDeadline] = useState<number | null>(null);
+  /** 手动选择的开始时间面板 */
+  const [startOpen, setStartOpen] = useState(false);
+  /** 手动选择的开始时间；null 表示无开始日期 */
+  const [manualStart, setManualStart] = useState<number | null>(null);
   const [reminderOn, setReminderOn] = useState(true);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderValue, setReminderValue] = useState(REMINDER_OPTIONS[0]);
@@ -62,6 +66,7 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
     if (!title.trim()) return;
     onCreate(title.trim(), folderId, {
       priority: important ? 'important' : 'normal',
+      startDate: manualStart,
       deadline: effectiveDeadline,
     });
   };
@@ -96,7 +101,7 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 24px 0', flexWrap: 'nowrap' }}>
           {/* 文件夹选择 */}
           <div
-            onClick={() => { setFolderOpen(!folderOpen); setReminderOpen(false); }}
+            onClick={() => { setFolderOpen(!folderOpen); setReminderOpen(false); setStartOpen(false); }}
             style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
               background: 'var(--brand-50)', border: '1px solid var(--brand-200)', cursor: 'pointer', fontSize: 12.5, color: 'var(--primary)',
@@ -107,9 +112,25 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
             <ChevronDown style={{ width: 11, height: 11, color: 'var(--primary)', flexShrink: 0 }} />
           </div>
 
+          {/* 开始时间按钮 */}
+          <div
+            onClick={() => { setStartOpen(!startOpen); setFolderOpen(false); setDateOpen(false); setReminderOpen(false); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
+              background: manualStart ? 'var(--brand-50)' : 'transparent',
+              border: `1px solid ${manualStart ? 'var(--brand-200)' : 'var(--border)'}`,
+              cursor: 'pointer', fontSize: 12.5,
+              color: manualStart ? 'var(--primary)' : 'var(--muted-foreground)',
+            }}
+          >
+            <CalendarClock style={{ width: 13, height: 13, flexShrink: 0 }} />
+            <span style={{ fontWeight: 600 }}>{manualStart ? formatDeadline(manualStart) : '开始时间'}</span>
+            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
+          </div>
+
           {/* 日期按钮（手动选择或显示解析日期） */}
           <div
-            onClick={() => { setDateOpen(!dateOpen); setFolderOpen(false); setReminderOpen(false); }}
+            onClick={() => { setDateOpen(!dateOpen); setFolderOpen(false); setReminderOpen(false); setStartOpen(false); }}
             style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
               background: effectiveDeadline ? 'var(--brand-50)' : 'transparent',
@@ -189,6 +210,78 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
                   {f.id === folderId && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* 展开面板：开始时间选择 */}
+        {startOpen && (
+          <div style={{ padding: '10px 24px 0' }}>
+            <div style={{
+              borderRadius: 14,
+              background: 'rgba(255,255,255,0.78)',
+              backdropFilter: 'blur(40px) saturate(1.8)',
+              WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+              boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
+              padding: 6,
+              display: 'inline-flex',
+              flexDirection: 'column',
+            }}>
+              {DATE_QUICK.map((label) => {
+                const raw = parseNaturalDateTime(label);
+                // 开始时间快捷项归一化为当日 00:00（开始日期语义）
+                const ts = raw !== null ? new Date(raw).setHours(0, 0, 0, 0) : null;
+                const active = manualStart === ts;
+                return (
+                  <div
+                    key={label}
+                    onClick={() => { setManualStart(ts); setStartOpen(false); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
+                      cursor: 'pointer', fontSize: 12.5,
+                      color: active ? 'var(--primary)' : 'var(--muted-foreground)',
+                      background: active ? 'var(--brand-50)' : 'transparent',
+                    }}
+                  >
+                    <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
+                    {ts && (
+                      <span style={{ fontSize: 11, opacity: 0.8 }}>{formatDeadline(ts)}</span>
+                    )}
+                    {active && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+                  </div>
+                );
+              })}
+              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
+              {/* 自定义时间 */}
+              <div style={{ padding: '7px 12px' }}>
+                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
+                <input
+                  type="datetime-local"
+                  value={manualStart !== null ? toLocalInputValue(manualStart) : ''}
+                  onChange={(e) => {
+                    if (e.target.value) setManualStart(new Date(e.target.value).getTime());
+                  }}
+                  style={{
+                    width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
+                    border: '1px solid var(--input)', borderRadius: 8,
+                    background: 'var(--background)', color: 'inherit',
+                    fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
+                  }}
+                />
+              </div>
+              {/* 清除开始日期 */}
+              <div
+                onClick={() => { setManualStart(null); setStartOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
+                  cursor: 'pointer', fontSize: 12.5,
+                  color: manualStart === null ? 'var(--primary)' : 'var(--muted-foreground)',
+                  background: manualStart === null ? 'var(--brand-50)' : 'transparent',
+                }}
+              >
+                <span style={{ fontWeight: manualStart === null ? 600 : 500 }}>无开始日期</span>
+                {manualStart === null && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+              </div>
             </div>
           </div>
         )}
