@@ -23,14 +23,14 @@ function hasExplicitTime(ts: number): boolean {
   return !(s === 0 && ((h === 0 && m === 0) || (h === 23 && m === 59)));
 }
 
-/** 相对标签：明天/后天/本周x/下周x；超出范围返回空串（仅年月日） */
+/** 相对标签：明天/后天/本周x/下周x（x=一/二/三/四/五/六/日）；超出范围返回空串（仅年月日） */
 export function formatDeadlineRel(deadline: number): string {
   const now = new Date();
   const diffDays = Math.round((startOfDay(deadline) - startOfDay(now.getTime())) / day);
   if (diffDays === 1) return '明天';
   if (diffDays === 2) return '后天';
 
-  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
   const mondayOf = (d: Date): number => {
     const diff = d.getDay() === 0 ? -6 : 1 - d.getDay(); // 距周一
     const m = new Date(d);
@@ -78,7 +78,8 @@ const NUM_CN: Record<string, number> = {
   '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6,
   '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12, '十三': 13, '十四': 14,
   '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20,
-  '二十一': 21, '二十二': 22, '二十三': 23, '二十四': 24,
+  '二十一': 21, '二十二': 22, '二十三': 23, '二十四': 24, '二十五': 25, '二十六': 26,
+  '二十七': 27, '二十八': 28, '二十九': 29, '三十': 30, '三十一': 31,
 };
 
 function addDays(d: Date, n: number): Date {
@@ -101,8 +102,8 @@ function toNumber(token: string): number | null {
 export function parseNaturalDateTime(text: string): number | null {
   const now = new Date();
 
-  // 相对时间：X小时后（如"一小时后"），精确到具体时刻
-  const afterHours = text.match(/(\d{1,2}|[一二两三四五六七八九十]{1,2})\s*个小时?后/);
+  // 相对时间：X小时后 / X小时（如"一小时后"、"1小时后"），精确到具体时刻
+  const afterHours = text.match(/(\d{1,2}|[一二两三四五六七八九十]{1,2})\s*(?:个)?小时(?:以)?后/);
   if (afterHours) {
     const n = toNumber(afterHours[1]);
     if (n !== null && n > 0) {
@@ -117,16 +118,41 @@ export function parseNaturalDateTime(text: string): number | null {
 
   let base: Date | null = null;
 
-  // 日期部分
-  if (/月底/.test(text)) {
+  // ===== 具体日期格式（优先级最高）=====
+  // x年x月x日（如 2026年8月9日，年份为阿拉伯数字，月日支持中文数字）
+  const ymdCN = text.match(/(\d{4})年\s*([0-9一二两三四五六七八九十]{1,2})\s*月\s*([0-9一二两三四五六七八九十]{1,2})\s*日/);
+  // YYYY.M.D 或 YY.M.D（如 2026.8.9 / 26.8.9）
+  const ymdDot = text.match(/(\d{2,4})\.(\d{1,2})\.(\d{1,2})/);
+  // x月x日（如 8月9日 / 八月九日）
+  const mdCN = text.match(/([0-9一二两三四五六七八九十]{1,2})\s*月\s*([0-9一二两三四五六七八九十]{1,2})\s*日/);
+  // M.D（如 8.9；排除被更长数字/点串包含的情况）
+  const mdDot = text.match(/(?:^|[^\d.])(\d{1,2})\.(\d{1,2})(?![\d.])/);
+
+  if (ymdCN) {
+    base = new Date(parseInt(ymdCN[1], 10), (toNumber(ymdCN[2]) ?? 0) - 1, toNumber(ymdCN[3]) ?? 0);
+  } else if (ymdDot) {
+    const y = ymdDot[1].length === 2 ? 2000 + parseInt(ymdDot[1], 10) : parseInt(ymdDot[1], 10);
+    base = new Date(y, (toNumber(ymdDot[2]) ?? 0) - 1, toNumber(ymdDot[3]) ?? 0);
+  } else if (mdCN) {
+    const m = toNumber(mdCN[1]) ?? 0;
+    const d = toNumber(mdCN[2]) ?? 0;
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) base = new Date(now.getFullYear(), m - 1, d);
+  } else if (mdDot) {
+    const m = toNumber(mdDot[1]) ?? 0;
+    const d = toNumber(mdDot[2]) ?? 0;
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) base = new Date(now.getFullYear(), m - 1, d);
+  }
+
+  // ===== 相对日期 =====
+  if (!base && /月底/.test(text)) {
     base = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  } else if (/后天/.test(text)) {
+  } else if (!base && /后天/.test(text)) {
     base = addDays(now, 2);
-  } else if (/明天|明日/.test(text)) {
+  } else if (!base && /明天|明日/.test(text)) {
     base = addDays(now, 1);
-  } else if (/今天|今日|今晚/.test(text)) {
+  } else if (!base && /今天|今日|今晚/.test(text)) {
     base = now;
-  } else {
+  } else if (!base) {
     const wm = text.match(/(?:下个?周|周|星期|礼拜)([一二三四五六日天])/);
     if (wm) {
       let d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + WEEK_CN[wm[1]]);
