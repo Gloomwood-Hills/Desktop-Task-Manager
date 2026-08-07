@@ -49,6 +49,11 @@ export class FolderService {
     return this.folderRepository.updateSortOrder(folderId, newSortOrder);
   }
 
+  /** 手动排序：按给定顺序持久化同级文件夹顺序 */
+  async reorderFolders(orderedIds: string[]): Promise<boolean> {
+    return this.folderRepository.reorderFolders(orderedIds);
+  }
+
   async getFolderWithTasks(folderId: string): Promise<FolderWithTasks | null> {
     const folder = await this.folderRepository.getById(folderId);
     if (!folder) return null;

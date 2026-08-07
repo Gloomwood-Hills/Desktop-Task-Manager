@@ -30,7 +30,7 @@ function App() {
   const {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
     setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask, reorderTasks,
-    createFolder, renameFolder, deleteFolder,
+    reorderFolders, createFolder, renameFolder, deleteFolder,
   } = useTaskData();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -325,6 +325,7 @@ function App() {
             outerNameSort={settings?.sortType === 'name'}
             manualSort={settings?.sortType === 'manual'}
             onReorderTasks={reorderTasks}
+            onReorderFolders={reorderFolders}
             onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
             onToggleTaskExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
             onToggleCompleted={handleToggleCompleted}

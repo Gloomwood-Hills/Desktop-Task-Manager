@@ -28,6 +28,8 @@ export interface UseTaskData {
   restoreTask: (id: string) => Promise<boolean>;
   /** 手动排序：按给定顺序持久化任务顺序 */
   reorderTasks: (orderedIds: string[]) => Promise<boolean>;
+  /** 手动排序：按给定顺序持久化同级文件夹顺序 */
+  reorderFolders: (orderedIds: string[]) => Promise<boolean>;
   createFolder: (name: string, parentId?: string | null) => Promise<Folder | null>;
   renameFolder: (id: string, name: string) => Promise<Folder | null>;
   deleteFolder: (id: string) => Promise<boolean>;
@@ -64,8 +66,9 @@ export function useTaskData(): UseTaskData {
       const cleanTree = fullTree.map(cleanFolderRoot);
       // 按设置排序（仅排序任务列表本身，子任务不参与排序）
       const sortType = settingsRef.current?.sortType ?? 'deadline';
+      const importantTop = settingsRef.current?.importantTop ?? false;
       const sortTaskList = (list: TaskWithSubtasks[]): TaskWithSubtasks[] =>
-        sortTasksByType(list, sortType);
+        sortTasksByType(list, sortType, importantTop);
       const sortFolderNode = (node: FolderNode): FolderNode => ({
         ...node,
         tasks: sortTaskList(node.tasks),
@@ -176,6 +179,13 @@ export function useTaskData(): UseTaskData {
     return ok;
   }, [refresh]);
 
+  const reorderFolders = useCallback(async (orderedIds: string[]): Promise<boolean> => {
+    if (!folderServiceRef.current) return false;
+    const ok = await folderServiceRef.current.reorderFolders(orderedIds);
+    await refresh();
+    return ok;
+  }, [refresh]);
+
   const createFolder = useCallback(async (name: string, parentId: string | null = null): Promise<Folder | null> => {
     if (!folderServiceRef.current) return null;
     const folder = await folderServiceRef.current.createFolder(name, parentId);
@@ -200,6 +210,6 @@ export function useTaskData(): UseTaskData {
   return {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
     refresh, setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask,
-    reorderTasks, createFolder, renameFolder, deleteFolder,
+    reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   };
 }

@@ -44,7 +44,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [transparency, setTransparency] = useState(Math.round((settings?.transparency ?? 0.8) * 100));
   const [deadlineColor, setDeadlineColor] = useState('red');
   const [sortType, setSortType] = useState<SortType>(settings?.sortType ?? 'deadline');
-  const [priorityTop, setPriorityTop] = useState(true);
+  const [priorityTop, setPriorityTop] = useState(settings?.importantTop ?? false);
   const [hideNotStarted, setHideNotStarted] = useState(true);
   const [reminderOffset, setReminderOffset] = useState(settings?.reminderOffset ?? 86400);
   const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
@@ -303,9 +303,9 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
               <div style={rowStyle}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <label style={labelStyle}>重要任务置顶</label>
-                  <p style={descStyle}>高优先级任务始终显示在列表顶部</p>
+                  <p style={descStyle}>标注"重要"的任务始终置顶在前列</p>
                 </div>
-                <div style={switchStyle} onClick={() => setPriorityTop(!priorityTop)}>
+                <div style={switchStyle} onClick={() => { setPriorityTop(!priorityTop); onChange({ importantTop: !priorityTop }); }}>
                   <span style={switchTrack(priorityTop)} />
                   <span style={{ ...switchThumb, transform: priorityTop ? 'translateX(20px)' : 'none' }} />
                 </div>

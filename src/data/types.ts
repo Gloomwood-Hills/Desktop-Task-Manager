@@ -30,7 +30,7 @@ export interface Task {
 
 export type Theme = 'light' | 'dark';
 
-export type SortType = 'deadline' | 'priority' | 'name' | 'createdAt' | 'manual';
+export type SortType = 'deadline' | 'name' | 'createdAt' | 'manual';
 
 export interface Settings {
   id: string;
@@ -38,6 +38,8 @@ export interface Settings {
   glassEffect: boolean;
   transparency: number;
   sortType: SortType;
+  /** 重要任务置顶：标注"重要"的任务始终排在同容器前列 */
+  importantTop: boolean;
   reminderEnabled: boolean;
   reminderOffset: number;
   createdAt: number;

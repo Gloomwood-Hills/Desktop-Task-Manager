@@ -87,4 +87,16 @@ export class FolderRepository {
     );
     return result.rowsAffected > 0;
   }
+
+  /** 手动排序：按给定顺序批量更新 sortOrder（同级文件夹容器内） */
+  async reorderFolders(orderedIds: string[]): Promise<boolean> {
+    const now = Date.now();
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.db.execute(
+        `UPDATE Folder SET sortOrder = ?, updatedAt = ? WHERE id = ?`,
+        [i, now, orderedIds[i]]
+      );
+    }
+    return true;
+  }
 }

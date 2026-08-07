@@ -53,25 +53,37 @@ export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
   return rootTasks;
 }
 
-/** 按设置排序任务列表（默认创建时间倒序；manual 维持 sortOrder 顺序） */
-export function sortTasksByType<T extends Task>(tasks: T[], sortType: SortType): T[] {
+/**
+ * 按设置排序任务列表
+ * - manual 维持 sortOrder 顺序（原序）
+ * - importantTop 为 true 时先按优先级分区（重要在前），再在各分区内按 sortType 排序
+ *   （手动排序下重要/普通各自保持原序，仅整体分区置顶）
+ */
+export function sortTasksByType<T extends Task>(tasks: T[], sortType: SortType, importantTop = false): T[] {
+  const sortCore = (arr: T[]): T[] => {
+    switch (sortType) {
+      case 'name':
+        return arr.sort((a, b) => a.title.localeCompare(b.title, 'zh'));
+      case 'deadline':
+        return arr.sort((a, b) => {
+          if (a.deadline === null && b.deadline === null) return 0;
+          if (a.deadline === null) return 1;
+          if (b.deadline === null) return -1;
+          return a.deadline - b.deadline;
+        });
+      case 'manual':
+        return arr;
+      case 'createdAt':
+      default:
+        return arr.sort((a, b) => b.createdAt - a.createdAt);
+    }
+  };
+
   const list = [...tasks];
-  switch (sortType) {
-    case 'name':
-      return list.sort((a, b) => a.title.localeCompare(b.title, 'zh'));
-    case 'deadline':
-      return list.sort((a, b) => {
-        if (a.deadline === null && b.deadline === null) return 0;
-        if (a.deadline === null) return 1;
-        if (b.deadline === null) return -1;
-        return a.deadline - b.deadline;
-      });
-    case 'manual':
-      return list;
-    case 'createdAt':
-    default:
-      return list.sort((a, b) => b.createdAt - a.createdAt);
-  }
+  if (!importantTop) return sortCore(list);
+  const important = list.filter((t) => t.priority === 'important');
+  const normal = list.filter((t) => t.priority !== 'important');
+  return [...sortCore(important), ...sortCore(normal)];
 }
 
 /** 从扁平 folders + tasks 构建 FolderNode 树 */

@@ -76,12 +76,16 @@ async function initDatabase(db: Database): Promise<void> {
       glassEffect INTEGER NOT NULL DEFAULT 1,
       transparency REAL NOT NULL DEFAULT 0.8,
       sortType TEXT NOT NULL DEFAULT 'deadline',
+      importantTop INTEGER NOT NULL DEFAULT 0,
       reminderEnabled INTEGER NOT NULL DEFAULT 1,
       reminderOffset INTEGER NOT NULL DEFAULT 86400,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     )
   `);
+
+  // 旧库迁移：Settings 新增 importantTop 列（重要任务置顶）
+  await migrateSettingsAddImportantTop(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
@@ -116,9 +120,9 @@ async function insertDefaultData(db: Database): Promise<void> {
   const existingSettings = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM Settings', []);
   if (existingSettings[0].count === 0) {
     await db.execute(
-      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, reminderEnabled, reminderOffset, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 1, 86400, now, now]
+      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, now, now]
     );
   }
 
@@ -179,6 +183,14 @@ async function migrateTaskAddSortOrder(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Task)');
   if (!cols.some((c) => c.name === 'sortOrder')) {
     await db.execute('ALTER TABLE Task ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+/** 旧库迁移：Settings 新增 importantTop 列（重要任务置顶） */
+async function migrateSettingsAddImportantTop(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'importantTop')) {
+    await db.execute('ALTER TABLE Settings ADD COLUMN importantTop INTEGER NOT NULL DEFAULT 0');
   }
 }
 
