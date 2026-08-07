@@ -5,7 +5,7 @@ import { mapBooleanFields } from '../utils';
 type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority'>>;
 
 const TASK_COLUMNS = `
-  id, title, remark, folderId, parentId, startDate, deadline, priority,
+  id, title, remark, folderId, parentId, startDate, deadline, priority, sortOrder,
   completed, completedAt, deleted, createdAt, updatedAt
 `;
 
@@ -21,7 +21,7 @@ export class TaskRepository {
       SELECT ${TASK_COLUMNS}
       FROM Task
       WHERE deleted = 0
-      ORDER BY createdAt DESC
+      ORDER BY sortOrder ASC, createdAt DESC
     `);
     return rows.map(this.mapRow);
   }
@@ -69,10 +69,16 @@ export class TaskRepository {
     }
   }
 
-  async create(task: Omit<Task, 'completed' | 'completedAt' | 'deleted' | 'createdAt' | 'updatedAt'>): Promise<Task> {
+  async create(task: Omit<Task, 'sortOrder' | 'completed' | 'completedAt' | 'deleted' | 'createdAt' | 'updatedAt'>): Promise<Task> {
     const now = Date.now();
+    // 创建时追加到容器末尾（sortOrder = 当前最大 + 1）
+    const sortRows = await this.db.select<{ m: number }[]>(
+      'SELECT COALESCE(MAX(sortOrder), 0) + 1 as m FROM Task'
+    );
+    const sortOrder = sortRows[0]?.m ?? 0;
     const newTask: Task = {
       ...task,
+      sortOrder,
       completed: false,
       completedAt: null,
       deleted: false,
@@ -82,17 +88,29 @@ export class TaskRepository {
 
     await this.db.execute(
       `INSERT INTO Task (id, title, remark, folderId, parentId, startDate, deadline, priority,
-                         completed, completedAt, deleted, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         sortOrder, completed, completedAt, deleted, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newTask.id, newTask.title, newTask.remark, newTask.folderId, newTask.parentId,
-        newTask.startDate, newTask.deadline, newTask.priority,
+        newTask.startDate, newTask.deadline, newTask.priority, newTask.sortOrder,
         newTask.completed ? 1 : 0, newTask.completedAt, newTask.deleted ? 1 : 0,
         newTask.createdAt, newTask.updatedAt,
       ]
     );
 
     return newTask;
+  }
+
+  /** 手动排序：按给定顺序批量更新 sortOrder */
+  async reorderTasks(orderedIds: string[]): Promise<boolean> {
+    const now = Date.now();
+    for (let i = 0; i < orderedIds.length; i++) {
+      await this.db.execute(
+        `UPDATE Task SET sortOrder = ?, updatedAt = ? WHERE id = ? AND deleted = 0`,
+        [i, now, orderedIds[i]]
+      );
+    }
+    return true;
   }
 
   async update(id: string, updates: TaskUpdateFields): Promise<Task | null> {

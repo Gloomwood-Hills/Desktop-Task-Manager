@@ -24,7 +24,6 @@ const TABS: { id: TabId; disabled?: boolean }[] = [
 const SORT_OPTIONS: { label: string; value: SortType }[] = [
   { label: '按创建时间', value: 'createdAt' },
   { label: '按截止时间', value: 'deadline' },
-  { label: '按优先级', value: 'priority' },
   { label: '按名称', value: 'name' },
   { label: '手动排序', value: 'manual' },
 ];

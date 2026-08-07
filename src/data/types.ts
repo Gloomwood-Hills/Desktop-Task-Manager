@@ -19,6 +19,8 @@ export interface Task {
   startDate: number | null;
   deadline: number | null;
   priority: Priority;
+  /** 手动排序序号（同容器内递增；创建时追加到末尾） */
+  sortOrder: number;
   completed: boolean;
   completedAt: number | null;
   deleted: boolean;

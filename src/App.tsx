@@ -29,7 +29,7 @@ type LastAction =
 function App() {
   const {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
-    setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask,
+    setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask, reorderTasks,
     createFolder, renameFolder, deleteFolder,
   } = useTaskData();
 
@@ -322,6 +322,9 @@ function App() {
             expandedFolders={expandedFolders}
             expandedTasks={expandedTasks}
             searchQuery={searchQuery}
+            outerNameSort={settings?.sortType === 'name'}
+            manualSort={settings?.sortType === 'manual'}
+            onReorderTasks={reorderTasks}
             onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
             onToggleTaskExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
             onToggleCompleted={handleToggleCompleted}

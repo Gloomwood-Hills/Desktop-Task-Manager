@@ -53,7 +53,7 @@ export function buildTaskTree(tasks: Task[]): TaskWithSubtasks[] {
   return rootTasks;
 }
 
-/** 按设置排序任务列表（默认创建时间倒序；manual 维持原顺序） */
+/** 按设置排序任务列表（默认创建时间倒序；manual 维持 sortOrder 顺序） */
 export function sortTasksByType<T extends Task>(tasks: T[], sortType: SortType): T[] {
   const list = [...tasks];
   switch (sortType) {
@@ -65,11 +65,6 @@ export function sortTasksByType<T extends Task>(tasks: T[], sortType: SortType):
         if (a.deadline === null) return 1;
         if (b.deadline === null) return -1;
         return a.deadline - b.deadline;
-      });
-    case 'priority':
-      return list.sort((a, b) => {
-        const rank = (t: Task) => (t.priority === 'important' ? 0 : 1);
-        return rank(a) - rank(b);
       });
     case 'manual':
       return list;

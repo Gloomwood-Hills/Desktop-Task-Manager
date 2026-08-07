@@ -66,6 +66,9 @@ async function initDatabase(db: Database): Promise<void> {
   // 旧库迁移：Task.folderId 曾为 NOT NULL，需要重建表使其可空（SQLite 不支持 ALTER COLUMN）
   await migrateTaskFolderNullable(db);
 
+  // 旧库迁移：Task 新增 sortOrder 列（手动排序）
+  await migrateTaskAddSortOrder(db);
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS Settings (
       id TEXT PRIMARY KEY,
@@ -169,6 +172,14 @@ async function migrateTaskFolderNullable(db: Database): Promise<void> {
   await db.execute('CREATE INDEX IF NOT EXISTS idx_task_completed ON Task(completed)');
   await db.execute('CREATE INDEX IF NOT EXISTS idx_task_deleted ON Task(deleted)');
   await db.execute('CREATE INDEX IF NOT EXISTS idx_task_deadline ON Task(deadline)');
+}
+
+/** 旧库迁移：Task 新增 sortOrder 列（手动排序） */
+async function migrateTaskAddSortOrder(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Task)');
+  if (!cols.some((c) => c.name === 'sortOrder')) {
+    await db.execute('ALTER TABLE Task ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0');
+  }
 }
 
 /** 首次运行时插入演示文件夹和任务（与原 mock 数据一致） */

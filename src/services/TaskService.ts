@@ -55,6 +55,11 @@ export class TaskService {
     return this.taskRepository.update(id, updates);
   }
 
+  /** 手动排序：按给定顺序持久化任务顺序 */
+  async reorderTasks(orderedIds: string[]): Promise<boolean> {
+    return this.taskRepository.reorderTasks(orderedIds);
+  }
+
   async deleteTask(id: string): Promise<boolean> {
     return this.taskRepository.softDelete(id);
   }

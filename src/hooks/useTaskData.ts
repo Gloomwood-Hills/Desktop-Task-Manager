@@ -26,6 +26,8 @@ export interface UseTaskData {
   toggleCompleted: (id: string) => Promise<Task | null>;
   deleteTask: (id: string) => Promise<boolean>;
   restoreTask: (id: string) => Promise<boolean>;
+  /** 手动排序：按给定顺序持久化任务顺序 */
+  reorderTasks: (orderedIds: string[]) => Promise<boolean>;
   createFolder: (name: string, parentId?: string | null) => Promise<Folder | null>;
   renameFolder: (id: string, name: string) => Promise<Folder | null>;
   deleteFolder: (id: string) => Promise<boolean>;
@@ -60,11 +62,10 @@ export function useTaskData(): UseTaskData {
       // 子任务保留在父任务下（划线样式），保证父任务进度统计 x/y 正确
       const fullTree = buildFolderTree(folders, tasks);
       const cleanTree = fullTree.map(cleanFolderRoot);
-      // 按设置排序（递归应用到子任务与子文件夹）
+      // 按设置排序（仅排序任务列表本身，子任务不参与排序）
       const sortType = settingsRef.current?.sortType ?? 'deadline';
       const sortTaskList = (list: TaskWithSubtasks[]): TaskWithSubtasks[] =>
-        sortTasksByType(list, sortType)
-          .map((t) => ({ ...t, subtasks: sortTaskList(t.subtasks) }));
+        sortTasksByType(list, sortType);
       const sortFolderNode = (node: FolderNode): FolderNode => ({
         ...node,
         tasks: sortTaskList(node.tasks),
@@ -168,6 +169,13 @@ export function useTaskData(): UseTaskData {
     return ok;
   }, [refresh]);
 
+  const reorderTasks = useCallback(async (orderedIds: string[]): Promise<boolean> => {
+    if (!taskServiceRef.current) return false;
+    const ok = await taskServiceRef.current.reorderTasks(orderedIds);
+    await refresh();
+    return ok;
+  }, [refresh]);
+
   const createFolder = useCallback(async (name: string, parentId: string | null = null): Promise<Folder | null> => {
     if (!folderServiceRef.current) return null;
     const folder = await folderServiceRef.current.createFolder(name, parentId);
@@ -192,6 +200,6 @@ export function useTaskData(): UseTaskData {
   return {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
     refresh, setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask,
-    createFolder, renameFolder, deleteFolder,
+    reorderTasks, createFolder, renameFolder, deleteFolder,
   };
 }
