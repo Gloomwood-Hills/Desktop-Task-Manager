@@ -48,6 +48,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
   const [autoPin, setAutoPin] = useState(settings?.autoPin ?? true);
   const [autoStart, setAutoStart] = useState(settings?.autoStart ?? true);
+  const [deadlineGradient, setDeadlineGradient] = useState(settings?.deadlineGradient ?? true);
 
   const switchStyle: React.CSSProperties = {
     position: 'relative',
@@ -250,6 +251,17 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 <div style={switchStyle} onClick={() => { setAutoStart(!autoStart); onChange({ autoStart: !autoStart }); }}>
                   <span style={switchTrack(autoStart)} />
                   <span style={{ ...switchThumb, transform: autoStart ? 'translateX(20px)' : 'none' }} />
+                </div>
+              </div>
+
+              <div style={rowStyle}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <label style={labelStyle}>截止时间按日期渐变</label>
+                  <p style={descStyle}>开启时随日期临近由白渐变至红色；关闭时直接显示红色</p>
+                </div>
+                <div style={switchStyle} onClick={() => { setDeadlineGradient(!deadlineGradient); onChange({ deadlineGradient: !deadlineGradient }); }}>
+                  <span style={switchTrack(deadlineGradient)} />
+                  <span style={{ ...switchThumb, transform: deadlineGradient ? 'translateX(20px)' : 'none' }} />
                 </div>
               </div>
             </section>

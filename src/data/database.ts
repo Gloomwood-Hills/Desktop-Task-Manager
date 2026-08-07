@@ -81,6 +81,7 @@ async function initDatabase(db: Database): Promise<void> {
       reminderOffset INTEGER NOT NULL DEFAULT 86400,
       autoPin INTEGER NOT NULL DEFAULT 1,
       autoStart INTEGER NOT NULL DEFAULT 1,
+      deadlineGradient INTEGER NOT NULL DEFAULT 1,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     )
@@ -94,6 +95,9 @@ async function initDatabase(db: Database): Promise<void> {
 
   // 旧库迁移：Settings 新增 autoStart 列（开机自启动）
   await migrateSettingsAddAutoStart(db);
+
+  // 旧库迁移：Settings 新增 deadlineGradient 列（截止时间按日期渐变）
+  await migrateSettingsAddDeadlineGradient(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
@@ -128,9 +132,9 @@ async function insertDefaultData(db: Database): Promise<void> {
   const existingSettings = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM Settings', []);
   if (existingSettings[0].count === 0) {
     await db.execute(
-      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, now, now]
+      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, now, now]
     );
   }
 
@@ -215,6 +219,14 @@ async function migrateSettingsAddAutoStart(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
   if (!cols.some((c) => c.name === 'autoStart')) {
     await db.execute('ALTER TABLE Settings ADD COLUMN autoStart INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
+/** 旧库迁移：Settings 新增 deadlineGradient 列（截止时间按日期渐变，默认开启） */
+async function migrateSettingsAddDeadlineGradient(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'deadlineGradient')) {
+    await db.execute('ALTER TABLE Settings ADD COLUMN deadlineGradient INTEGER NOT NULL DEFAULT 1');
   }
 }
 

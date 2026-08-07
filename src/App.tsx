@@ -517,6 +517,7 @@ function App() {
             sortType={settings?.sortType ?? 'deadline'}
             importantTop={settings?.importantTop ?? false}
             manualSort={settings?.sortType === 'manual'}
+            deadlineGradient={settings?.deadlineGradient ?? true}
             onReorderTasks={reorderTasks}
             onReorderFolders={reorderFolders}
             onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}

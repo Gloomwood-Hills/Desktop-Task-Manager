@@ -46,6 +46,8 @@ export interface Settings {
   autoPin: boolean;
   /** 开机自启动：注册到 Windows 登录时启动项（tauri-plugin-autostart） */
   autoStart: boolean;
+  /** 截止时间按日期渐变：开启时纯白→#FF3333 渐变，关闭时直接显示红色 */
+  deadlineGradient: boolean;
   createdAt: number;
   updatedAt: number;
 }

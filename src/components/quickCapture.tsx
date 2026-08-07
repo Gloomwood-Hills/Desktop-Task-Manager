@@ -4,7 +4,7 @@ import {
   Plus, Sparkles,
 } from 'lucide-react';
 import { FolderNode, Priority } from '../data/types';
-import { parseNaturalDateTime, formatDeadline } from './utils/formatDate';
+import { parseNaturalDateTime, formatDeadline, formatDeadlineYMD } from './utils/formatDate';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
@@ -271,7 +271,7 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
           <div style={{ padding: '8px 24px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Sparkles style={{ width: 13, height: 13, color: 'var(--primary)', flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              识别到: {formatDeadline(parsedDeadline)}
+              识别到: {formatDeadlineYMD(parsedDeadline)}
             </span>
           </div>
         )}

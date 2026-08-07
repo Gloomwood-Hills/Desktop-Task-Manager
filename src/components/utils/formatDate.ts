@@ -14,31 +14,47 @@ function pad(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
-/** 是否包含具体时间：00:00（开始仅日期）与 23:59（截止仅日期）视为"仅日期"，不显示具体时刻 */
+/** 是否包含具体时间：00:00:00（开始仅日期）与 23:59:00（截止仅日期）视为"仅日期"；带秒的边界时刻（如"一小时后"恰为 23:59:01）视为具体时刻 */
 function hasExplicitTime(ts: number): boolean {
   const d = new Date(ts);
   const h = d.getHours();
   const m = d.getMinutes();
-  return !(h === 0 && m === 0) && !(h === 23 && m === 59);
+  const s = d.getSeconds();
+  return !(s === 0 && ((h === 0 && m === 0) || (h === 23 && m === 59)));
 }
 
-/** 格式化截止时间徽章文案：仅日期时显示 今天/明天/后天/07-18（不含具体时间）；含时间时显示 今天 15:00 等 */
-export function formatDeadline(deadline: number): string {
-  const now = Date.now();
-  const diffDays = Math.round((startOfDay(deadline) - startOfDay(now)) / day);
+/** 相对标签：明天/后天/本周x/下周x；超出范围返回空串（仅年月日） */
+export function formatDeadlineRel(deadline: number): string {
+  const now = new Date();
+  const diffDays = Math.round((startOfDay(deadline) - startOfDay(now.getTime())) / day);
+  if (diffDays === 1) return '明天';
+  if (diffDays === 2) return '后天';
 
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const mondayOf = (d: Date): number => {
+    const diff = d.getDay() === 0 ? -6 : 1 - d.getDay(); // 距周一
+    const m = new Date(d);
+    m.setDate(m.getDate() + diff);
+    return startOfDay(m.getTime());
+  };
+  const weekDiff = Math.round((mondayOf(new Date(deadline)) - mondayOf(now)) / (7 * day));
+  if (weekDiff === 0) return `本周${weekdays[new Date(deadline).getDay()]}`;
+  if (weekDiff === 1) return `下周${weekdays[new Date(deadline).getDay()]}`;
+  return '';
+}
+
+/** 年月日标签：2026.8.9；含具体时间时附 HH:mm */
+export function formatDeadlineYMD(deadline: number): string {
   const d = new Date(deadline);
-  const time = hasExplicitTime(deadline) ? ` ${pad(d.getHours())}:${pad(d.getMinutes())}` : '';
+  const date = `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return hasExplicitTime(deadline) ? `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}` : date;
+}
 
-  if (diffDays === 0) return `今天${time}`;
-  if (diffDays === 1) return `明天${time}`;
-  if (diffDays === 2) return `后天${time}`;
-  if (diffDays > 2 && diffDays < 7) {
-    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    return `${weekdays[d.getDay()]}${time}`;
-  }
-  if (diffDays >= 7 && diffDays < 14) return `下周一${time}`;
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}${time}`;
+/** 截止时间组合文案：相对标签 + 年月日（如 "明天 2026.8.9" / "2026.8.15"） */
+export function formatDeadline(deadline: number): string {
+  const rel = formatDeadlineRel(deadline);
+  const ymd = formatDeadlineYMD(deadline);
+  return rel ? `${rel} ${ymd}` : ymd;
 }
 
 /** 格式化开始日期徽章：仅日期时 MM-DD；含具体时间时 MM-DD HH:mm */
@@ -90,7 +106,12 @@ export function parseNaturalDateTime(text: string): number | null {
   if (afterHours) {
     const n = toNumber(afterHours[1]);
     if (n !== null && n > 0) {
-      return new Date(now.getTime() + n * 3600 * 1000).getTime();
+      const t = new Date(now.getTime() + n * 3600 * 1000);
+      // 若恰好落在"仅日期"标记（00:00:00 / 23:59:00），+1秒以保留具体时刻语义
+      if (t.getSeconds() === 0 && ((t.getHours() === 23 && t.getMinutes() === 59) || (t.getHours() === 0 && t.getMinutes() === 0))) {
+        t.setSeconds(1);
+      }
+      return t.getTime();
     }
   }
 
