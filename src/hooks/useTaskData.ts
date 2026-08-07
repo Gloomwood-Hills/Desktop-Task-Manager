@@ -24,6 +24,11 @@ export interface UseTaskData {
     deadline?: number | null; priority?: Priority;
   }) => Promise<Task | null>;
   toggleCompleted: (id: string) => Promise<Task | null>;
+  /** 编辑任务：更新标题/备注/开始/截止/优先级等字段 */
+  updateTask: (
+    id: string,
+    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>
+  ) => Promise<Task | null>;
   deleteTask: (id: string) => Promise<boolean>;
   restoreTask: (id: string) => Promise<boolean>;
   /** 手动排序：按给定顺序持久化任务顺序 */
@@ -158,6 +163,16 @@ export function useTaskData(): UseTaskData {
     return task;
   }, [refresh]);
 
+  const updateTask = useCallback(async (
+    id: string,
+    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>
+  ): Promise<Task | null> => {
+    if (!taskServiceRef.current) return null;
+    const task = await taskServiceRef.current.updateTask(id, updates);
+    await refresh();
+    return task;
+  }, [refresh]);
+
   const deleteTask = useCallback(async (id: string): Promise<boolean> => {
     if (!taskServiceRef.current) return false;
     const ok = await taskServiceRef.current.deleteTask(id);
@@ -209,7 +224,7 @@ export function useTaskData(): UseTaskData {
 
   return {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
-    refresh, setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask,
-    reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
+    refresh, setTheme, updateSettings, createTask, toggleCompleted, updateTask,
+    deleteTask, restoreTask, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   };
 }

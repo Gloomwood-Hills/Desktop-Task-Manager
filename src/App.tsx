@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
 import CompletedSection from './components/completedSection';
 import ContextMenu, { ContextMenuState } from './components/contextMenu';
 import QuickCapture from './components/quickCapture';
+import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
@@ -29,8 +31,8 @@ type LastAction =
 function App() {
   const {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, loading, error,
-    setTheme, updateSettings, createTask, toggleCompleted, deleteTask, restoreTask, reorderTasks,
-    reorderFolders, createFolder, renameFolder, deleteFolder,
+    refresh, setTheme, updateSettings, createTask, toggleCompleted, updateTask,
+    deleteTask, restoreTask, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   } = useTaskData();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,6 +48,8 @@ function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
+  /** 编辑中的任务（右键菜单 → 编辑） */
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // 主题切换：挂载/切换 .dark class 到 document
   useEffect(() => {
@@ -141,14 +145,36 @@ function App() {
     setToast(null);
   };
 
-  // Ctrl+Z 快捷键撤销（输入框内不触发，避免干扰文本编辑）
+  /** 全部展开：展开所有文件夹（含嵌套） */
+  const expandAll = () => {
+    const allFolderIds = new Set<string>();
+    const collect = (nodes: FolderNode[]) => {
+      nodes.forEach((n) => {
+        allFolderIds.add(n.id);
+        collect(n.children);
+      });
+    };
+    collect(folderTree);
+    setExpandedFolders(allFolderIds);
+  };
+
+  /** 全部折叠：折叠所有文件夹与任务子列表 */
+  const collapseAll = () => {
+    setExpandedFolders(new Set());
+    setExpandedTasks(new Set());
+  };
+
+  // Ctrl 快捷键撤销/展开/折叠/新建（输入框内不触发）
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.key.toLowerCase() === 'z')) return;
+      if (!e.ctrlKey) return;
+      const key = e.key.toLowerCase();
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-      e.preventDefault();
-      handleUndo();
+      if (key === 'z') { e.preventDefault(); handleUndo(); return; }
+      if (key === 'e') { e.preventDefault(); expandAll(); return; }
+      if (key === 's') { e.preventDefault(); collapseAll(); return; }
+      if (key === 'n') { e.preventDefault(); setCaptureOpen(true); }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -358,28 +384,17 @@ function App() {
       <ContextMenu
         state={contextMenu}
         onClose={() => setContextMenu(null)}
-        onEditTask={(_taskId) => {
-          setToast(`编辑功能开发中`);
+        onEditTask={(taskId) => {
+          const task = findTaskAnywhere(taskId);
+          if (task) setEditingTask(task);
         }}
         onAddSubtask={(taskId) => {
           const task = findTaskAnywhere(taskId);
           setDialog({ type: 'add-subtask', taskId, folderId: task?.folderId ?? null });
         }}
-        onExpandAll={() => {
-          const allFolderIds = new Set<string>();
-          const collect = (nodes: FolderNode[]) => {
-            nodes.forEach((n) => {
-              allFolderIds.add(n.id);
-              collect(n.children);
-            });
-          };
-          collect(folderTree);
-          setExpandedFolders(allFolderIds);
-        }}
-        onCollapseAll={() => {
-          setExpandedFolders(new Set());
-          setExpandedTasks(new Set());
-        }}
+        onToggleComplete={handleToggleCompleted}
+        onExpandAll={expandAll}
+        onCollapseAll={collapseAll}
         onDeleteTask={handleDeleteTask}
         onCreateFolder={(parentId) => {
           setDialog({ type: 'create-folder', parentId });
@@ -392,6 +407,10 @@ function App() {
           const folder = allFolders.find((f) => f.id === folderId);
           setDialog({ type: 'delete-folder', folderId, name: folder?.name || '' });
         }}
+        onNewTask={() => setCaptureOpen(true)}
+        onRefresh={() => refresh()}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onExit={() => { void invoke('exit_app'); }}
       />
 
       {/* Quick Capture */}
@@ -400,6 +419,15 @@ function App() {
           folders={folderTree}
           onClose={() => setCaptureOpen(false)}
           onCreate={handleCreateTask}
+        />
+      )}
+
+      {/* 编辑任务弹窗 */}
+      {editingTask && (
+        <EditTaskDialog
+          task={editingTask}
+          onSave={async (updates) => { await updateTask(editingTask.id, updates); }}
+          onClose={() => setEditingTask(null)}
         />
       )}
 

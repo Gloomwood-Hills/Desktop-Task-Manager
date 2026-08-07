@@ -1,4 +1,7 @@
-import { Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus } from 'lucide-react';
+import {
+  Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus,
+  Plus, RefreshCw, Settings, Power, CheckCircle2,
+} from 'lucide-react';
 
 export interface ContextMenuState {
   x: number;
@@ -14,18 +17,34 @@ interface ContextMenuProps {
   onClose: () => void;
   onEditTask: (taskId: string) => void;
   onAddSubtask: (taskId: string) => void;
+  onToggleComplete: (taskId: string) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
   onDeleteTask: (taskId: string) => void;
   onCreateFolder: (parentId: string | null) => void;
   onRenameFolder: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
+  onNewTask: () => void;
+  onRefresh: () => void;
+  onOpenSettings: () => void;
+  onExit: () => void;
 }
 
-/** 右键菜单（对齐设计稿 context-menu） */
+interface MenuItem {
+  key: string;
+  icon: React.ReactNode;
+  label: string;
+  hint: string;
+  visible: boolean;
+  action: () => void;
+  destructive?: boolean;
+}
+
+/** 右键菜单（对齐设计稿 context-menu，Task 12） */
 export default function ContextMenu({
-  state, onClose, onEditTask, onAddSubtask, onExpandAll, onCollapseAll, onDeleteTask,
-  onCreateFolder, onRenameFolder, onDeleteFolder,
+  state, onClose, onEditTask, onAddSubtask, onToggleComplete, onExpandAll, onCollapseAll,
+  onDeleteTask, onCreateFolder, onRenameFolder, onDeleteFolder, onNewTask, onRefresh,
+  onOpenSettings, onExit,
 }: ContextMenuProps) {
   if (!state) return null;
 
@@ -45,8 +64,8 @@ export default function ContextMenu({
   const isTaskContext = state.taskId !== null;
   const isFolderContext = state.folderId !== null && state.folderId !== undefined;
 
-  // 任务菜单项
-  const taskItems = [
+  // 任务菜单项（右键任务）
+  const taskItems: MenuItem[] = [
     {
       key: 'edit',
       icon: <Pencil style={iconStyle} />,
@@ -63,30 +82,26 @@ export default function ContextMenu({
       visible: isTaskContext,
       action: () => state.taskId && onAddSubtask(state.taskId),
     },
-  ];
-
-  // 通用菜单项（始终显示）
-  const commonItems = [
     {
-      key: 'expand',
-      icon: <ChevronsDown style={iconStyle} />,
-      label: '全部展开',
-      hint: 'Ctrl+E',
-      visible: true,
-      action: onExpandAll,
-    },
-    {
-      key: 'collapse',
-      icon: <ChevronsUp style={iconStyle} />,
-      label: '全部折叠',
-      hint: 'Ctrl+S',
-      visible: true,
-      action: onCollapseAll,
+      key: 'complete',
+      icon: <CheckCircle2 style={iconStyle} />,
+      label: '完成',
+      hint: 'Space',
+      visible: isTaskContext,
+      action: () => state.taskId && onToggleComplete(state.taskId),
     },
   ];
 
-  // 文件夹操作项
-  const folderItems = [
+  // 空白区菜单项（新建任务 / 文件夹）
+  const blankItems: MenuItem[] = [
+    {
+      key: 'new-task',
+      icon: <Plus style={iconStyle} />,
+      label: '新建任务',
+      hint: 'Ctrl+N',
+      visible: !isTaskContext,
+      action: onNewTask,
+    },
     {
       key: 'create-folder',
       icon: <FolderPlus style={iconStyle} />,
@@ -95,6 +110,10 @@ export default function ContextMenu({
       visible: !isTaskContext,
       action: () => onCreateFolder(state.folderId || null),
     },
+  ];
+
+  // 文件夹操作项
+  const folderItems: MenuItem[] = [
     {
       key: 'rename-folder',
       icon: <Edit3 style={iconStyle} />,
@@ -114,12 +133,55 @@ export default function ContextMenu({
     },
   ];
 
-  const visibleTaskItems = taskItems.filter((i) => i.visible);
-  const visibleCommonItems = commonItems.filter((i) => i.visible);
-  const visibleFolderItems = folderItems.filter((i) => i.visible);
-  const showDelete = isTaskContext;
+  // 通用菜单项（空白区显示）
+  const commonItems: MenuItem[] = [
+    {
+      key: 'expand',
+      icon: <ChevronsDown style={iconStyle} />,
+      label: '全部展开',
+      hint: 'Ctrl+E',
+      visible: !isTaskContext,
+      action: onExpandAll,
+    },
+    {
+      key: 'collapse',
+      icon: <ChevronsUp style={iconStyle} />,
+      label: '全部折叠',
+      hint: 'Ctrl+S',
+      visible: !isTaskContext,
+      action: onCollapseAll,
+    },
+    {
+      key: 'refresh',
+      icon: <RefreshCw style={iconStyle} />,
+      label: '刷新',
+      hint: '',
+      visible: !isTaskContext,
+      action: onRefresh,
+    },
+    {
+      key: 'settings',
+      icon: <Settings style={iconStyle} />,
+      label: '设置',
+      hint: '',
+      visible: !isTaskContext,
+      action: onOpenSettings,
+    },
+    {
+      key: 'exit',
+      icon: <Power style={iconStyle} />,
+      label: '退出',
+      hint: '',
+      visible: !isTaskContext,
+      action: onExit,
+    },
+  ];
 
-  const renderItem = (item: { key: string; icon: React.ReactNode; label: string; hint: string; action: () => void; destructive?: boolean }) => (
+  const groups: MenuItem[][] = [taskItems, blankItems, folderItems, commonItems]
+    .map((g) => g.filter((i) => i.visible))
+    .filter((g) => g.length > 0);
+
+  const renderItem = (item: MenuItem) => (
     <div
       key={item.key}
       className="ctx-menu-item"
@@ -172,21 +234,15 @@ export default function ContextMenu({
           WebkitBackdropFilter: 'blur(20px)',
         }}
       >
-        {visibleTaskItems.map(renderItem)}
+        {groups.map((group, gi) => (
+          <div key={gi}>
+            {gi > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '4px 12px' }} />}
+            {group.map(renderItem)}
+          </div>
+        ))}
 
-        {visibleTaskItems.length > 0 && (visibleCommonItems.length > 0 || visibleFolderItems.length > 0) && (
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 12px' }} />
-        )}
-
-        {visibleFolderItems.map(renderItem)}
-
-        {visibleFolderItems.length > 0 && visibleCommonItems.length > 0 && (
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 12px' }} />
-        )}
-
-        {visibleCommonItems.map(renderItem)}
-
-        {showDelete && (
+        {/* 任务删除项（置于菜单最底部，红色） */}
+        {isTaskContext && (
           <>
             <div style={{ height: 1, background: 'var(--border)', margin: '4px 12px' }} />
             <div
