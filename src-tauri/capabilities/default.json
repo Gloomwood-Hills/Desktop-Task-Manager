@@ -18,6 +18,7 @@
     "sql:allow-execute",
     "sql:allow-select",
     "sql:allow-close",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    "notification:default"
   ]
 }

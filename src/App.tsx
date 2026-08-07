@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
 import CompletedSection from './components/completedSection';
@@ -12,6 +13,7 @@ import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
 import { FolderNode, Priority, Task, TaskWithSubtasks } from './data/types';
+import { formatDeadline } from './components/utils/formatDate';
 
 /** 对话框状态机 */
 type DialogState =
@@ -50,6 +52,14 @@ function App() {
   const [dialog, setDialog] = useState<DialogState>(null);
   /** 编辑中的任务（右键菜单 → 编辑） */
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  // 提醒定时器读取最新值（避免 effect 闭包陈旧）
+  const settingsLatest = useRef(settings);
+  settingsLatest.current = settings;
+  const folderTreeLatest = useRef(folderTree);
+  folderTreeLatest.current = folderTree;
+  const unclassifiedLatest = useRef(unclassifiedTasks);
+  unclassifiedLatest.current = unclassifiedTasks;
 
   // 主题切换：挂载/切换 .dark class 到 document
   useEffect(() => {
@@ -186,6 +196,60 @@ function App() {
     listen('quick-capture-toggle', () => setCaptureOpen(true)).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);
+
+  // ===== 任务提醒（Task 13）：到达提前提醒窗口触发 Windows 通知 + 可选自动置顶 =====
+
+  /** 收集所有活动任务（含任意层级子任务） */
+  const collectAllTasks = (): TaskWithSubtasks[] => {
+    const out: TaskWithSubtasks[] = [];
+    const walk = (list: TaskWithSubtasks[]) => {
+      for (const t of list) {
+        out.push(t);
+        walk(t.subtasks);
+      }
+    };
+    folderTreeLatest.current.forEach((n) => walk(n.tasks));
+    walk(unclassifiedLatest.current);
+    return out;
+  };
+
+  useEffect(() => {
+    let notified = new Set<string>();
+    let permChecked = false;
+    const ensurePermission = async () => {
+      if (permChecked) return;
+      permChecked = true;
+      try {
+        if (!(await isPermissionGranted())) await requestPermission();
+      } catch { /* 权限不可用时静默降级 */ }
+    };
+    ensurePermission();
+
+    const checkReminders = async () => {
+      const s = settingsLatest.current;
+      if (!s || !s.reminderEnabled) return;
+      const offset = s.reminderOffset ?? 86400;
+      if (offset <= 0) return;
+      const now = Date.now();
+      for (const t of collectAllTasks()) {
+        if (t.completed || t.deadline === null || notified.has(t.id)) continue;
+        const lead = t.deadline - now;
+        if (lead <= 0 || lead > offset) continue; // 仅在提前提醒窗口内
+        notified.add(t.id);
+        const body = `「${t.title}」将于 ${formatDeadline(t.deadline)} 截止`;
+        sendNotification({ title: '任务提醒', body });
+        setToast(body);
+        // 提醒后自动置顶：标记"重要"使其排到列表前列
+        if (s.autoPin && t.priority !== 'important') {
+          await updateTask(t.id, { priority: 'important' });
+        }
+      }
+    };
+
+    checkReminders();
+    const timer = setInterval(checkReminders, 30_000);
+    return () => clearInterval(timer);
+  }, [updateTask]);
 
   const handleCreateTask = async (
     title: string,
@@ -518,24 +582,24 @@ function App() {
           whiteSpace: 'nowrap',
         }}>
           <span>{toast}</span>
-          <button
-            onClick={handleUndo}
-            disabled={!lastAction}
-            style={{
-              color: 'var(--brand-400)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              border: 'none',
-              background: 'transparent',
-              fontSize: 13,
-              fontFamily: 'var(--font-sans)',
-              padding: 0,
-              whiteSpace: 'nowrap',
-              opacity: lastAction ? 1 : 0.4,
-            }}
-          >
-            撤销
-          </button>
+          {lastAction && (
+            <button
+              onClick={handleUndo}
+              style={{
+                color: 'var(--brand-400)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                fontSize: 13,
+                fontFamily: 'var(--font-sans)',
+                padding: 0,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              撤销
+            </button>
+          )}
         </div>
       )}
     </div>

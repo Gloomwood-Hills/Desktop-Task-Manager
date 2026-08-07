@@ -11,7 +11,7 @@ export class SettingsRepository {
 
   async get(): Promise<Settings | null> {
     const rows = await this.db.select<Settings[]>(
-      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, createdAt, updatedAt
+      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, createdAt, updatedAt
        FROM Settings WHERE id = ?`,
       ['default']
     );
@@ -31,7 +31,7 @@ export class SettingsRepository {
 
     await this.db.execute(
       `UPDATE Settings
-       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, updatedAt = ?
+       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, autoPin = ?, updatedAt = ?
        WHERE id = ?`,
       [
         updatedSettings.theme,
@@ -41,6 +41,7 @@ export class SettingsRepository {
         updatedSettings.importantTop ? 1 : 0,
         updatedSettings.reminderEnabled ? 1 : 0,
         updatedSettings.reminderOffset,
+        updatedSettings.autoPin ? 1 : 0,
         updatedSettings.updatedAt,
         updatedSettings.id,
       ]
@@ -79,6 +80,6 @@ export class SettingsRepository {
 
   private mapRow(row: unknown): Settings {
     const r = row as Record<string, unknown>;
-    return mapBooleanFields(r, ['glassEffect', 'importantTop', 'reminderEnabled'] as (keyof Settings)[]) as unknown as Settings;
+    return mapBooleanFields(r, ['glassEffect', 'importantTop', 'reminderEnabled', 'autoPin'] as (keyof Settings)[]) as unknown as Settings;
   }
 }

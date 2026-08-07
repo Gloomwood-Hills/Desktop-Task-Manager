@@ -48,7 +48,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [hideNotStarted, setHideNotStarted] = useState(true);
   const [reminderOffset, setReminderOffset] = useState(settings?.reminderOffset ?? 86400);
   const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
-  const [autoPin, setAutoPin] = useState(true);
+  const [autoPin, setAutoPin] = useState(settings?.autoPin ?? true);
 
   const switchStyle: React.CSSProperties = {
     position: 'relative',
@@ -364,7 +364,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <label style={labelStyle}>提醒后自动置顶</label>
                   <p style={descStyle}>任务到达提醒时间后自动置顶显示</p>
                 </div>
-                <div style={switchStyle} onClick={() => setAutoPin(!autoPin)}>
+                <div style={switchStyle} onClick={() => { setAutoPin(!autoPin); onChange({ autoPin: !autoPin }); }}>
                   <span style={switchTrack(autoPin)} />
                   <span style={{ ...switchThumb, transform: autoPin ? 'translateX(20px)' : 'none' }} />
                 </div>
