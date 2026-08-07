@@ -116,16 +116,16 @@ export function useTaskData(): UseTaskData {
         settingsServiceRef.current = new SettingsService(db);
         windowStateServiceRef.current = new WindowStateService(db);
 
-        // 加载设置
-        const settings = await settingsServiceRef.current.getSettings();
+        // 并行加载设置与窗口状态（缩短启动串行等待）
+        const [settings, windowState] = await Promise.all([
+          settingsServiceRef.current.getSettings(),
+          windowStateServiceRef.current.getWindowState(),
+        ]);
         if (settings && !cancelled) {
           settingsRef.current = settings;
           setSettings(settings);
           setThemeState(settings.theme);
         }
-
-        // 加载窗口状态（位置/大小/折叠文件夹）
-        const windowState = await windowStateServiceRef.current.getWindowState();
         if (windowState && !cancelled) setWindowState(windowState);
 
         await refresh();
