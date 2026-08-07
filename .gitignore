@@ -6,3 +6,14 @@ src-tauri/target/
 *.log
 .vscode/
 .idea/
+
+# 开发/内部文件（不随 V1 发布上传）
+.trae/
+.design-taskmanager-ui/
+PRD.txt
+dev.ps1
+性能测试.ps1
+启动.bat
+强退.bat
+src/agents/
+**/CLAUDE.md
