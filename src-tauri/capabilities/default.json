@@ -21,6 +21,7 @@
     "sql:allow-select",
     "sql:allow-close",
     "global-shortcut:default",
-    "notification:default"
+    "notification:default",
+    "autostart:default"
   ]
 }

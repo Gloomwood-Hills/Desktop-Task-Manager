@@ -44,6 +44,8 @@ export interface Settings {
   reminderOffset: number;
   /** 提醒后自动置顶：任务到达提醒时间后自动标记"重要"置顶显示 */
   autoPin: boolean;
+  /** 开机自启动：注册到 Windows 登录时启动项（tauri-plugin-autostart） */
+  autoStart: boolean;
   createdAt: number;
   updatedAt: number;
 }

@@ -49,6 +49,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [reminderOffset, setReminderOffset] = useState(settings?.reminderOffset ?? 86400);
   const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
   const [autoPin, setAutoPin] = useState(settings?.autoPin ?? true);
+  const [autoStart, setAutoStart] = useState(settings?.autoStart ?? true);
 
   const switchStyle: React.CSSProperties = {
     position: 'relative',
@@ -319,6 +320,17 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 <div style={switchStyle} onClick={() => setHideNotStarted(!hideNotStarted)}>
                   <span style={switchTrack(hideNotStarted)} />
                   <span style={{ ...switchThumb, transform: hideNotStarted ? 'translateX(20px)' : 'none' }} />
+                </div>
+              </div>
+
+              <div style={rowStyle}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <label style={labelStyle}>开机自启动</label>
+                  <p style={descStyle}>登录 Windows 后自动在桌面层显示</p>
+                </div>
+                <div style={switchStyle} onClick={() => { setAutoStart(!autoStart); onChange({ autoStart: !autoStart }); }}>
+                  <span style={switchTrack(autoStart)} />
+                  <span style={{ ...switchThumb, transform: autoStart ? 'translateX(20px)' : 'none' }} />
                 </div>
               </div>
             </section>

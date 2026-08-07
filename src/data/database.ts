@@ -80,6 +80,7 @@ async function initDatabase(db: Database): Promise<void> {
       reminderEnabled INTEGER NOT NULL DEFAULT 1,
       reminderOffset INTEGER NOT NULL DEFAULT 86400,
       autoPin INTEGER NOT NULL DEFAULT 1,
+      autoStart INTEGER NOT NULL DEFAULT 1,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     )
@@ -90,6 +91,9 @@ async function initDatabase(db: Database): Promise<void> {
 
   // 旧库迁移：Settings 新增 autoPin 列（提醒后自动置顶）
   await migrateSettingsAddAutoPin(db);
+
+  // 旧库迁移：Settings 新增 autoStart 列（开机自启动）
+  await migrateSettingsAddAutoStart(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
@@ -124,9 +128,9 @@ async function insertDefaultData(db: Database): Promise<void> {
   const existingSettings = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM Settings', []);
   if (existingSettings[0].count === 0) {
     await db.execute(
-      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, now, now]
+      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, now, now]
     );
   }
 
@@ -203,6 +207,14 @@ async function migrateSettingsAddAutoPin(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
   if (!cols.some((c) => c.name === 'autoPin')) {
     await db.execute('ALTER TABLE Settings ADD COLUMN autoPin INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
+/** 旧库迁移：Settings 新增 autoStart 列（开机自启动，默认开启） */
+async function migrateSettingsAddAutoStart(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'autoStart')) {
+    await db.execute('ALTER TABLE Settings ADD COLUMN autoStart INTEGER NOT NULL DEFAULT 1');
   }
 }
 

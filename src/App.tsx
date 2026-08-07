@@ -3,6 +3,7 @@ import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/ap
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
+import { enable as autostartEnable, disable as autostartDisable } from '@tauri-apps/plugin-autostart';
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
 import CompletedSection from './components/completedSection';
@@ -277,6 +278,13 @@ function App() {
       saveWindowState({ collapsedFolders: collapsed });
     }, 300);
   }, [expandedFolders, folderTree, saveWindowState]);
+
+  // ===== 开机自启动：settings.autoStart 变化时同步注册/取消系统启动项 =====
+  useEffect(() => {
+    if (!settings) return;
+    if (settings.autoStart) autostartEnable().catch(() => {});
+    else autostartDisable().catch(() => {});
+  }, [settings]);
 
   // ===== 任务提醒（Task 13）：到达提前提醒窗口触发 Windows 通知 + 可选自动置顶 =====
 
