@@ -12,7 +12,7 @@ interface QuickCaptureProps {
   onCreate: (
     title: string,
     folderId: string | null,
-    options: { priority?: Priority; startDate?: number | null; deadline?: number | null }
+    options: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string }
   ) => void;
 }
 
@@ -29,6 +29,7 @@ function toLocalInputValue(ts: number): string {
 /** 新建任务弹窗（Quick Capture，对齐设计稿 quick-capture） */
 export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptureProps) {
   const [title, setTitle] = useState('');
+  const [remark, setRemark] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
@@ -68,6 +69,7 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
       priority: important ? 'important' : 'normal',
       startDate: manualStart,
       deadline: effectiveDeadline,
+      remark: remark.trim(),
     });
   };
 
@@ -243,6 +245,22 @@ export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptur
               }}
             />
           </div>
+        </div>
+
+        {/* 备注输入 */}
+        <div style={{ padding: '10px 24px 0' }}>
+          <textarea
+            value={remark}
+            onChange={(e) => setRemark(e.target.value)}
+            placeholder="备注（可选）"
+            rows={2}
+            style={{
+              width: '100%', padding: '10px 12px', boxSizing: 'border-box', resize: 'none',
+              border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
+              background: 'var(--background)', color: 'inherit',
+              fontSize: 13, outline: 'none', fontFamily: 'var(--font-sans)', lineHeight: 1.5,
+            }}
+          />
         </div>
 
         {/* 解析日期预览 */}
