@@ -1,4 +1,5 @@
 import { Search, Settings, Plus, Pin, PinOff } from 'lucide-react';
+import { isMobile } from '../data/platform';
 
 interface TopBarProps {
   searchQuery: string;
@@ -9,16 +10,19 @@ interface TopBarProps {
   onTogglePin: () => void;
 }
 
-/** 顶栏：搜索框 + 设置按钮 + 新建按钮（对齐设计稿 main-view-v2） */
+/** 顶栏：搜索框 + 设置按钮 + 新建按钮（对齐设计稿 main-view-v2）。
+ * 移动端（Android）为全屏应用，无窗口可拖动，放大触控目标至 44px。 */
 export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, onNewTask, pinned, onTogglePin }: TopBarProps) {
+  // 触控目标尺寸：桌面 34px，移动端 ≥44px（Apple HIG / Material 触控标准）
+  const controlSize = isMobile ? 44 : 34;
   return (
     <header
-      {...(pinned ? {} : { 'data-tauri-drag-region': true })}
+      {...(!isMobile && !pinned ? { 'data-tauri-drag-region': true } : {})}
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '14px 20px 10px',
+        padding: isMobile ? '10px 12px 8px' : '14px 20px 10px',
         flexShrink: 0,
         userSelect: 'none',
       }}
@@ -31,7 +35,7 @@ export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, on
         flex: 1,
         minWidth: 0,
         maxWidth: 480,
-        height: 34,
+        height: controlSize,
         padding: '0 12px',
         border: `0.5px solid var(--border)`,
         borderRadius: 'calc(var(--radius) * 0.7)',
@@ -68,8 +72,8 @@ export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, on
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 34,
-            height: 34,
+            width: controlSize,
+            height: controlSize,
             borderRadius: 'calc(var(--radius) * 0.7)',
             cursor: 'pointer',
             transition: 'background-color 0.18s ease, color 0.18s ease',
@@ -87,8 +91,8 @@ export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, on
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 34,
-            height: 34,
+            width: controlSize,
+            height: controlSize,
             borderRadius: 'calc(var(--radius) * 0.7)',
             cursor: 'pointer',
             transition: 'background-color 0.18s ease, color 0.18s ease',
@@ -106,8 +110,8 @@ export default function TopBar({ searchQuery, onSearchChange, onOpenSettings, on
             alignItems: 'center',
             justifyContent: 'center',
             gap: 5,
-            height: 34,
-            padding: '0 16px',
+            height: controlSize,
+            padding: isMobile ? '0 18px' : '0 16px',
             border: 'none',
             borderRadius: 999,
             background: 'var(--primary)',

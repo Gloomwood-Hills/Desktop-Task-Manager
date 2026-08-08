@@ -1,9 +1,17 @@
+use tauri::{Emitter, Manager};
+
+// 桌面专属能力（系统托盘 / 全局快捷键 / 开机自启动）在 Android 上无意义：
+// 其插件 crate 自身带 `#![cfg(not(any(target_os = "android", target_os = "ios")))]`，
+// 在 Android 上根本不编译，故 import 也按平台条件化，避免 Android 构建引用不存在的 crate。
+#[cfg(not(target_os = "android"))]
 use tauri::{
-    Emitter, Manager,
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     menu::{MenuBuilder, MenuItemBuilder},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
+#[cfg(not(target_os = "android"))]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+mod webdav;
 
 /** 前端"设置 → 退出"调用：退出应用 */
 #[tauri::command]
@@ -87,86 +95,105 @@ mod worker_w {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![exit_app])
+    // 基础插件（数据 / 通知）在所有平台保留；桌面专属插件（自启动 / 全局快捷键）
+    // 按平台条件注册，Android 构建不引用对应 crate。
+    let mut builder = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            exit_app,
+            webdav::webdav_fetch,
+            webdav::webdav_put
+        ])
         .plugin(tauri_plugin_sql::Builder::default().build())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::Builder::new().build())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    // Ctrl+Shift+Space：显示窗口并通知前端打开快速创建
-                    if event.state == ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            let _ = window.emit("quick-capture-toggle", ());
+        .plugin(tauri_plugin_notification::init());
+
+    #[cfg(not(target_os = "android"))]
+    {
+        builder = builder
+            .plugin(tauri_plugin_autostart::Builder::new().build())
+            .plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(|app, _shortcut, event| {
+                        // Ctrl+Shift+Space：显示窗口并通知前端打开快速创建
+                        if event.state == ShortcutState::Pressed {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                let _ = window.emit("quick-capture-toggle", ());
+                            }
                         }
-                    }
-                })
-                .build(),
-        )
+                    })
+                    .build(),
+            );
+    }
+
+    builder
         .setup(|app| {
-            // 注册全局快捷键：Ctrl+Shift+Space
-            let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
-            let _ = app.global_shortcut().register(shortcut);
-            // 确保数据库目录存在（sqlx 不会自动创建父目录，否则 Database.load 失败）
+            // 确保数据库目录存在（sqlx 不会自动创建父目录，否则 Database.load 失败）。
+            // Android 上同样需要：app_data_dir() 在移动端可用，保留。
             if let Ok(data_dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(data_dir.join("desktop-task-manager"));
             }
 
-            // System tray
-            let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
-            let hide_item = MenuItemBuilder::with_id("hide", "Hide").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-            let menu = MenuBuilder::new(app)
-                .item(&show_item)
-                .item(&hide_item)
-                .item(&quit_item)
-                .build()?;
+            // 桌面专属能力：系统托盘 + 全局快捷键注册（Android 无托盘/全局快捷键概念）
+            #[cfg(not(target_os = "android"))]
+            {
+                // 注册全局快捷键：Ctrl+Shift+Space
+                let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
+                let _ = app.global_shortcut().register(shortcut);
 
-            let quit_handle = app.handle().clone();
-            let show_handle = app.handle().clone();
-            let hide_handle = app.handle().clone();
+                // System tray
+                let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
+                let hide_item = MenuItemBuilder::with_id("hide", "Hide").build(app)?;
+                let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+                let menu = MenuBuilder::new(app)
+                    .item(&show_item)
+                    .item(&hide_item)
+                    .item(&quit_item)
+                    .build()?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .tooltip("Desktop Task Manager")
-                .on_menu_event(move |_, event| {
-                    match event.id().as_ref() {
-                        "show" => {
-                            if let Some(window) = show_handle.get_webview_window("main") {
+                let quit_handle = app.handle().clone();
+                let show_handle = app.handle().clone();
+                let hide_handle = app.handle().clone();
+
+                let _tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .menu(&menu)
+                    .tooltip("Desktop Task Manager")
+                    .on_menu_event(move |_, event| {
+                        match event.id().as_ref() {
+                            "show" => {
+                                if let Some(window) = show_handle.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                            "hide" => {
+                                if let Some(window) = hide_handle.get_webview_window("main") {
+                                    let _ = window.hide();
+                                }
+                            }
+                            "quit" => {
+                                quit_handle.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
                         }
-                        "hide" => {
-                            if let Some(window) = hide_handle.get_webview_window("main") {
-                                let _ = window.hide();
-                            }
-                        }
-                        "quit" => {
-                            quit_handle.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
+                    })
+                    .build(app)?;
+            }
 
             // Spawn WorkerW attach after a delay
             #[cfg(windows)]
@@ -189,6 +216,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // 桌面专属：关闭请求 → 隐藏到系统托盘（Android 上应用销毁由系统管理，
+            // 阻止关闭会导致 Activity 无法正常退出，故仅在桌面启用）
+            #[cfg(not(target_os = "android"))]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();

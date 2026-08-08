@@ -7,14 +7,86 @@ import { enable as autostartEnable, disable as autostartDisable } from '@tauri-a
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
 import CompletedSection from './components/completedSection';
+import CalendarView from './components/calendarView';
+import DayView from './components/dayView';
 import ContextMenu, { ContextMenuState } from './components/contextMenu';
 import QuickCapture from './components/quickCapture';
 import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
-import { FolderNode, Priority, Task, TaskWithSubtasks, WindowState } from './data/types';
+import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState } from './data/types';
+import { isMobile } from './data/platform';
 import { formatDeadline } from './components/utils/formatDate';
+
+/** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为底部固定导航条
+ * （触控高度 ≥ 44px）。isMobile 为模块级常量，两套样式互不影响，桌面视觉零回归。 */
+function ViewTabs({ mode, onChange, mobile }: {
+  mode: ViewMode;
+  onChange: (m: ViewMode) => void;
+  mobile: boolean;
+}) {
+  return (
+    <div style={mobile ? {
+      display: 'flex',
+      flexShrink: 0,
+      borderTop: '0.5px solid var(--border)',
+      background: 'color-mix(in srgb, var(--background) 85%, transparent)',
+      WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+      backdropFilter: 'saturate(180%) blur(40px)',
+      // 避开 Android 全面屏手势区（底部安全区）
+      paddingBottom: 'env(safe-area-inset-bottom)',
+      zIndex: 5,
+    } : {
+      display: 'flex', gap: 2, padding: '8px 20px 0', flexShrink: 0,
+    }}>
+      {(['list', 'calendar', 'day'] as ViewMode[]).map((m) => {
+        const active = mode === m;
+        const label = m === 'list' ? '列表' : m === 'calendar' ? '日历' : '日';
+        return (
+          <button
+            key={m}
+            onClick={() => onChange(m)}
+            aria-pressed={active}
+            style={mobile ? {
+              flex: 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: 48,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 13,
+              fontWeight: active ? 700 : 500,
+              color: active ? 'var(--brand-400)' : 'var(--muted-foreground)',
+              boxShadow: active ? 'inset 0 -2px 0 var(--primary)' : 'none',
+              transition: 'color 0.15s ease',
+            } : {
+              display: 'inline-flex',
+              alignItems: 'center',
+              height: 26,
+              padding: '0 12px',
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: active ? 'var(--brand-400)' : 'var(--muted-foreground)',
+              background: active ? 'color-mix(in srgb, var(--brand-400) 12%, transparent)' : 'transparent',
+              transition: 'color 0.15s ease, background-color 0.15s ease',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** 对话框状态机 */
 type DialogState =
@@ -45,12 +117,37 @@ function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  /** 新建弹窗预填日期（日视图"新建任务"触发时记录；弹窗关闭/创建后清空） */
+  const [prefillDate, setPrefillDate] = useState<number | null>(null);
   const [lastAction, setLastAction] = useState<LastAction>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   /** 编辑中的任务（右键菜单 → 编辑） */
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  // ===== 视图切换（V2：列表 / 日历 / 日） =====
+  /** 当前视图模式：从持久化 Settings 初始化，切换后回写 */
+  const [viewMode, setViewMode] = useState<ViewMode>(settings?.viewMode ?? 'list');
+  /** 日视图当前查看日（当天 00:00 时间戳） */
+  const [calendarDate, setCalendarDate] = useState<number>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  });
+
+  /** 切换视图并持久化到 Settings.viewMode */
+  const changeViewMode = (m: ViewMode) => {
+    setViewMode(m);
+    void updateSettings({ viewMode: m });
+  };
+
+  // settings 异步加载完成或外部变更时，同步本地视图状态（ref 读取最新值避免闭包陈旧）
+  const viewModeLatest = useRef(viewMode);
+  viewModeLatest.current = viewMode;
+  useEffect(() => {
+    if (settings && settings.viewMode !== viewModeLatest.current) setViewMode(settings.viewMode);
+  }, [settings]);
 
   // 提醒定时器读取最新值（避免 effect 闭包陈旧）
   const settingsLatest = useRef(settings);
@@ -75,8 +172,9 @@ function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // DeskPins：锁定/解锁窗口可调整大小
+  // DeskPins：锁定/解锁窗口可调整大小（桌面专属：Android 全屏无窗口缩放概念，跳过）
   useEffect(() => {
+    if (isMobile) return;
     getCurrentWindow().setResizable(!pinned).catch(() => {});
   }, [pinned]);
 
@@ -211,9 +309,11 @@ function App() {
     return ids;
   };
 
-  /** Rust WorkerW attach 完成后置为 true（此时坐标空间固定，可恢复/保存几何） */
+  /** Rust WorkerW attach 完成后置为 true（此时坐标空间固定，可恢复/保存几何）。
+   * 仅桌面存在该事件（Android 无 SetParent 桌面层），跳过监听。 */
   const [attached, setAttached] = useState(false);
   useEffect(() => {
+    if (isMobile) return;
     let unlisten: (() => void) | undefined;
     listen('window-attached', () => setAttached(true)).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
@@ -232,19 +332,20 @@ function App() {
     }, 300);
   };
 
-  // 仅首次恢复几何（避免保存后的 windowState 更新反复触发恢复覆盖用户操作）
+  // 仅首次恢复几何（避免保存后的 windowState 更新反复触发恢复覆盖用户操作）。
+  // 窗口几何为桌面专属（Android 上由系统全屏管理），跳过。
   const geomRestored = useRef(false);
   useEffect(() => {
-    if (geomRestored.current || !attached || !windowState) return;
+    if (isMobile || geomRestored.current || !attached || !windowState) return;
     geomRestored.current = true;
     const win = getCurrentWindow();
     win.setPosition(new PhysicalPosition(windowState.x, windowState.y)).catch(() => {});
     win.setSize(new PhysicalSize(windowState.width, windowState.height)).catch(() => {});
   }, [attached, windowState]);
 
-  // attach 完成后监听移动/缩放 → 防抖保存
+  // attach 完成后监听移动/缩放 → 防抖保存（桌面专属，Android 跳过）
   useEffect(() => {
-    if (!attached) return;
+    if (isMobile || !attached) return;
     const win = getCurrentWindow();
     const unMoved = win.onMoved(({ payload }) => queueGeomSave({ x: payload.x, y: payload.y }));
     const unResized = win.onResized(({ payload }) => queueGeomSave({ width: payload.width, height: payload.height }));
@@ -278,8 +379,9 @@ function App() {
   }, [expandedFolders, folderTree, saveWindowState]);
 
   // ===== 开机自启动：settings.autoStart 变化时同步注册/取消系统启动项 =====
+  // 桌面专属（Android 无自启动注册能力，且对应 Rust 插件不随移动端构建），跳过调用。
   useEffect(() => {
-    if (!settings) return;
+    if (!settings || isMobile) return;
     if (settings.autoStart) autostartEnable().catch(() => {});
     else autostartDisable().catch(() => {});
   }, [settings]);
@@ -357,8 +459,25 @@ function App() {
     options?: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string }
   ) => {
     await createTask(title, folderId, options);
+    setPrefillDate(null);
     setCaptureOpen(false);
   };
+
+  // ===== 视图数据（V2）：日历 / 日视图共用的展平活动任务列表 =====
+
+  /** 展平的未完成任务列表（递归收集文件夹树与未分类任务，含任意层级子任务，响应式随数据刷新） */
+  const allActiveTasks = useMemo<TaskWithSubtasks[]>(() => {
+    const out: TaskWithSubtasks[] = [];
+    const walk = (list: TaskWithSubtasks[]) => {
+      for (const t of list) {
+        if (!t.completed) out.push(t);
+        walk(t.subtasks);
+      }
+    };
+    folderTree.forEach((n) => walk(n.tasks));
+    walk(unclassifiedTasks);
+    return out;
+  }, [folderTree, unclassifiedTasks]);
 
   // ===== 搜索过滤（标题/备注/子任务，递归） =====
 
@@ -447,7 +566,8 @@ function App() {
         flexDirection: 'column',
         fontFamily: 'var(--font-sans)',
         color: 'var(--foreground)',
-        borderRadius: 'calc(var(--radius) * 1.1)',
+        // 移动端全屏：去掉桌面窗口的圆角/阴影外观
+        borderRadius: isMobile ? 0 : 'calc(var(--radius) * 1.1)',
         overflow: 'hidden',
       }}
       onContextMenu={(e) => {
@@ -462,10 +582,11 @@ function App() {
         position: 'relative',
         zIndex: 1,
         width: '100%',
-        height: '100%',
+        // 移动端明确使用视口高度（Android WebView 全屏），桌面沿用父容器 100%
+        height: isMobile ? '100vh' : '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderRadius: 'calc(var(--radius) * 1.1)',
+        borderRadius: isMobile ? 0 : 'calc(var(--radius) * 1.1)',
         background: glassEnabled
           ? `color-mix(in srgb, var(--background) ${transparency}%, transparent)`
           : 'var(--background)',
@@ -473,9 +594,13 @@ function App() {
           WebkitBackdropFilter: 'saturate(180%) blur(40px)',
           backdropFilter: 'saturate(180%) blur(40px)',
         } : {}),
-        boxShadow: 'var(--shadow-xl), 0 0 0 0.5px color-mix(in srgb, var(--border) 40%, transparent)',
+        boxShadow: isMobile
+          ? 'none'
+          : 'var(--shadow-xl), 0 0 0 0.5px color-mix(in srgb, var(--border) 40%, transparent)',
         overflow: 'hidden',
-        border: '0.5px solid color-mix(in srgb, var(--border) 30%, transparent)',
+        border: isMobile
+          ? 'none'
+          : '0.5px solid color-mix(in srgb, var(--border) 30%, transparent)',
       }}>
         <TopBar
           searchQuery={searchQuery}
@@ -488,6 +613,11 @@ function App() {
 
         {/* 分隔线 */}
         <div style={{ height: 0.5, background: 'var(--border)', margin: '0 20px', flexShrink: 0, opacity: 0.6 }} />
+
+        {/* 视图切换（V2：列表 / 日历 / 日）；桌面保持顶部按钮组 */}
+        {!isMobile && (
+          <ViewTabs mode={viewMode} onChange={changeViewMode} mobile={false} />
+        )}
 
         {/* 搜索提示 */}
         {searchQuery.trim() && (
@@ -506,43 +636,77 @@ function App() {
             padding: '8px 20px 20px',
           }}
         >
-          <FolderTree
-            folders={treeToRender}
-            rootTasks={unclassifiedToRender}
-            expandedFolders={expandedFolders}
-            expandedTasks={expandedTasks}
-            searchQuery={searchQuery}
-            sortType={settings?.sortType ?? 'deadline'}
-            importantTop={settings?.importantTop ?? false}
-            manualSort={settings?.sortType === 'manual'}
-            deadlineGradient={settings?.deadlineGradient ?? true}
-            onReorderTasks={reorderTasks}
-            onReorderFolders={reorderFolders}
-            onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
-            onToggleTaskExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
-            onToggleCompleted={handleToggleCompleted}
-            onContextMenuTask={(e, taskId) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setContextMenu({ x: e.clientX, y: e.clientY, taskId });
-            }}
-            onContextMenuFolder={(e, folderId) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setContextMenu({ x: e.clientX, y: e.clientY, taskId: null, folderId });
-            }}
-          />
+          {/* 列表视图：文件夹树 + 已完成区（现有行为保持不变） */}
+          {viewMode === 'list' && (
+            <>
+              <FolderTree
+                folders={treeToRender}
+                rootTasks={unclassifiedToRender}
+                expandedFolders={expandedFolders}
+                expandedTasks={expandedTasks}
+                searchQuery={searchQuery}
+                sortType={settings?.sortType ?? 'deadline'}
+                importantTop={settings?.importantTop ?? false}
+                manualSort={settings?.sortType === 'manual'}
+                deadlineGradient={settings?.deadlineGradient ?? true}
+                onReorderTasks={reorderTasks}
+                onReorderFolders={reorderFolders}
+                onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
+                onToggleTaskExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
+                onToggleCompleted={handleToggleCompleted}
+                onContextMenuTask={(e, taskId) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({ x: e.clientX, y: e.clientY, taskId });
+                }}
+                onContextMenuFolder={(e, folderId) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({ x: e.clientX, y: e.clientY, taskId: null, folderId });
+                }}
+              />
 
-          {/* 分隔线 */}
-          <div style={{ height: 0.5, background: 'var(--border)', margin: '12px 0 8px', opacity: 0.5 }} />
+              {/* 分隔线 */}
+              <div style={{ height: 0.5, background: 'var(--border)', margin: '12px 0 8px', opacity: 0.5 }} />
 
-          <CompletedSection
-            tasks={filteredCompleted}
-            expanded={completedExpanded}
-            onToggleExpanded={() => setCompletedExpanded(!completedExpanded)}
-            onRestore={handleRestore}
-          />
+              <CompletedSection
+                tasks={filteredCompleted}
+                expanded={completedExpanded}
+                onToggleExpanded={() => setCompletedExpanded(!completedExpanded)}
+                onRestore={handleRestore}
+              />
+            </>
+          )}
+
+          {/* 日历视图（V2） */}
+          {viewMode === 'calendar' && (
+            <CalendarView
+              tasks={allActiveTasks}
+              onSelectDay={(ts) => {
+                setCalendarDate(ts);
+                changeViewMode('day');
+              }}
+            />
+          )}
+
+          {/* 日视图（V2） */}
+          {viewMode === 'day' && (
+            <DayView
+              tasks={allActiveTasks}
+              date={calendarDate}
+              onDateChange={setCalendarDate}
+              onNewTask={() => {
+                setPrefillDate(calendarDate);
+                setCaptureOpen(true);
+              }}
+            />
+          )}
         </main>
+
+        {/* 移动端底部固定视图导航（触控高度 48px ≥ 44px 标准；桌面端不渲染） */}
+        {isMobile && (
+          <ViewTabs mode={viewMode} onChange={changeViewMode} mobile />
+        )}
       </div>
 
       {/* 右键菜单 */}
@@ -582,8 +746,12 @@ function App() {
       {captureOpen && (
         <QuickCapture
           folders={folderTree}
-          onClose={() => setCaptureOpen(false)}
+          onClose={() => {
+            setPrefillDate(null);
+            setCaptureOpen(false);
+          }}
           onCreate={handleCreateTask}
+          initialDate={prefillDate ?? undefined}
         />
       )}
 
@@ -604,6 +772,7 @@ function App() {
           settings={settings}
           onChange={updateSettings}
           onClose={() => setSettingsOpen(false)}
+          onSyncComplete={() => void refresh()}
         />
       )}
 
@@ -665,7 +834,8 @@ function App() {
       {toast && (
         <div style={{
           position: 'fixed',
-          bottom: 24,
+          // 移动端上移，避免被底部视图导航遮挡
+          bottom: isMobile ? 84 : 24,
           left: '50%',
           transform: 'translateX(-50%)',
           display: 'inline-flex',

@@ -18,12 +18,20 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
-tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
+reqwest = { version = "0.12", features = ["json"] }
+
+# 桌面专属依赖：tauri-plugin-global-shortcut / tauri-plugin-autostart 的 crate
+# 顶部带 `#![cfg(not(any(target_os = "android", target_os = "ios")))]`，在 Android 上
+# 整个 crate 不编译（无法引用）；tray-icon feature 同理仅桌面有意义。
+# 因此全部按 target 条件化，Android 构建完全不引入这些 crate，桌面构建行为不变。
+[target.'cfg(not(target_os = "android"))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies]

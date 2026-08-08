@@ -32,6 +32,9 @@ export type Theme = 'light' | 'dark';
 
 export type SortType = 'deadline' | 'name' | 'createdAt' | 'manual';
 
+/** 视图模式：列表 / 日历 / 日 */
+export type ViewMode = 'list' | 'calendar' | 'day';
+
 export interface Settings {
   id: string;
   theme: Theme;
@@ -48,6 +51,16 @@ export interface Settings {
   autoStart: boolean;
   /** 截止时间按日期渐变：开启时纯白→#FF3333 渐变，关闭时直接显示红色 */
   deadlineGradient: boolean;
+  /** 当前视图模式，默认 list */
+  viewMode: ViewMode;
+  /** WebDAV 服务器地址（如 https://dav.jianguoyun.com/dav/），默认 '' */
+  webdavUrl: string;
+  /** WebDAV 账号，默认 '' */
+  webdavUsername: string;
+  /** WebDAV 密码，仅保存在本机数据库，默认 '' */
+  webdavPassword: string;
+  /** 上次成功同步时间戳（毫秒），null 表示尚未同步过 */
+  lastSyncedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }

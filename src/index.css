@@ -24,6 +24,11 @@ html, body {
   overflow: hidden;
 }
 
+/* 移动端（Android）全屏：去掉 #root 的桌面窗口圆角裁剪（html.mobile 由 main.tsx 按平台检测挂载） */
+html.mobile #root {
+  border-radius: 0;
+}
+
 /* ===== Apple Design Tokens (from .design-taskmanager-ui) ===== */
 
 :root {

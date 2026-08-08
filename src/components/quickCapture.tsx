@@ -14,6 +14,8 @@ interface QuickCaptureProps {
     folderId: string | null,
     options: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string }
   ) => void;
+  /** 预填的默认截止日期（归一化为当天 00:00）；不传时保持原有行为 */
+  initialDate?: number;
 }
 
 const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '提前1天', '不提醒'];
@@ -30,14 +32,16 @@ function toLocalInputValue(ts: number): string {
 }
 
 /** 新建任务弹窗（Quick Capture，对齐设计稿 quick-capture） */
-export default function QuickCapture({ folders, onClose, onCreate }: QuickCaptureProps) {
+export default function QuickCapture({ folders, onClose, onCreate, initialDate }: QuickCaptureProps) {
   const [title, setTitle] = useState('');
   const [remark, setRemark] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
-  /** 手动选择的截止时间；null 时回退到标题自然语言解析 */
-  const [manualDeadline, setManualDeadline] = useState<number | null>(null);
+  /** 手动选择的截止时间；null 时回退到标题自然语言解析。提供 initialDate 时预填（归一化为当天 00:00） */
+  const [manualDeadline, setManualDeadline] = useState<number | null>(() =>
+    initialDate !== undefined ? new Date(initialDate).setHours(0, 0, 0, 0) : null
+  );
   /** 手动选择的开始时间面板 */
   const [startOpen, setStartOpen] = useState(false);
   /** 手动选择的开始时间；null 表示无开始日期 */

@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/android-schema.json",
+  "identifier": "android",
+  "description": "Android 端权限：仅数据（sql）与通知（notification）；桌面专属能力（global-shortcut/autostart 权限）在 Android 上不存在，故不注册",
+  "windows": [
+    "main"
+  ],
+  "platforms": ["android"],
+  "permissions": [
+    "core:default",
+    "sql:default",
+    "sql:allow-load",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "sql:allow-close",
+    "notification:default"
+  ]
+}

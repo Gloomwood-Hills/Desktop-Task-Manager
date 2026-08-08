@@ -1,0 +1,17 @@
+/** 云同步模块统一出口：数据模型 + 快照序列化 + 全量导出/导入 + WebDAV 客户端 + 同步引擎 */
+export { SYNC_SCHEMA_VERSION } from './types';
+export type { SyncSettings, SyncSnapshot, SyncFolder, SyncTask } from './types';
+export { buildSnapshot, parseSnapshot, snapshotToJson } from './snapshot';
+export { exportLocalSnapshot } from './exporter';
+export { importSnapshot } from './importer';
+export { webdavFetch, webdavPut, joinWebdavPath } from './webdavClient';
+export type { WebdavFetchResult, WebdavPutResult } from './webdavClient';
+export {
+  REMOTE_PATH,
+  probeRemote,
+  uploadLocal,
+  downloadRemote,
+  syncAuto,
+  getDeviceId,
+} from './engine';
+export type { SyncResult, SyncProbe } from './engine';

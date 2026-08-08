@@ -82,6 +82,11 @@ async function initDatabase(db: Database): Promise<void> {
       autoPin INTEGER NOT NULL DEFAULT 1,
       autoStart INTEGER NOT NULL DEFAULT 1,
       deadlineGradient INTEGER NOT NULL DEFAULT 1,
+      viewMode TEXT NOT NULL DEFAULT 'list',
+      webdavUrl TEXT NOT NULL DEFAULT '',
+      webdavUsername TEXT NOT NULL DEFAULT '',
+      webdavPassword TEXT NOT NULL DEFAULT '',
+      lastSyncedAt INTEGER,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     )
@@ -98,6 +103,12 @@ async function initDatabase(db: Database): Promise<void> {
 
   // 旧库迁移：Settings 新增 deadlineGradient 列（截止时间按日期渐变）
   await migrateSettingsAddDeadlineGradient(db);
+
+  // 旧库迁移：Settings 新增 viewMode 列（当前视图模式）
+  await migrateSettingsAddViewMode(db);
+
+  // 旧库迁移：Settings 新增 WebDAV 同步列（地址/账号/密码/上次同步时间）
+  await migrateSettingsAddSync(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
@@ -121,9 +132,9 @@ async function insertDefaultData(db: Database): Promise<void> {
   const existingSettings = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM Settings', []);
   if (existingSettings[0].count === 0) {
     await db.execute(
-      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, now, now]
+      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', '', '', '', null, now, now]
     );
   }
 
@@ -216,5 +227,32 @@ async function migrateSettingsAddDeadlineGradient(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
   if (!cols.some((c) => c.name === 'deadlineGradient')) {
     await db.execute('ALTER TABLE Settings ADD COLUMN deadlineGradient INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
+/** 旧库迁移：Settings 新增 viewMode 列（当前视图模式，默认 list） */
+async function migrateSettingsAddViewMode(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'viewMode')) {
+    await db.execute('ALTER TABLE Settings ADD COLUMN viewMode TEXT NOT NULL DEFAULT \'list\'');
+  }
+}
+
+/** 旧库迁移：Settings 新增 WebDAV 同步列（地址/账号/密码默认空串，lastSyncedAt 可空） */
+async function migrateSettingsAddSync(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  const has = (name: string) => cols.some((c) => c.name === name);
+  if (!has('webdavUrl')) {
+    await db.execute("ALTER TABLE Settings ADD COLUMN webdavUrl TEXT NOT NULL DEFAULT ''");
+  }
+  if (!has('webdavUsername')) {
+    await db.execute("ALTER TABLE Settings ADD COLUMN webdavUsername TEXT NOT NULL DEFAULT ''");
+  }
+  if (!has('webdavPassword')) {
+    await db.execute("ALTER TABLE Settings ADD COLUMN webdavPassword TEXT NOT NULL DEFAULT ''");
+  }
+  if (!has('lastSyncedAt')) {
+    // 可空列，null 表示尚未同步过
+    await db.execute('ALTER TABLE Settings ADD COLUMN lastSyncedAt INTEGER');
   }
 }
