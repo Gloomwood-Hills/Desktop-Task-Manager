@@ -73,7 +73,7 @@ export function formatCompletedAt(ts: number): string {
 /** 截止时间徽章颜色分级：逾期=红、1天内=红、3天内=橙、7天内=默认 */
 // ===== 自然语言日期解析（Quick Capture） =====
 
-const WEEK_CN: Record<string, number> = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+const WEEK_CN: Record<string, number> = { '一': 0, '二': 1, '三': 2, '四': 3, '五': 4, '六': 5, '日': 6, '天': 6 };
 const NUM_CN: Record<string, number> = {
   '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6,
   '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12, '十三': 13, '十四': 14,
@@ -155,8 +155,10 @@ export function parseNaturalDateTime(text: string): number | null {
   } else if (!base) {
     const wm = text.match(/(?:下个?周|周|星期|礼拜)([一二三四五六日天])/);
     if (wm) {
-      let d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + WEEK_CN[wm[1]]);
-      if (/下个?周/.test(text)) d = addDays(d, 7);
+      // 周一为一周开始：本周一 = 今天 - 距周一天数（周一→0 … 周日→6）
+      const daysSinceMonday = (now.getDay() + 6) % 7;
+      const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+      let d = addDays(thisMonday, (wm[0].startsWith('下') ? 7 : 0) + (WEEK_CN[wm[1]] ?? 0));
       if (d.getTime() < startOfDay(now.getTime())) d = addDays(d, 7);
       base = d;
     }

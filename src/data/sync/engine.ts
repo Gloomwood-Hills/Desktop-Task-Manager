@@ -2,10 +2,11 @@ import { exportLocalSnapshot } from './exporter';
 import { importSnapshot } from './importer';
 import { parseSnapshot, snapshotToJson } from './snapshot';
 import { SyncSettings } from './types';
-import { webdavFetch, webdavPut } from './webdavClient';
+import { webdavFetch, webdavPut, webdavMkcol } from './webdavClient';
 
-/** 远端备份文件的相对路径（位于 WebDAV 服务根目录下） */
-export const REMOTE_PATH = 'desktop-task-manager/backup.json';
+/** 远端备份文件的相对路径：放在坚果云「Desktop-task-manager」子文件夹中，便于用户管理。
+ * 该目录在上传前会自动创建（MKCOL），无需用户手动建文件夹。 */
+export const REMOTE_PATH = 'Desktop-task-manager/backup.json';
 
 export interface SyncResult {
   status: 'uploaded' | 'downloaded' | 'skipped' | 'error';
@@ -37,10 +38,25 @@ export async function probeRemote(settings: SyncSettings): Promise<SyncProbe> {
   };
 }
 
-/** 上传本地快照到远端 */
+/** 上传本地快照到远端（上传前自动 MKCOL 创建父目录，规避坚果云 409） */
 export async function uploadLocal(settings: SyncSettings): Promise<SyncResult> {
   const snapshot = await exportLocalSnapshot(getDeviceId());
-  const result = await webdavPut(settings, REMOTE_PATH, snapshotToJson(snapshot));
+  const json = snapshotToJson(snapshot);
+
+  // 确保父目录存在：坚果云等 WebDAV 对缺失目录的 PUT 返回 409。
+  // MKCOL 用尾斜杠路径（更符合 WebDAV 规范，坚果云对无斜杠的 MKCOL 可能不生效）。
+  // 状态码：2xx=创建成功；301/302/405/409=目录已存在（视为就绪）；其余为真实错误。
+  const parentDir = REMOTE_PATH.split('/').slice(0, -1).join('/');
+  if (parentDir) {
+    const mkcol = await webdavMkcol(settings, `${parentDir}/`);
+    const created = mkcol.status >= 200 && mkcol.status < 300;
+    const alreadyExists = mkcol.status === 301 || mkcol.status === 302 || mkcol.status === 405 || mkcol.status === 409;
+    if (!created && !alreadyExists) {
+      return { status: 'error', message: `创建云端目录失败：HTTP ${mkcol.status}（请检查坚果云账号权限）` };
+    }
+  }
+
+  const result = await webdavPut(settings, REMOTE_PATH, json);
   if (result.status < 200 || result.status >= 300) {
     return { status: 'error', message: `上传失败：HTTP ${result.status}` };
   }

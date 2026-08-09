@@ -11,8 +11,10 @@ interface TaskItemProps {
   onToggleCompleted: (id: string) => void;
   onContextMenu: (e: React.MouseEvent, taskId: string) => void;
   searchQuery: string;
-  /** 截止时间按日期渐变：开启时纯白→#FF3333 渐变，关闭时直接红色 */
+  /** 截止时间按日期渐变：开启时按主题（深色白/浅色黑）→#FF3333 渐变，关闭时直接红色 */
   deadlineGradient?: boolean;
+  /** 深色模式：渐变远端颜色为白色；浅色模式为黑色 */
+  dark?: boolean;
 }
 
 /** 高亮搜索关键词 */
@@ -31,8 +33,8 @@ export function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** 截止时间颜色：渐变开启时按剩余天数纯白→#FF3333 线性插值（剩余1天/逾期为 #FF3333）；关闭时直接红色 */
-function deadlineColor(deadline: number, gradient: boolean): { bg: string; color: string } {
+/** 截止时间颜色：渐变开启时按剩余天数从主题远端色（深色=白 / 浅色=黑）→#FF3333 线性插值（剩余1天/逾期为 #FF3333）；关闭时直接红色 */
+function deadlineColor(deadline: number, gradient: boolean, dark: boolean): { bg: string; color: string } {
   if (!gradient) {
     return {
       bg: 'color-mix(in srgb, #FF3333 16%, transparent)',
@@ -42,14 +44,14 @@ function deadlineColor(deadline: number, gradient: boolean): { bg: string; color
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
   const remain = deadline - now;
-  let t: number; // 0=纯白，1=#FF3333
+  let t: number; // 0=远端（深色白/浅色黑），1=#FF3333
   if (remain <= day) t = 1;
   else if (remain >= 7 * day) t = 0;
   else t = (7 * day - remain) / (6 * day);
-  const r = 255;
-  const g = Math.round(255 - 204 * t); // 255 → 51
-  const b = Math.round(255 - 204 * t); // 255 → 51
-  const color = `rgb(${r}, ${g}, ${b})`;
+  const from = dark ? [255, 255, 255] : [0, 0, 0]; // 深色模式白起步，浅色模式黑起步
+  const to = [255, 51, 51]; // #FF3333
+  const channel = (i: number) => Math.round(from[i] + (to[i] - from[i]) * t);
+  const color = `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
   return {
     bg: `color-mix(in srgb, ${color} 16%, transparent)`,
     color,
@@ -57,7 +59,7 @@ function deadlineColor(deadline: number, gradient: boolean): { bg: string; color
 }
 
 /** 日期徽章（开始 + 截止，含颜色渐变提醒） */
-function DateBadge({ task, deadlineGradient = true }: { task: Task; deadlineGradient?: boolean }) {
+function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task; deadlineGradient?: boolean; dark?: boolean }) {
   const showStart = task.startDate !== null;
   const showDeadline = task.deadline !== null;
 
@@ -67,7 +69,7 @@ function DateBadge({ task, deadlineGradient = true }: { task: Task; deadlineGrad
     );
   }
 
-  const deadlineStyle = task.deadline !== null ? deadlineColor(task.deadline, deadlineGradient) : null;
+  const deadlineStyle = task.deadline !== null ? deadlineColor(task.deadline, deadlineGradient, dark) : null;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 14 }}>
@@ -231,7 +233,7 @@ function SubtaskList({
  * 点击任务行展开详情（备注、时间信息）；子任务列表独立展开
  */
 export default function TaskItem({
-  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient = true,
+  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient = true, dark = false,
 }: TaskItemProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const expanded = expandedSet.has(task.id);
@@ -345,7 +347,7 @@ export default function TaskItem({
           </div>
 
           {/* 日期徽章 */}
-          <DateBadge task={task} deadlineGradient={deadlineGradient} />
+          <DateBadge task={task} deadlineGradient={deadlineGradient} dark={dark} />
         </div>
       </div>
 

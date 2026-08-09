@@ -12,7 +12,10 @@ export async function getDatabase(): Promise<Database> {
     const appDir = await appDataDir();
     const dbPath = await join(appDir, 'desktop-task-manager', 'data.db');
     db = await Database.load(`sqlite:${dbPath}`);
-    await db.execute('PRAGMA journal_mode = WAL');
+    // 使用 DELETE 日志模式而非 WAL：Android 桌面小部件跨进程只读 data.db，
+    // WAL 下新写入在 -wal 日志中，小部件读不到未 checkpoint 的数据（表现为刷新无效）。
+    // DELETE 模式每次写入直接落主库，单进程、低频写场景性能无影响。
+    await db.execute('PRAGMA journal_mode = DELETE');
     await db.execute('PRAGMA foreign_keys = ON');
     await initDatabase(db);
     return db;
@@ -87,6 +90,7 @@ async function initDatabase(db: Database): Promise<void> {
       webdavUsername TEXT NOT NULL DEFAULT '',
       webdavPassword TEXT NOT NULL DEFAULT '',
       lastSyncedAt INTEGER,
+      lastSyncAction TEXT,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     )
@@ -110,6 +114,9 @@ async function initDatabase(db: Database): Promise<void> {
   // 旧库迁移：Settings 新增 WebDAV 同步列（地址/账号/密码/上次同步时间）
   await migrateSettingsAddSync(db);
 
+  // 旧库迁移：Settings 新增 lastSyncAction 列（上次同步操作）
+  await migrateSettingsAddSyncAction(db);
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
       id TEXT PRIMARY KEY,
@@ -132,9 +139,9 @@ async function insertDefaultData(db: Database): Promise<void> {
   const existingSettings = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM Settings', []);
   if (existingSettings[0].count === 0) {
     await db.execute(
-      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', '', '', '', null, now, now]
+      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', '', '', '', null, null, now, now]
     );
   }
 
@@ -254,5 +261,14 @@ async function migrateSettingsAddSync(db: Database): Promise<void> {
   if (!has('lastSyncedAt')) {
     // 可空列，null 表示尚未同步过
     await db.execute('ALTER TABLE Settings ADD COLUMN lastSyncedAt INTEGER');
+  }
+}
+
+/** 旧库迁移：Settings 新增 lastSyncAction 列（上次同步操作 upload/download，可空） */
+async function migrateSettingsAddSyncAction(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'lastSyncAction')) {
+    // 可空列，null 表示尚未同步过
+    await db.execute('ALTER TABLE Settings ADD COLUMN lastSyncAction TEXT');
   }
 }

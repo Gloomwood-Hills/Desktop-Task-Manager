@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Clock, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, Calendar } from 'lucide-react';
 import { TaskWithSubtasks } from '../data/types';
 import { formatDeadline } from './utils/formatDate';
 
@@ -9,8 +9,6 @@ export interface DayViewProps {
   date: number;
   /** 切换查看日期（按天前后翻动） */
   onDateChange: (timestamp: number) => void;
-  /** 新建任务 */
-  onNewTask: () => void;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -89,7 +87,7 @@ function DayTaskRow({ task }: { task: TaskWithSubtasks }) {
 }
 
 /** 日视图：按天查看当日任务（V2） */
-export default function DayView({ tasks, date, onDateChange, onNewTask }: DayViewProps) {
+export default function DayView({ tasks, date, onDateChange }: DayViewProps) {
   const dayStart = useMemo(() => startOfDay(date), [date]);
   const dayTasks = useMemo(() => tasks.filter((t) => hitsDay(t, dayStart)), [tasks, dayStart]);
   const isToday = dayStart === startOfDay(Date.now());
@@ -114,7 +112,7 @@ export default function DayView({ tasks, date, onDateChange, onNewTask }: DayVie
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 2px' }}>
-      {/* 顶部工具条：前后翻日 + 日期标题 + 今天 / 新建任务 */}
+      {/* 顶部工具条：前后翻日 + 日期标题 + 今天 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <button
           onClick={() => onDateChange(dayStart - DAY_MS)}
@@ -159,29 +157,6 @@ export default function DayView({ tasks, date, onDateChange, onNewTask }: DayVie
           }}
         >
           今天
-        </button>
-        <button
-          onClick={onNewTask}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            height: 26,
-            padding: '0 12px',
-            borderRadius: 999,
-            border: 'none',
-            cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
-            fontSize: 12.5,
-            fontWeight: 600,
-            color: 'var(--primary)',
-            background: 'color-mix(in srgb, var(--brand-400) 12%, transparent)',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
-          <Plus style={{ width: 13, height: 13 }} />
-          新建任务
         </button>
       </div>
 

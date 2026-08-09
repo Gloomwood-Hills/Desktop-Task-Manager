@@ -7,6 +7,17 @@ src-tauri/target/
 .vscode/
 .idea/
 
+# Android 交叉编译本地工具链（迁移自 %USERPROFILE% 以规避中文路径 lld 链接失败）
+.rustup/
+.cargo/
+.node-compile-cache/
+src-tauri/gen/android/
+src-tauri/gen/schemas/
+
+# Android Gradle 构建缓存与调试 APK（debug 包体积达数百 MB，超 GitHub 100MB 限制且可再生成）
+.gradle/
+release/*-debug.apk
+
 # 开发/内部文件（不随 V1 发布上传）
 .trae/
 .design-taskmanager-ui/

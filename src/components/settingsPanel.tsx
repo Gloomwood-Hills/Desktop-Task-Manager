@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { X, Cloud } from 'lucide-react';
+import { X, Cloud, BookOpen, ChevronDown } from 'lucide-react';
 import { Settings, SortType } from '../data/types';
-import { probeRemote, uploadLocal, downloadRemote, syncAuto } from '../data/sync';
+import { probeRemote } from '../data/sync';
 import type { SyncSettings } from '../data/sync';
-import { ConfirmDialog } from './dialogPrompt';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -13,8 +12,6 @@ interface SettingsPanelProps {
   settings: Settings | null;
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
-  /** 同步写库完成后回调（App 侧刷新任务数据） */
-  onSyncComplete?: () => void;
 }
 
 type TabId = '外观' | '排序' | '提醒' | '同步';
@@ -42,7 +39,7 @@ const REMINDER_OPTIONS: { label: string; value: number }[] = [
 ];
 
 /** 设置面板（右侧滑入，对齐设计稿 settings） */
-export default function SettingsPanel({ theme, onThemeChange, settings, onChange, onClose, onSyncComplete }: SettingsPanelProps) {
+export default function SettingsPanel({ theme, onThemeChange, settings, onChange, onClose }: SettingsPanelProps) {
   const [tab, setTab] = useState<TabId>('外观');
   // 从持久化设置初始化
   const [glassEffect, setGlassEffect] = useState(settings?.glassEffect ?? true);
@@ -59,8 +56,8 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   /** 最近一次同步/连接测试结果（ok 决定状态区颜色） */
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
-  /** 待确认的强制覆盖操作：upload=上传覆盖 / download=下载覆盖，null 表示无 */
-  const [pendingForce, setPendingForce] = useState<'upload' | 'download' | null>(null);
+  /** 坚果云账密获取指南是否展开 */
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const switchStyle: React.CSSProperties = {
     position: 'relative',
@@ -128,20 +125,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
     outline: 'none',
     boxSizing: 'border-box',
   };
-  /** 主操作按钮（立即同步） */
-  const primaryBtn: React.CSSProperties = {
-    flex: 1,
-    height: 38,
-    borderRadius: 999,
-    border: 'none',
-    background: 'var(--primary)',
-    color: 'var(--primary-foreground)',
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  };
-  /** 次级操作按钮（连接测试/上传覆盖/下载覆盖） */
+  /** 次级操作按钮（连接测试） */
   const secondaryBtn: React.CSSProperties = {
     flex: 1,
     height: 38,
@@ -164,27 +148,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
     webdavPassword: settings?.webdavPassword ?? '',
   });
 
-  /** 同步成功后统一收尾：记录上次同步时间戳 + 通知 App 刷新数据 */
-  const handleSyncSuccess = () => {
-    onChange({ lastSyncedAt: Date.now() });
-    onSyncComplete?.();
-  };
-
-  /** 立即同步：由引擎按时间戳做增量决策（本地/远端较新者胜） */
-  const handleSyncNow = async () => {
-    if (!settings || syncBusy) return;
-    setSyncBusy(true);
-    try {
-      const result = await syncAuto(buildSyncSettings(), settings.lastSyncedAt ?? null);
-      setSyncResult({ ok: result.status !== 'error', message: result.message });
-      if (result.status === 'uploaded' || result.status === 'downloaded') handleSyncSuccess();
-    } catch (error) {
-      setSyncResult({ ok: false, message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
   /** 连接测试：探测远端备份是否存在及最后导出时间 */
   const handleProbe = async () => {
     if (syncBusy) return;
@@ -199,24 +162,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
       });
     } catch (error) {
       setSyncResult({ ok: false, message: `连接失败：${error instanceof Error ? error.message : String(error)}` });
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
-  /** 强制上传/下载：确认后执行整体覆盖（下载会覆盖本地，故需二次确认） */
-  const handleForceSync = async (action: 'upload' | 'download') => {
-    setPendingForce(null);
-    if (syncBusy) return;
-    setSyncBusy(true);
-    try {
-      const result = action === 'upload'
-        ? await uploadLocal(buildSyncSettings())
-        : await downloadRemote(buildSyncSettings());
-      setSyncResult({ ok: result.status !== 'error', message: result.message });
-      if (result.status === 'uploaded' || result.status === 'downloaded') handleSyncSuccess();
-    } catch (error) {
-      setSyncResult({ ok: false, message: error instanceof Error ? error.message : String(error) });
     } finally {
       setSyncBusy(false);
     }
@@ -486,9 +431,56 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </div>
                 <p style={{ ...descStyle, lineHeight: 1.6 }}>
                   填写任意 WebDAV 服务器（如坚果云免费空间 dav.jianguoyun.com/dav/），即可把任务数据备份到云端。
-                  本应用采用手动同步，不会自动实时上传；建议重要操作后点击「立即同步」。
+                  本应用采用手动同步，不会自动实时上传；需要时可点击标题栏的「上传」「下载」按钮手动同步。
                   密码仅保存在本机数据库，不会上传到任何地方。
                 </p>
+              </div>
+
+              {/* 坚果云账密获取指南（可展开） */}
+              <div style={{ marginBottom: 20 }}>
+                <button
+                  onClick={() => setGuideOpen(!guideOpen)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    width: '100%', padding: '10px 14px', cursor: 'pointer',
+                    borderRadius: 'calc(var(--radius) * 0.8)',
+                    border: '1px solid var(--border)', background: 'transparent',
+                    color: 'var(--foreground)', fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 600,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <BookOpen style={{ width: 15, height: 15, color: 'var(--primary)' }} />
+                    如何获取坚果云账密
+                  </span>
+                  <ChevronDown style={{
+                    width: 15, height: 15, color: 'var(--muted-foreground)',
+                    transition: 'transform .18s ease', transform: guideOpen ? 'rotate(180deg)' : 'none',
+                  }} />
+                </button>
+                {guideOpen && (
+                  <div style={{
+                    marginTop: 8, padding: '12px 14px',
+                    borderRadius: 'calc(var(--radius) * 0.8)',
+                    background: 'var(--muted)', border: '1px solid var(--border)',
+                  }}>
+                    <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.8, color: 'var(--foreground)' }}>
+                      <li>注册并登录坚果云（免费）：访问 <span style={{ color: 'var(--primary)' }}>jianguoyun.com</span>，用邮箱注册账号</li>
+                      <li>点击右上角头像 → <b>账户信息</b></li>
+                      <li>进入 <b>安全选项</b>，找到「第三方应用管理」</li>
+                      <li>点击 <b>添加应用</b>，名称随意（如 DesktopTaskManager），确认后生成 16 位 <b>应用密码</b>（仅显示一次，请先复制保存）</li>
+                      <li>回到本应用填写：
+                        <div style={{ marginTop: 4, paddingLeft: 12, color: 'var(--muted-foreground)', lineHeight: 1.8 }}>
+                          服务器地址：<code>https://dav.jianguoyun.com/dav/</code><br />
+                          账号：坚果云<b>登录邮箱</b><br />
+                          密码：第 4 步生成的<b>应用密码</b>
+                        </div>
+                      </li>
+                    </ol>
+                    <p style={{ ...descStyle, marginTop: 10, lineHeight: 1.6 }}>
+                      提示：WebDAV 必须使用「应用密码」，坚果云不允许直接用登录密码访问；建议每台设备单独添加一个应用，密码可随时在「第三方应用管理」中撤销。
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* WebDAV 配置：输入即保存（沿用其他 tab 的 onChange 持久化模式） */}
@@ -530,21 +522,14 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 />
               </div>
 
-              {/* 操作区 */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <button onClick={handleSyncNow} disabled={syncBusy} style={{ ...primaryBtn, opacity: syncBusy ? 0.6 : 1 }}>
-                  {syncBusy ? '同步中…' : '立即同步'}
-                </button>
+              {/* 操作区：仅保留连接测试（上传/下载覆盖已移至标题栏） */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 <button onClick={handleProbe} disabled={syncBusy} style={{ ...secondaryBtn, flex: '0 0 auto', padding: '0 16px' }}>
                   连接测试
                 </button>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                <button onClick={() => setPendingForce('upload')} disabled={syncBusy} style={secondaryBtn}>上传覆盖</button>
-                <button onClick={() => setPendingForce('download')} disabled={syncBusy} style={secondaryBtn}>下载覆盖</button>
-              </div>
 
-              {/* 状态区：上次同步时间 + 最近一次结果 */}
+              {/* 状态区：上次同步时间 + 操作 + 最近一次结果 */}
               <div style={{
                 borderRadius: 'calc(var(--radius) * 0.8)', padding: '12px 14px',
                 background: 'var(--muted)', border: '1px solid var(--border)',
@@ -552,7 +537,9 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>上次同步</span>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--foreground)', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatSyncTime(settings?.lastSyncedAt ?? null)}
+                    {settings?.lastSyncedAt
+                      ? `${formatSyncTime(settings.lastSyncedAt)} · ${settings.lastSyncAction === 'download' ? '下载' : settings.lastSyncAction === 'upload' ? '上传' : '未知'}`
+                      : '尚未同步'}
                   </span>
                 </div>
                 {syncResult && (
@@ -568,20 +555,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
           )}
         </div>
       </div>
-
-      {/* 强制覆盖二次确认：渲染在面板外层，避免面板 backdrop-filter 影响 fixed 定位 */}
-      {pendingForce && (
-        <ConfirmDialog
-          title={pendingForce === 'upload' ? '上传覆盖' : '下载覆盖'}
-          message={pendingForce === 'upload'
-            ? '将本地全部数据上传并覆盖云端备份。若云端存在其他设备更新的数据，将以本地为准覆盖。'
-            : '将云端备份下载并覆盖本地全部数据，本地尚未同步的修改将丢失。'}
-          confirmText="确认"
-          destructive={pendingForce === 'download'}
-          onConfirm={() => handleForceSync(pendingForce)}
-          onCancel={() => setPendingForce(null)}
-        />
-      )}
     </>
   );
 }

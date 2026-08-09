@@ -20,6 +20,13 @@ pub struct WebdavPutResult {
     pub last_modified: Option<String>,
 }
 
+/// WebDAV MKCOL（创建目录）结果。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebdavMkcolResult {
+    pub status: u16,
+}
+
 /// 拼接服务地址与远端相对路径，保证两者之间恰好一个斜杠。
 /// 服务地址可能以 "/" 结尾、路径可能以 "/" 开头，两者都要容忍。
 fn join_path(base: &str, path: &str) -> String {
@@ -49,13 +56,21 @@ pub async fn webdav_fetch(
         .basic_auth(&username, Some(&password))
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| {
+            // builder error = URL 解析失败（如缺失 https:// 协议头），给出可操作的中文提示
+            if e.is_builder() {
+                "服务器地址格式不正确（请检查是否以 https:// 开头）".to_string()
+            } else {
+                format!("网络请求失败：{e}")
+            }
+        })?;
 
     let status = response.status();
     let status_code = status.as_u16();
 
-    // 404 是正常分支而非错误：表示远端文件尚未存在（首次同步）
-    if status_code == 404 {
+    // 404 是正常分支而非错误：表示远端文件尚未存在（首次同步）。
+    // 409 也按"不存在"处理：坚果云等 WebDAV 对父目录缺失的路径返回 409（而非 404）。
+    if status_code == 404 || status_code == 409 {
         return Ok(WebdavFetchResult {
             status: status_code,
             exists: false,
@@ -111,7 +126,14 @@ pub async fn webdav_put(
         .body(content)
         .send()
         .await
-        .map_err(|e| format!("网络请求失败：{e}"))?;
+        .map_err(|e| {
+            // builder error = URL 解析失败（如缺失 https:// 协议头），给出可操作的中文提示
+            if e.is_builder() {
+                "服务器地址格式不正确（请检查是否以 https:// 开头）".to_string()
+            } else {
+                format!("网络请求失败：{e}")
+            }
+        })?;
 
     let status = response.status();
     let status_code = status.as_u16();
@@ -135,5 +157,36 @@ pub async fn webdav_put(
     Ok(WebdavPutResult {
         status: status_code,
         last_modified,
+    })
+}
+
+/// MKCOL 创建远端目录。
+/// 为什么需要：坚果云等 WebDAV 对"父目录不存在的路径"执行 PUT 会返回 409，
+/// 因此上传前先用 MKCOL 创建目录。目录已存在时服务器通常返回 405/409/301，
+/// 由调用方视为"目录就绪"处理（本函数只透传状态码，不做成功/失败判定）。
+#[tauri::command]
+pub async fn webdav_mkcol(
+    url: String,
+    username: String,
+    password: String,
+    remote_path: String,
+) -> Result<WebdavMkcolResult, String> {
+    let target = join_path(&url, &remote_path);
+    let response = reqwest::Client::new()
+        .request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &target)
+        .basic_auth(&username, Some(&password))
+        .send()
+        .await
+        .map_err(|e| {
+            // builder error = URL 解析失败（如缺失 https:// 协议头），给出可操作的中文提示
+            if e.is_builder() {
+                "服务器地址格式不正确（请检查是否以 https:// 开头）".to_string()
+            } else {
+                format!("网络请求失败：{e}")
+            }
+        })?;
+
+    Ok(WebdavMkcolResult {
+        status: response.status().as_u16(),
     })
 }

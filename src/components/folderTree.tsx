@@ -24,8 +24,10 @@ interface FolderTreeProps {
   onToggleCompleted: (id: string) => void;
   onContextMenuTask: (e: React.MouseEvent, taskId: string) => void;
   onContextMenuFolder: (e: React.MouseEvent, folderId: string) => void;
-  /** 截止时间按日期渐变：开启时纯白→#FF3333 渐变，关闭时直接红色 */
+  /** 截止时间按日期渐变：开启时按主题（深色白/浅色黑）→#FF3333 渐变，关闭时直接红色 */
   deadlineGradient?: boolean;
+  /** 深色模式：任务截止时间渐变远端色为白色；浅色模式为黑色 */
+  dark?: boolean;
 }
 
 /** 文件夹统计：直属任务数 + 子文件夹任务数 */
@@ -78,7 +80,7 @@ export default function FolderTree({
   folders, rootTasks = [], expandedFolders, expandedTasks, searchQuery,
   sortType, importantTop = false, manualSort = false, onReorderTasks, onReorderFolders,
   onToggleFolder, onToggleTaskExpanded, onToggleCompleted, onContextMenuTask, onContextMenuFolder,
-  deadlineGradient = true,
+  deadlineGradient = true, dark = false,
 }: FolderTreeProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
@@ -271,6 +273,7 @@ export default function FolderTree({
           onContextMenu={onContextMenuTask}
           searchQuery={searchQuery}
           deadlineGradient={deadlineGradient}
+          dark={dark}
         />
       </div>
     );

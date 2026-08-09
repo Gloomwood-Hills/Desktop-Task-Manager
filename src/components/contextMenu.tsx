@@ -25,6 +25,8 @@ interface ContextMenuProps {
   onRenameFolder: (folderId: string) => void;
   onDeleteFolder: (folderId: string) => void;
   onNewTask: () => void;
+  /** 在指定文件夹内新建任务（右键文件夹时点击"新建任务"） */
+  onNewTaskInFolder: (folderId: string) => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
   onExit: () => void;
@@ -43,8 +45,8 @@ interface MenuItem {
 /** 右键菜单（对齐设计稿 context-menu，Task 12） */
 export default function ContextMenu({
   state, onClose, onEditTask, onAddSubtask, onToggleComplete, onExpandAll, onCollapseAll,
-  onDeleteTask, onCreateFolder, onRenameFolder, onDeleteFolder, onNewTask, onRefresh,
-  onOpenSettings, onExit,
+  onDeleteTask, onCreateFolder, onRenameFolder, onDeleteFolder, onNewTask, onNewTaskInFolder,
+  onRefresh, onOpenSettings, onExit,
 }: ContextMenuProps) {
   if (!state) return null;
 
@@ -92,7 +94,7 @@ export default function ContextMenu({
     },
   ];
 
-  // 空白区菜单项（新建任务 / 文件夹）
+  // 空白区/文件夹区菜单项（新建任务 / 新建文件夹）
   const blankItems: MenuItem[] = [
     {
       key: 'new-task',
@@ -100,7 +102,10 @@ export default function ContextMenu({
       label: '新建任务',
       hint: 'Ctrl+N',
       visible: !isTaskContext,
-      action: onNewTask,
+      // 右键文件夹时自动预选该文件夹（任务创建后归入该文件夹）
+      action: () => isFolderContext && state.folderId
+        ? onNewTaskInFolder(state.folderId)
+        : onNewTask(),
     },
     {
       key: 'create-folder',

@@ -14,6 +14,12 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# 生产构建必需：通过 tauri 自定义协议加载嵌入的 dist 前端资源。
+# 缺失该 feature 时 release 二进制会回退加载 devUrl（localhost:1420），
+# 在未运行 vite dev server 时表现为"无法访问此页面"。
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -23,7 +29,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
 tauri-plugin-notification = "2"
-reqwest = { version = "0.12", features = ["json"] }
+
+# reqwest 默认 default-tls（native-tls → openssl-sys），在 Android 交叉编译时
+# openssl-sys 无法找到 OpenSSL 导致构建失败。Android 平台改用纯 Rust 的
+# rustls（内置 webpki 根证书），桌面端维持默认 schannel/openssl 行为不变。
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # 桌面专属依赖：tauri-plugin-global-shortcut / tauri-plugin-autostart 的 crate
 # 顶部带 `#![cfg(not(any(target_os = "android", target_os = "ios")))]`，在 Android 上
@@ -33,6 +44,7 @@ reqwest = { version = "0.12", features = ["json"] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
+reqwest = { version = "0.12", features = ["json"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

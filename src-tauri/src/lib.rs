@@ -101,7 +101,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             exit_app,
             webdav::webdav_fetch,
-            webdav::webdav_put
+            webdav::webdav_put,
+            webdav::webdav_mkcol
         ])
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init());

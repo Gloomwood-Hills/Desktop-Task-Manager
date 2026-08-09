@@ -13,6 +13,10 @@ export interface WebdavPutResult {
   lastModified: string | null;
 }
 
+export interface WebdavMkcolResult {
+  status: number;
+}
+
 /**
  * 拼接 WebDAV 服务地址与远端相对路径，保证两者之间恰好一个斜杠。
  * 服务地址可能以 "/" 结尾（如 "https://dav.jianguoyun.com/dav/"）、
@@ -22,6 +26,16 @@ export function joinWebdavPath(url: string, remotePath: string): string {
   const base = url.trim().replace(/\/+$/, '');
   const path = remotePath.replace(/^\/+/, '');
   return base ? `${base}/${path}` : `/${path}`;
+}
+
+/**
+ * 归一化 WebDAV 服务器地址：去除首尾空格；缺失协议时自动补 https://。
+ * 避免用户漏填协议导致 reqwest builder 解析失败（表现为"网络请求失败：builder error"）。
+ */
+export function normalizeWebdavUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 /**
@@ -35,7 +49,7 @@ export async function webdavFetch(
   remotePath: string
 ): Promise<WebdavFetchResult> {
   return invoke<WebdavFetchResult>('webdav_fetch', {
-    url: settings.webdavUrl,
+    url: normalizeWebdavUrl(settings.webdavUrl),
     username: settings.webdavUsername,
     password: settings.webdavPassword,
     remotePath,
@@ -49,10 +63,27 @@ export async function webdavPut(
   content: string
 ): Promise<WebdavPutResult> {
   return invoke<WebdavPutResult>('webdav_put', {
-    url: settings.webdavUrl,
+    url: normalizeWebdavUrl(settings.webdavUrl),
     username: settings.webdavUsername,
     password: settings.webdavPassword,
     remotePath,
     content,
+  });
+}
+
+/**
+ * MKCOL 创建远端目录（WebDAV 标准方法）。
+ * 用于上传前确保父目录存在：坚果云等对"父目录不存在的路径"PUT 会返回 409。
+ * 目录已存在时服务器返回 405/409/301，调用方按"目录就绪"处理，此处只透传状态码。
+ */
+export async function webdavMkcol(
+  settings: SyncSettings,
+  remotePath: string
+): Promise<WebdavMkcolResult> {
+  return invoke<WebdavMkcolResult>('webdav_mkcol', {
+    url: normalizeWebdavUrl(settings.webdavUrl),
+    username: settings.webdavUsername,
+    password: settings.webdavPassword,
+    remotePath,
   });
 }

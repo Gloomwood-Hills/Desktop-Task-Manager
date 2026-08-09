@@ -61,6 +61,8 @@ export interface Settings {
   webdavPassword: string;
   /** 上次成功同步时间戳（毫秒），null 表示尚未同步过 */
   lastSyncedAt: number | null;
+  /** 上次成功同步操作：upload=上传覆盖 / download=下载覆盖，null 表示尚未同步过 */
+  lastSyncAction: 'upload' | 'download' | null;
   createdAt: number;
   updatedAt: number;
 }

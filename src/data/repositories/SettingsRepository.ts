@@ -11,7 +11,7 @@ export class SettingsRepository {
 
   async get(): Promise<Settings | null> {
     const rows = await this.db.select<Settings[]>(
-      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, createdAt, updatedAt
+      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt
        FROM Settings WHERE id = ?`,
       ['default']
     );
@@ -31,7 +31,7 @@ export class SettingsRepository {
 
     await this.db.execute(
       `UPDATE Settings
-       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, autoPin = ?, autoStart = ?, deadlineGradient = ?, viewMode = ?, webdavUrl = ?, webdavUsername = ?, webdavPassword = ?, lastSyncedAt = ?, updatedAt = ?
+       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, autoPin = ?, autoStart = ?, deadlineGradient = ?, viewMode = ?, webdavUrl = ?, webdavUsername = ?, webdavPassword = ?, lastSyncedAt = ?, lastSyncAction = ?, updatedAt = ?
        WHERE id = ?`,
       [
         updatedSettings.theme,
@@ -50,6 +50,8 @@ export class SettingsRepository {
         updatedSettings.webdavPassword,
         // lastSyncedAt 可为 null，null 表示尚未同步过
         updatedSettings.lastSyncedAt,
+        // lastSyncAction 可为 null，null 表示尚未同步过
+        updatedSettings.lastSyncAction,
         updatedSettings.updatedAt,
         updatedSettings.id,
       ]

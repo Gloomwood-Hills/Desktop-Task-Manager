@@ -13,6 +13,8 @@ export interface CalendarViewProps {
 const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
 /** 月历固定 6 行 × 7 列，翻页时布局稳定不变 */
 const GRID_CELLS = 42;
+/** 网格间隙：周标头与日期网格共用，保证两行格子严格对齐 */
+const GRID_GAP = 4;
 
 /**
  * 归一化到"年-月-日"的日期 key，仅用于判断任务是否命中某一天。
@@ -68,7 +70,9 @@ function DayCell({ ts, inMonth, isToday, count, onSelectDay }: DayCellProps) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        aspectRatio: '1 / 1',
+        // 不用 aspectRatio 固定正方形：列宽由 7 等分（1fr）随窗口自适应，
+        // 高度由内容 + minHeight 决定，窗口过窄时日期数字仍可完整显示
+        minHeight: 48,
         padding: 6,
         border: isToday ? '1px solid var(--primary)' : '1px solid transparent',
         borderRadius: 'calc(var(--radius) * 0.55)',
@@ -225,7 +229,7 @@ export default function CalendarView({ tasks, onSelectDay }: CalendarViewProps) 
       </div>
 
       {/* 周标头（周一起始） */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: GRID_GAP, marginBottom: 6 }}>
         {WEEKDAY_LABELS.map((label) => (
           <span
             key={label}
@@ -237,7 +241,7 @@ export default function CalendarView({ tasks, onSelectDay }: CalendarViewProps) 
       </div>
 
       {/* 月历网格：7 列，点击任意日期（含跨月）回调当天 00:00 时间戳 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: GRID_GAP }}>
         {cells.map((cell) => {
           const key = dayKey(cell.ts);
           return (

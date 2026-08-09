@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Calendar as CalendarIcon, CalendarClock, Star, Check, ChevronDown } from 'lucide-react';
 import { Task } from '../data/types';
 import { parseNaturalDateTime, formatDeadline } from './utils/formatDate';
@@ -31,6 +31,29 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
   const [startOpen, setStartOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
 
+  // 视口过小时启用紧凑模式：缩小字号 / 输入框 / 按钮 / 内边距，保证窗口内完整显示
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const update = () => setCompact(window.innerHeight < 620 || window.innerWidth < 640);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  // 紧凑模式尺寸集
+  const s = {
+    padX: compact ? 14 : 20,          // 左右内边距
+    padTop: compact ? 9 : 12,         // 分区间距
+    fieldHeight: compact ? 32 : 40,   // 标题输入框高度
+    fieldFont: compact ? 13 : 14,     // 输入框字号
+    titleFont: compact ? 14 : 16,     // 弹窗标题字号
+    btnHeight: compact ? 30 : 36,     // 操作按钮高度
+    btnPad: compact ? 12 : 16,        // 按钮内边距
+    chipFont: compact ? 11.5 : 12.5,  // 快捷项/时间 chip 字号
+    rows: compact ? 2 : 3,            // 备注行数
+    dialogTop: compact ? 16 : 48,     // 顶部留白
+  };
+
   const handleSave = async () => {
     if (!title.trim()) return;
     await onSave({
@@ -44,10 +67,11 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
   };
 
   const chipStyle = (active: boolean): React.CSSProperties => ({
-    display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
+    display: 'flex', alignItems: 'center', gap: 5,
+    padding: compact ? '4px 8px' : '5px 10px', borderRadius: 10,
     background: active ? 'var(--brand-50)' : 'transparent',
     border: `1px solid ${active ? 'var(--brand-200)' : 'var(--border)'}`,
-    cursor: 'pointer', fontSize: 12.5,
+    cursor: 'pointer', fontSize: s.chipFont,
     color: active ? 'var(--primary)' : 'var(--muted-foreground)',
   });
 
@@ -67,7 +91,7 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
       backdropFilter: 'blur(40px) saturate(1.8)',
       WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
       boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
-      padding: 6,
+      padding: compact ? 4 : 6,
       display: 'inline-flex',
       flexDirection: 'column',
     }}>
@@ -80,8 +104,9 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
             key={label}
             onClick={() => { setValue(ts); close(); }}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-              cursor: 'pointer', fontSize: 12.5,
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: compact ? '5px 10px' : '7px 12px', borderRadius: 10,
+              cursor: 'pointer', fontSize: s.chipFont,
               color: active ? 'var(--primary)' : 'var(--muted-foreground)',
               background: active ? 'var(--brand-50)' : 'transparent',
             }}
@@ -93,25 +118,26 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
         );
       })}
       <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
-      <div style={{ padding: '7px 12px' }}>
-        <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
+      <div style={{ padding: compact ? '5px 10px' : '7px 12px' }}>
+        <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
         <input
           type="datetime-local"
           value={value !== null ? toLocalInputValue(value) : ''}
           onChange={(e) => { if (e.target.value) setValue(new Date(e.target.value).getTime()); }}
           style={{
-            width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
+            width: '100%', height: compact ? 26 : 30, padding: '0 8px', boxSizing: 'border-box',
             border: '1px solid var(--input)', borderRadius: 8,
             background: 'var(--background)', color: 'inherit',
-            fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
+            fontSize: s.chipFont, outline: 'none', fontFamily: 'var(--font-sans)',
           }}
         />
       </div>
       <div
         onClick={() => { setValue(null); close(); }}
         style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-          cursor: 'pointer', fontSize: 12.5,
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: compact ? '5px 10px' : '7px 12px', borderRadius: 10,
+          cursor: 'pointer', fontSize: s.chipFont,
           color: value === null ? 'var(--primary)' : 'var(--muted-foreground)',
           background: value === null ? 'var(--brand-50)' : 'transparent',
         }}
@@ -126,7 +152,7 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 150,
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 48,
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: s.dialogTop,
     }}>
       {/* Scrim */}
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(8px)' }} onClick={onClose} />
@@ -134,9 +160,9 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
       {/* 弹窗 */}
       <div style={{
         position: 'relative',
-        width: 520,
-        maxWidth: 'calc(100% - 32px)',
-        maxHeight: 'calc(100vh - 96px)',
+        width: compact ? 440 : 520,
+        maxWidth: 'calc(100% - 24px)',
+        maxHeight: `calc(100vh - ${s.dialogTop * 2}px)`,
         overflowY: 'auto',
         borderRadius: 'calc(var(--radius)*1.2)',
         background: 'rgba(255,255,255,0.82)',
@@ -146,8 +172,8 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
         color: 'var(--foreground)',
       }}>
         {/* 头部 */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 0' }}>
-          <span style={{ fontSize: 16, fontWeight: 700 }}>编辑任务</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${s.padTop + 4}px ${s.padX}px 0` }}>
+          <span style={{ fontSize: s.titleFont, fontWeight: 700 }}>编辑任务</span>
           <button
             onClick={onClose}
             aria-label="关闭编辑"
@@ -162,8 +188,8 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
         </div>
 
         {/* 标题 */}
-        <div style={{ padding: '14px 20px 0' }}>
-          <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>标题</div>
+        <div style={{ padding: `${s.padTop + 2}px ${s.padX}px 0` }}>
+          <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>标题</div>
           <input
             type="text"
             value={title}
@@ -171,40 +197,41 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
             placeholder="任务标题"
             autoFocus
             style={{
-              width: '100%', height: 40, padding: '0 12px', boxSizing: 'border-box',
+              width: '100%', height: s.fieldHeight, padding: '0 12px', boxSizing: 'border-box',
               border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
               background: 'var(--background)', color: 'inherit',
-              fontSize: 14, fontWeight: 500, outline: 'none', fontFamily: 'var(--font-sans)',
+              fontSize: s.fieldFont, fontWeight: 500, outline: 'none', fontFamily: 'var(--font-sans)',
             }}
           />
         </div>
 
         {/* 备注 */}
-        <div style={{ padding: '12px 20px 0' }}>
-          <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>备注</div>
+        <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
+          <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>备注</div>
           <textarea
             value={remark}
             onChange={(e) => setRemark(e.target.value)}
             placeholder="任务备注（可选）"
-            rows={3}
+            rows={s.rows}
             style={{
               width: '100%', padding: '10px 12px', boxSizing: 'border-box', resize: 'vertical',
               border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
               background: 'var(--background)', color: 'inherit',
-              fontSize: 13, outline: 'none', fontFamily: 'var(--font-sans)', lineHeight: 1.5,
+              fontSize: compact ? 12 : 13, outline: 'none', fontFamily: 'var(--font-sans)', lineHeight: 1.5,
             }}
           />
         </div>
 
         {/* 重要 */}
-        <div style={{ padding: '12px 20px 0' }}>
+        <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
           <div
             onClick={() => setImportant(!important)}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: compact ? '4px 8px' : '5px 10px', borderRadius: 10,
               background: important ? 'color-mix(in srgb, var(--chart-3) 8%, transparent)' : 'transparent',
               border: `1px solid ${important ? 'color-mix(in srgb, var(--chart-3) 25%, transparent)' : 'var(--border)'}`,
-              cursor: 'pointer', fontSize: 12.5,
+              cursor: 'pointer', fontSize: s.chipFont,
               color: important ? 'var(--chart-3)' : 'var(--muted-foreground)',
             }}
           >
@@ -215,7 +242,7 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
         </div>
 
         {/* 时间设置：开始时间 + 截止时间 */}
-        <div style={{ padding: '12px 20px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: `${s.padTop}px ${s.padX}px 0`, display: 'flex', alignItems: 'center', gap: 8 }}>
           <div
             onClick={() => { setStartOpen(!startOpen); setDateOpen(false); }}
             style={chipStyle(manualStart !== null)}
@@ -235,22 +262,22 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
         </div>
 
         {startOpen && (
-          <div style={{ padding: '10px 20px 0' }}>
+          <div style={{ padding: `${s.padTop - 2}px ${s.padX}px 0` }}>
             {timePanel('无开始日期', manualStart, setManualStart, () => setStartOpen(false), true)}
           </div>
         )}
         {dateOpen && (
-          <div style={{ padding: '10px 20px 0' }}>
+          <div style={{ padding: `${s.padTop - 2}px ${s.padX}px 0` }}>
             {timePanel('无截止日期', manualDeadline, setManualDeadline, () => setDateOpen(false), false)}
           </div>
         )}
 
         {/* 操作按钮 */}
-        <div style={{ padding: '16px 20px 20px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+        <div style={{ padding: `${s.padTop + 4}px ${s.padX}px ${s.padTop + 4}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
           <button
             onClick={onClose}
             style={{
-              height: 36, padding: '0 16px', fontSize: 13, color: 'var(--muted-foreground)',
+              height: s.btnHeight, padding: `0 ${s.btnPad}px`, fontSize: compact ? 12 : 13, color: 'var(--muted-foreground)',
               border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-sans)',
             }}
           >
@@ -260,7 +287,7 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
             onClick={handleSave}
             disabled={!title.trim()}
             style={{
-              height: 36, padding: '0 20px', fontSize: 13, fontWeight: 600,
+              height: s.btnHeight, padding: `0 ${s.btnPad + 4}px`, fontSize: compact ? 12 : 13, fontWeight: 600,
               borderRadius: 999, background: 'var(--primary)', color: 'var(--primary-foreground)',
               border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)',
               opacity: title.trim() ? 1 : 0.42,

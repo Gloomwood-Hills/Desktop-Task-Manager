@@ -16,6 +16,8 @@ interface QuickCaptureProps {
   ) => void;
   /** 预填的默认截止日期（归一化为当天 00:00）；不传时保持原有行为 */
   initialDate?: number;
+  /** 预选的默认文件夹（如右键文件夹 → 新建任务）；null/不传时默认未分类 */
+  initialFolderId?: string | null;
 }
 
 const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '提前1天', '不提醒'];
@@ -32,10 +34,10 @@ function toLocalInputValue(ts: number): string {
 }
 
 /** 新建任务弹窗（Quick Capture，对齐设计稿 quick-capture） */
-export default function QuickCapture({ folders, onClose, onCreate, initialDate }: QuickCaptureProps) {
+export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null }: QuickCaptureProps) {
   const [title, setTitle] = useState('');
   const [remark, setRemark] = useState('');
-  const [folderId, setFolderId] = useState<string | null>(null);
+  const [folderId, setFolderId] = useState<string | null>(initialFolderId);
   const [folderOpen, setFolderOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
   /** 手动选择的截止时间；null 时回退到标题自然语言解析。提供 initialDate 时预填（归一化为当天 00:00） */

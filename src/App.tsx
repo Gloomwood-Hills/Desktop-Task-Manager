@@ -18,6 +18,7 @@ import { useTaskData } from './hooks/useTaskData';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState } from './data/types';
 import { isMobile } from './data/platform';
 import { formatDeadline } from './components/utils/formatDate';
+import { uploadLocal, downloadRemote } from './data/sync';
 
 /** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为底部固定导航条
  * （触控高度 ≥ 44px）。isMobile 为模块级常量，两套样式互不影响，桌面视觉零回归。 */
@@ -42,7 +43,7 @@ function ViewTabs({ mode, onChange, mobile }: {
     }}>
       {(['list', 'calendar', 'day'] as ViewMode[]).map((m) => {
         const active = mode === m;
-        const label = m === 'list' ? '列表' : m === 'calendar' ? '日历' : '日';
+        const label = m === 'list' ? '列表' : m === 'calendar' ? '月' : '日';
         return (
           <button
             key={m}
@@ -117,6 +118,8 @@ function App() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  /** 新建弹窗预选文件夹（右键文件夹 → 新建任务时记录；弹窗关闭/创建后清空） */
+  const [captureFolder, setCaptureFolder] = useState<string | null>(null);
   /** 新建弹窗预填日期（日视图"新建任务"触发时记录；弹窗关闭/创建后清空） */
   const [prefillDate, setPrefillDate] = useState<number | null>(null);
   const [lastAction, setLastAction] = useState<LastAction>(null);
@@ -125,6 +128,8 @@ function App() {
   const [dialog, setDialog] = useState<DialogState>(null);
   /** 编辑中的任务（右键菜单 → 编辑） */
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  /** 顶栏同步按钮状态：进行中禁用点击并旋转图标 */
+  const [syncBusy, setSyncBusy] = useState(false);
 
   // ===== 视图切换（V2：列表 / 日历 / 日） =====
   /** 当前视图模式：从持久化 Settings 初始化，切换后回写 */
@@ -281,7 +286,7 @@ function App() {
       if (key === 'z') { e.preventDefault(); handleUndo(); return; }
       if (key === 'e') { e.preventDefault(); expandAll(); return; }
       if (key === 's') { e.preventDefault(); collapseAll(); return; }
-      if (key === 'n') { e.preventDefault(); setCaptureOpen(true); }
+      if (key === 'n') { e.preventDefault(); setCaptureFolder(null); setCaptureOpen(true); }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -460,7 +465,46 @@ function App() {
   ) => {
     await createTask(title, folderId, options);
     setPrefillDate(null);
+    setCaptureFolder(null);
     setCaptureOpen(false);
+  };
+
+  // ===== 顶部栏手动同步（上传覆盖 / 下载覆盖） =====
+
+  /** 待确认的手动覆盖操作：upload=上传覆盖 / download=下载覆盖 */
+  const [pendingSyncAction, setPendingSyncAction] = useState<'upload' | 'download' | null>(null);
+
+  /** 校验 WebDAV 配置是否就绪（未配置时提示先到设置里配置） */
+  const syncConfigReady = (): boolean =>
+    !!settings?.webdavUrl && !!settings.webdavUsername && !!settings.webdavPassword;
+
+  /** 执行上传/下载覆盖：成功后记录本设备上次同步时间与操作（下载覆盖本地数据，故需二次确认） */
+  const handleForceSync = async (action: 'upload' | 'download') => {
+    setPendingSyncAction(null);
+    if (syncBusy || !settings) return;
+    if (!syncConfigReady()) {
+      setToast('请先在 设置 → 同步 中配置 WebDAV 账号');
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      const syncSettings = {
+        webdavUrl: settings.webdavUrl,
+        webdavUsername: settings.webdavUsername,
+        webdavPassword: settings.webdavPassword,
+      };
+      const result = action === 'upload'
+        ? await uploadLocal(syncSettings)
+        : await downloadRemote(syncSettings);
+      setToast(result.message);
+      if (result.status === 'uploaded' || result.status === 'downloaded') {
+        await updateSettings({ lastSyncedAt: Date.now(), lastSyncAction: action });
+      }
+    } catch (error) {
+      setToast(`同步失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSyncBusy(false);
+    }
   };
 
   // ===== 视图数据（V2）：日历 / 日视图共用的展平活动任务列表 =====
@@ -587,6 +631,8 @@ function App() {
         display: 'flex',
         flexDirection: 'column',
         borderRadius: isMobile ? 0 : 'calc(var(--radius) * 1.1)',
+        // 移动端 edge-to-edge：顶部留出状态栏高度空白（env 兜底 12px），避免内容被通知栏遮挡无法点击
+        paddingTop: isMobile ? 'max(env(safe-area-inset-top), 12px)' : 0,
         background: glassEnabled
           ? `color-mix(in srgb, var(--background) ${transparency}%, transparent)`
           : 'var(--background)',
@@ -606,9 +652,21 @@ function App() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onOpenSettings={() => setSettingsOpen(true)}
-          onNewTask={() => setCaptureOpen(true)}
+          onNewTask={() => {
+            // 日视图下通过顶部标题栏新建时，预填当前查看的日期
+            if (viewMode === 'day') {
+              setPrefillDate(calendarDate);
+            }
+            setCaptureFolder(null);
+            setCaptureOpen(true);
+          }}
           pinned={pinned}
           onTogglePin={() => setPinned(!pinned)}
+          onSyncUpload={() => setPendingSyncAction('upload')}
+          onSyncDownload={() => setPendingSyncAction('download')}
+          syncBusy={syncBusy}
+          lastSyncedAt={settings?.lastSyncedAt ?? null}
+          lastSyncAction={settings?.lastSyncAction ?? null}
         />
 
         {/* 分隔线 */}
@@ -649,6 +707,7 @@ function App() {
                 importantTop={settings?.importantTop ?? false}
                 manualSort={settings?.sortType === 'manual'}
                 deadlineGradient={settings?.deadlineGradient ?? true}
+                dark={theme === 'dark'}
                 onReorderTasks={reorderTasks}
                 onReorderFolders={reorderFolders}
                 onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
@@ -695,10 +754,6 @@ function App() {
               tasks={allActiveTasks}
               date={calendarDate}
               onDateChange={setCalendarDate}
-              onNewTask={() => {
-                setPrefillDate(calendarDate);
-                setCaptureOpen(true);
-              }}
             />
           )}
         </main>
@@ -736,7 +791,14 @@ function App() {
           const folder = allFolders.find((f) => f.id === folderId);
           setDialog({ type: 'delete-folder', folderId, name: folder?.name || '' });
         }}
-        onNewTask={() => setCaptureOpen(true)}
+        onNewTask={() => {
+          setCaptureFolder(null);
+          setCaptureOpen(true);
+        }}
+        onNewTaskInFolder={(folderId) => {
+          setCaptureFolder(folderId);
+          setCaptureOpen(true);
+        }}
         onRefresh={() => refresh()}
         onOpenSettings={() => setSettingsOpen(true)}
         onExit={() => { void invoke('exit_app'); }}
@@ -748,10 +810,12 @@ function App() {
           folders={folderTree}
           onClose={() => {
             setPrefillDate(null);
+            setCaptureFolder(null);
             setCaptureOpen(false);
           }}
           onCreate={handleCreateTask}
           initialDate={prefillDate ?? undefined}
+          initialFolderId={captureFolder}
         />
       )}
 
@@ -772,7 +836,20 @@ function App() {
           settings={settings}
           onChange={updateSettings}
           onClose={() => setSettingsOpen(false)}
-          onSyncComplete={() => void refresh()}
+        />
+      )}
+
+      {/* 标题栏上传/下载覆盖二次确认：下载会覆盖本地，故需确认（上传覆盖云端同理，沿用原设置内确认逻辑） */}
+      {pendingSyncAction && (
+        <ConfirmDialog
+          title={pendingSyncAction === 'upload' ? '上传覆盖' : '下载覆盖'}
+          message={pendingSyncAction === 'upload'
+            ? '将本地全部数据上传并覆盖云端备份。若云端存在其他设备更新的数据，将以本地为准覆盖。'
+            : '将云端备份下载并覆盖本地全部数据，本地尚未同步的修改将丢失。'}
+          confirmText="确认"
+          destructive={pendingSyncAction === 'download'}
+          onConfirm={() => handleForceSync(pendingSyncAction)}
+          onCancel={() => setPendingSyncAction(null)}
         />
       )}
 
