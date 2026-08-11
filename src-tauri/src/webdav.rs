@@ -3,13 +3,17 @@ use serde::Serialize;
 /// WebDAV GET 结果。
 /// `exists=false` 表示远端文件不存在（404），其余字段仅在请求成功（2xx）时填充。
 /// 字段用 camelCase 序列化，与前端 TS 类型保持一致。
+/// `content` 为原始字节（gzip 压缩的 JSON），serde 序列化为 number[]。
+/// 为什么用字节而非文本：上传前前端对 JSON 做了 gzip 压缩以节省坚果云免费版流量，
+/// 下载侧必须拿到原始字节后由前端检查 gzip 魔数（0x1f 0x8b）再决定是否解压，
+/// 这里若直接用 .text() 解码会破坏压缩字节流。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebdavFetchResult {
     pub status: u16,
     pub exists: bool,
     pub last_modified: Option<String>,
-    pub content: Option<String>,
+    pub content: Option<Vec<u8>>,
 }
 
 /// WebDAV PUT 结果。
@@ -95,8 +99,10 @@ pub async fn webdav_fetch(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let text = response
-        .text()
+    // 读取原始字节（不按文本解码）：上传内容已由前端 gzip 压缩，压缩字节流不是合法 UTF-8 文本，
+    // 必须保留字节交由前端按 gzip 魔数解压；历史未压缩快照也能原样返回（前端兼容两种格式）。
+    let bytes = response
+        .bytes()
         .await
         .map_err(|e| format!("读取响应内容失败：{e}"))?;
 
@@ -104,25 +110,28 @@ pub async fn webdav_fetch(
         status: status_code,
         exists: true,
         last_modified,
-        content: Some(text),
+        content: Some(bytes.to_vec()),
     })
 }
 
 /// PUT 上传内容到远端文件（不存在则创建，存在则覆盖）。
+/// content 是前端 gzip 压缩后的字节（JSON 文本 → CompressionStream('gzip')），
+/// 因此 Content-Type 用 application/octet-stream（二进制载荷）而非 application/json；
+/// 压缩目的：坚果云免费版上传配额仅 1GB/月，JSON 文本压缩约 10 倍，显著降低流量消耗。
 #[tauri::command]
 pub async fn webdav_put(
     url: String,
     username: String,
     password: String,
     remote_path: String,
-    content: String,
+    content: Vec<u8>,
 ) -> Result<WebdavPutResult, String> {
     let target = join_path(&url, &remote_path);
 
     let response = reqwest::Client::new()
         .put(&target)
         .basic_auth(&username, Some(&password))
-        .header(reqwest::header::CONTENT_TYPE, "application/json; charset=utf-8")
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(content)
         .send()
         .await

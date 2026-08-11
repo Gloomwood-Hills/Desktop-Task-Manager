@@ -18,7 +18,7 @@ import { useTaskData } from './hooks/useTaskData';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState } from './data/types';
 import { isMobile } from './data/platform';
 import { formatDeadline } from './components/utils/formatDate';
-import { uploadLocal, downloadRemote, configureAutoSync, startAutoSync, stopAutoSync } from './data/sync';
+import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync } from './data/sync';
 
 /** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为底部固定导航条
  * （触控高度 ≥ 44px）。isMobile 为模块级常量，两套样式互不影响，桌面视觉零回归。 */
@@ -481,18 +481,14 @@ function App() {
     setCaptureOpen(false);
   };
 
-  // ===== 顶部栏手动同步（上传覆盖 / 下载覆盖） =====
-
-  /** 待确认的手动覆盖操作：upload=上传覆盖 / download=下载覆盖 */
-  const [pendingSyncAction, setPendingSyncAction] = useState<'upload' | 'download' | null>(null);
+  // ===== 一键更新（合并式同步，无需选择上传/下载方向） =====
 
   /** 校验 WebDAV 配置是否就绪（未配置时提示先到设置里配置） */
   const syncConfigReady = (): boolean =>
     !!settings?.webdavUrl && !!settings.webdavUsername && !!settings.webdavPassword;
 
-  /** 执行上传/下载覆盖：成功后记录本设备上次同步时间与操作（下载覆盖本地数据，故需二次确认） */
-  const handleForceSync = async (action: 'upload' | 'download') => {
-    setPendingSyncAction(null);
+  /** 一键更新：执行合并式同步（拉取→合并→写回两端），无需选择方向 */
+  const handleOneClickSync = async () => {
     if (syncBusy || !settings) return;
     if (!syncConfigReady()) {
       setToast('请先在 设置 → 同步 中配置 WebDAV 账号');
@@ -505,12 +501,14 @@ function App() {
         webdavUsername: settings.webdavUsername,
         webdavPassword: settings.webdavPassword,
       };
-      const result = action === 'upload'
-        ? await uploadLocal(syncSettings)
-        : await downloadRemote(syncSettings);
+      const result = await syncAuto(syncSettings, settings.lastSyncedAt);
       setToast(result.message);
-      if (result.status === 'uploaded' || result.status === 'downloaded') {
-        await updateSettings({ lastSyncedAt: Date.now(), lastSyncAction: action });
+      // 成功后记录本设备上次同步时间与操作（merged→合并 / uploaded→上传 / downloaded→下载；skipped 无需写）
+      if (result.status === 'merged' || result.status === 'uploaded' || result.status === 'downloaded') {
+        await updateSettings({
+          lastSyncedAt: Date.now(),
+          lastSyncAction: result.status === 'merged' ? 'merged' : result.status === 'uploaded' ? 'upload' : 'download',
+        });
       }
     } catch (error) {
       setToast(`同步失败：${error instanceof Error ? error.message : String(error)}`);
@@ -674,8 +672,7 @@ function App() {
           }}
           pinned={pinned}
           onTogglePin={() => setPinned(!pinned)}
-          onSyncUpload={() => setPendingSyncAction('upload')}
-          onSyncDownload={() => setPendingSyncAction('download')}
+          onSync={handleOneClickSync}
           syncBusy={syncBusy}
           lastSyncedAt={settings?.lastSyncedAt ?? null}
           lastSyncAction={settings?.lastSyncAction ?? null}
@@ -848,20 +845,6 @@ function App() {
           settings={settings}
           onChange={updateSettings}
           onClose={() => setSettingsOpen(false)}
-        />
-      )}
-
-      {/* 标题栏上传/下载覆盖二次确认：下载会覆盖本地，故需确认（上传覆盖云端同理，沿用原设置内确认逻辑） */}
-      {pendingSyncAction && (
-        <ConfirmDialog
-          title={pendingSyncAction === 'upload' ? '上传覆盖' : '下载覆盖'}
-          message={pendingSyncAction === 'upload'
-            ? '将本地全部数据上传并覆盖云端备份。若云端存在其他设备更新的数据，将以本地为准覆盖。'
-            : '将云端备份下载并覆盖本地全部数据，本地尚未同步的修改将丢失。'}
-          confirmText="确认"
-          destructive={pendingSyncAction === 'download'}
-          onConfirm={() => handleForceSync(pendingSyncAction)}
-          onCancel={() => setPendingSyncAction(null)}
         />
       )}
 

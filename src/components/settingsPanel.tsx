@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Cloud, BookOpen, ChevronDown } from 'lucide-react';
 import { Settings, SortType } from '../data/types';
-import { probeRemote } from '../data/sync';
+import { probeRemote, syncAuto } from '../data/sync';
 import type { SyncSettings } from '../data/sync';
 
 export type ThemeMode = 'light' | 'dark';
@@ -163,6 +163,27 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
       });
     } catch (error) {
       setSyncResult({ ok: false, message: `连接失败：${error instanceof Error ? error.message : String(error)}` });
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  /** 一键更新：合并式同步（拉取→合并→写回两端），无需选择方向；成功后记录上次同步时间与操作 */
+  const handleOneClickSync = async () => {
+    if (syncBusy) return;
+    setSyncBusy(true);
+    try {
+      const result = await syncAuto(buildSyncSettings(), settings?.lastSyncedAt ?? null);
+      setSyncResult({ ok: result.status !== 'error', message: result.message });
+      // merged→合并 / uploaded→上传 / downloaded→下载；skipped 无需写
+      if (result.status === 'merged' || result.status === 'uploaded' || result.status === 'downloaded') {
+        onChange({
+          lastSyncedAt: Date.now(),
+          lastSyncAction: result.status === 'merged' ? 'merged' : result.status === 'uploaded' ? 'upload' : 'download',
+        });
+      }
+    } catch (error) {
+      setSyncResult({ ok: false, message: `同步失败：${error instanceof Error ? error.message : String(error)}` });
     } finally {
       setSyncBusy(false);
     }
@@ -432,8 +453,8 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </div>
                 <p style={{ ...descStyle, lineHeight: 1.6 }}>
                   填写任意 WebDAV 服务器（如坚果云免费空间 dav.jianguoyun.com/dav/），即可把任务数据备份到云端。
-                  可开启下方「自动同步」，应用会在启动、数据变更（30 秒后）与每 10 分钟自动双向合并同步；
-                  也可点击标题栏的「上传」「下载」按钮手动同步。
+                  可开启下方「自动同步」，应用会在启动、数据变更（30 秒后）与每 60 分钟自动双向合并同步；
+                  也可点击「一键更新」手动同步：自动合并云端与本地，无需选择方向。
                   密码仅保存在本机数据库，不会上传到任何地方。
                 </p>
               </div>
@@ -442,7 +463,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
               <div style={rowStyle}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <label style={labelStyle}>自动同步</label>
-                  <p style={descStyle}>开启后应用会在启动、数据变更（30 秒后）与每 10 分钟自动双向合并同步</p>
+                  <p style={descStyle}>开启后应用会在启动、数据变更（30 秒后）与每 60 分钟自动双向合并同步</p>
                 </div>
                 <div style={switchStyle} onClick={() => { setAutoSync(!autoSync); onChange({ autoSync: !autoSync }); }}>
                   <span style={switchTrack(autoSync)} />
@@ -536,8 +557,11 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 />
               </div>
 
-              {/* 操作区：仅保留连接测试（上传/下载覆盖已移至标题栏） */}
+              {/* 操作区：一键更新（合并式同步）+ 连接测试 */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button onClick={handleOneClickSync} disabled={syncBusy} style={secondaryBtn}>
+                  一键更新
+                </button>
                 <button onClick={handleProbe} disabled={syncBusy} style={{ ...secondaryBtn, flex: '0 0 auto', padding: '0 16px' }}>
                   连接测试
                 </button>

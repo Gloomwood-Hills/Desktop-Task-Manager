@@ -1,6 +1,6 @@
 import { exportLocalSnapshot } from './exporter';
 import { importMerged, importSnapshot } from './importer';
-import { mergeFolders, mergeTasks } from './merge';
+import { mergeFolders, mergeTasks, snapshotRecordsEqual } from './merge';
 import { parseSnapshot, snapshotToJson } from './snapshot';
 import { SyncSettings, SyncSnapshot, SYNC_SCHEMA_VERSION } from './types';
 import { webdavFetch, webdavMkcol, webdavPut } from './webdavClient';
@@ -94,6 +94,9 @@ export async function downloadRemote(settings: SyncSettings): Promise<SyncResult
  * 解析失败抛错绝不覆盖远端）→ mergeFolders/mergeTasks 按 id + updatedAt 做
  * Last-Write-Wins 合并（deleted 墓碑参与传播）→ importMerged 写回本地 →
  * 合并结果快照上传远端，使两端收敛到一致状态。
+ * 节流（流量限额改造）：合并后先做记录级相等判定——本地与云端均无变化时整体跳过
+ * （不写库、不 PUT，零流量）；仅本地缺云端记录时只写本地不上传；仅远端落后时只上传。
+ * 配合 gzip 压缩传输与 60min 定时兜底，控制坚果云免费版月度上传/下载配额消耗。
  */
 export async function syncMerge(settings: SyncSettings): Promise<SyncResult> {
   try {
@@ -114,10 +117,7 @@ export async function syncMerge(settings: SyncSettings): Promise<SyncResult> {
     const folders = mergeFolders(local.folders, remoteSnapshot.folders);
     const tasks = mergeTasks(local.tasks, remoteSnapshot.tasks);
 
-    // 合并结果写回本地（不清空，逐条 INSERT OR REPLACE 收敛）
-    await importMerged(folders, tasks);
-
-    // 构建合并结果快照并上传，使远端收敛到与本地一致的合并后状态
+    // 构建合并结果快照：exportedAt/deviceId 只是导出元数据，不参与记录级相等判定
     const mergedSnapshot: SyncSnapshot = {
       schemaVersion: SYNC_SCHEMA_VERSION,
       exportedAt: Date.now(),
@@ -125,16 +125,34 @@ export async function syncMerge(settings: SyncSettings): Promise<SyncResult> {
       folders,
       tasks,
     };
-    const dirError = await ensureRemoteDir(settings);
-    if (dirError !== null) {
-      return { status: 'error', message: dirError };
-    }
-    const put = await webdavPut(settings, REMOTE_PATH, snapshotToJson(mergedSnapshot));
-    if (put.status < 200 || put.status >= 300) {
-      return { status: 'error', message: `上传失败：HTTP ${put.status}` };
+
+    // 节流判定：本地与云端均无记录级差异 → 整体跳过（不写库、不 PUT，零流量）
+    const remoteUnchanged = snapshotRecordsEqual(mergedSnapshot, remoteSnapshot);
+    const localUnchanged = snapshotRecordsEqual(mergedSnapshot, local);
+    if (localUnchanged && remoteUnchanged) {
+      return { status: 'skipped', message: '云端与本地数据一致，无需更新' };
     }
 
-    return { status: 'merged', message: '已完成双向合并同步' };
+    // 本地有差异 → 合并结果写回本地（不清空，逐条 INSERT OR REPLACE 收敛；本机操作无网络流量）
+    if (!localUnchanged) {
+      await importMerged(folders, tasks);
+    }
+
+    // 云端有差异 → PUT 合并结果使远端收敛（ensureRemoteDir 先建目录规避 409）
+    if (!remoteUnchanged) {
+      const dirError = await ensureRemoteDir(settings);
+      if (dirError !== null) {
+        return { status: 'error', message: dirError };
+      }
+      const put = await webdavPut(settings, REMOTE_PATH, snapshotToJson(mergedSnapshot));
+      if (put.status < 200 || put.status >= 300) {
+        return { status: 'error', message: `上传失败：HTTP ${put.status}` };
+      }
+      return { status: 'merged', message: '已完成双向合并同步' };
+    }
+
+    // 走到这里：云端已是最新，仅本地需要补全（从云端合并了远端独有记录）
+    return { status: 'merged', message: '已从云端合并更新本地数据' };
   } catch (error) {
     return { status: 'error', message: `同步失败：${errorMessage(error)}` };
   }

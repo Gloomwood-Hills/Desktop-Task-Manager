@@ -159,7 +159,7 @@
 | `buildFolderTree()` | 扁平 folders + tasks → FolderNode 树 | `src/data/utils.ts` | ≈3 处 |
 | `buildSnapshot()` | 应用数据 → 同步快照（显式逐字段映射） | `src/data/sync/snapshot.ts` | ≈4 处 |
 | `parseSnapshot()` | 解析快照 JSON 并校验版本/结构（失败抛错） | `src/data/sync/snapshot.ts` | ≈4 处 |
-| `snapshotToJson()` | 序列化快照为缩进 JSON | `src/data/sync/snapshot.ts` | ≈2 处 |
+| `snapshotToJson()` | 序列化快照为紧凑 JSON（无缩进，配合 gzip 减小体积） | `src/data/sync/snapshot.ts` | ≈2 处 |
 | `exportLocalSnapshot()` | 导出本地全量数据为同步快照 | `src/data/sync/exporter.ts` | ≈2 处 |
 | `formatDeadlineRel()` | 相对标签：明天/后天/本周x/下周x | `src/components/utils/formatDate.ts` | ≈4 处 |
 | `formatDeadlineYMD()` | 年月日标签（含具体时间时附 HH:mm） | `src/components/utils/formatDate.ts` | ≈7 处 |
@@ -190,10 +190,20 @@
 | `probeRemote()` | 探测远端：GET 备份文件并解析 exportedAt（损坏/版本不兼容抛错） | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
 | `uploadLocal()` | 上传本地快照到远端（buildSnapshot → snapshotToJson → webdavPut；强制整库覆盖语义，手动上传保留） | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
 | `downloadRemote()` | 从远端下载快照并覆盖本地库（强制整库覆盖语义，手动下载保留） | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
-| `syncMerge()` | 合并式同步主流程（V2.1 Task 5 新增）：拉取远端 → 与本地含墓碑按 id+updatedAt 记录级合并（LWW）→ importMerged 写回本地 → 合并结果快照上传远端；解析失败绝不覆盖远端 | `src/data/sync/engine.ts` | ≈3 处（2 文件） |
+| `syncMerge()` | 合并式同步主流程（V2.1 Task 5 新增；重制版节流）：拉取远端 → 与本地含墓碑按 id+updatedAt 记录级合并（LWW）→ importMerged 写回本地 → 合并结果快照上传远端；无变化跳过上传（snapshotRecordsEqual 判定），双端均无变化整体跳过零流量；解析失败绝不覆盖远端 | `src/data/sync/engine.ts` | ≈3 处（2 文件） |
 | `syncAuto()` | 自动同步（V2.1 Task 5 起）：直接委托 syncMerge 记录级合并，替代原 Last-Modified Wins 整库覆盖；lastSyncedAt 参数仅为兼容调用方签名保留 | `src/data/sync/engine.ts` | ≈3 处（2 文件） |
 | `getDeviceId()` | 稳定设备标识：localStorage 持久化，`dtm-` 前缀（区分跨端数据来源） | `src/data/sync/engine.ts` | ≈4 处 |
 | `REMOTE_PATH` | 远端备份文件相对路径常量（`desktop-task-manager/backup.json`） | `src/data/sync/engine.ts` | ≈5 处 |
+
+#### 重制版新增：流量节流与一键更新
+
+| 变量名 | 变量注释（描述） | 出现位置 | 出现频率 |
+| --- | --- | --- | --- |
+| `gzipText()` | gzip 压缩文本为字节（CompressionStream，上传前压缩，应对坚果云免费版 1GB/月上传额度） | `src/data/sync/webdavClient.ts` | ≈2 处 |
+| `decompressContent()` | 按 gzip 魔数（0x1f 0x8b）自动解压字节为文本；非 gzip 原样解码（兼容旧未压缩快照） | `src/data/sync/webdavClient.ts` | ≈2 处 |
+| `snapshotRecordsEqual()` | 快照"记录内容"是否相等（忽略数组顺序与 exportedAt/deviceId 元数据）：按 id 排序后稳定序列化比较，用于无变化跳过上传 | `src/data/sync/merge.ts` | ≈2 处 |
+| `handleOneClickSync()` | App 一键更新处理器：校验 WebDAV 配置 → syncAuto 合并式同步（无需选择上传/下载）→ toast 结果 → 成功后回写 lastSyncedAt/lastSyncAction | `src/App.tsx` | ≈2 处 |
+| `onSync`（TopBar prop） | 顶栏同步按钮回调：由 onSyncUpload/onSyncDownload 收敛为单一 onSync（一键更新，同步中禁用 + 图标旋转） | `src/components/topBar.tsx` | ≈2 处 |
 
 #### V2.1 新增：自动同步调度器（`src/data/sync/scheduler.ts`）
 
@@ -201,7 +211,7 @@
 | --- | --- | --- | --- |
 | `configureAutoSync(enabled)` | 依据 Settings.autoSync 更新调度器自动同步开关（App 在设置变化时调用） | `src/data/sync/scheduler.ts` | ≈3 处 |
 | `notifyDataChanged()` | 数据变更入口：未启用/同步中忽略；防抖 30s 后触发 runSync（每次调用重置计时器） | `src/data/sync/scheduler.ts` | ≈3 处 |
-| `startAutoSync()` | 启动自动同步：立即触发一次启动同步 + 10min setInterval 兜底（intervalId 已存在则跳过，幂等） | `src/data/sync/scheduler.ts` | ≈2 处 |
+| `startAutoSync()` | 启动自动同步：立即触发一次启动同步 + 60min setInterval 定时兜底（intervalId 已存在则跳过，幂等；重制版由 10min 降频以符合坚果云免费额度） | `src/data/sync/scheduler.ts` | ≈2 处 |
 | `stopAutoSync()` | 停止自动同步：清除定时兜底与未触发的防抖（供应用卸载时调用） | `src/data/sync/scheduler.ts` | ≈2 处 |
 | `runSync()` | 私有执行体：读最新 Settings，关闭/未配置 WebDAV 静默跳过；syncAuto 失败仅 console.error，成功回写 lastSyncedAt/lastSyncAction（merged/upload/download） | `src/data/sync/scheduler.ts` | ≈4 处 |
 
@@ -223,8 +233,8 @@
 | 变量名 | 变量注释（描述） | 出现位置 | 出现频率 |
 | --- | --- | --- | --- |
 | `exit_app` | Tauri 命令：前端"设置 → 退出"调用，退出应用（`app.exit(0)`） | `src-tauri/src/lib.rs`（注册于 `invoke_handler`） | ≈3 处（Rust 2 + 前端 App.tsx invoke 1） |
-| `webdav_fetch` | Tauri 命令：WebDAV GET 远端文件（Rust 直连规避 CORS，返回 status/exists/lastModified/content） | `src-tauri/src/webdav.rs`（注册于 `invoke_handler`） | ≈3 处（Rust 2 + 前端 webdavClient invoke 1） |
-| `webdav_put` | Tauri 命令：WebDAV PUT 上传内容（不存在创建、存在覆盖） | `src-tauri/src/webdav.rs`（注册于 `invoke_handler`） | ≈3 处（Rust 2 + 前端 webdavClient invoke 1） |
+| `webdav_fetch` | Tauri 命令：WebDAV GET 远端文件（Rust 直连规避 CORS，返回原始字节 content: Vec<u8>，前端按 gzip 魔数解压，兼容旧未压缩文件） | `src-tauri/src/webdav.rs`（注册于 `invoke_handler`） | ≈3 处（Rust 2 + 前端 webdavClient invoke 1） |
+| `webdav_put` | Tauri 命令：WebDAV PUT 上传内容（重制版改收字节 Vec<u8>，Content-Type: application/octet-stream，前端 gzip 压缩后上传） | `src-tauri/src/webdav.rs`（注册于 `invoke_handler`） | ≈3 处（Rust 2 + 前端 webdavClient invoke 1） |
 
 ## 7. 组件（`src/components/`，默认导出组件与导出函数）
 

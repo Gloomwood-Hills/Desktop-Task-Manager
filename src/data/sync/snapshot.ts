@@ -81,7 +81,8 @@ export function parseSnapshot(json: string): SyncSnapshot {
   return { ...snapshot, schemaVersion: SYNC_SCHEMA_VERSION } as SyncSnapshot;
 }
 
-/** 序列化快照为带缩进的 JSON（便于人工审查 diff/版本对比） */
+/** 序列化快照为无缩进的紧凑 JSON（配合 gzip 压缩传输：去掉空白缩进可进一步减小体积，
+ * 压缩后通常只剩原文 1/10 左右，节省坚果云免费版上传/下载配额） */
 export function snapshotToJson(snapshot: SyncSnapshot): string {
-  return JSON.stringify(snapshot, null, 2);
+  return JSON.stringify(snapshot);
 }

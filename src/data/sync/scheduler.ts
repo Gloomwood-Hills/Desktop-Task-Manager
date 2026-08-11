@@ -1,7 +1,9 @@
 /**
  * 自动同步调度器（V2.1 Task 6）：模块级单例，不做 React 组件，供 App / useTaskData 调用。
  * 触发时机：应用启动（startAutoSync 立即触发一次）→ 数据变更防抖 30s（notifyDataChanged）→
- * 每 10 分钟定时兜底。所有失败均静默（仅 console.error），下一轮自动重试，不弹窗不阻塞主流程。
+ * 每 60 分钟定时兜底（流量限额改造：配合坚果云免费版上传 1GB/月，本端变更由启动+防抖推送，
+ * 定时兜底仅用于拉取他端变更，低频执行以控制下载配额）。所有失败均静默（仅 console.error），
+ * 下一轮自动重试，不弹窗不阻塞主流程。
  */
 import { getDatabase } from '../database';
 import { SettingsService } from '../../services/SettingsService';
@@ -9,7 +11,7 @@ import { syncAuto } from './engine';
 import { SyncSettings } from './types';
 
 const DEBOUNCE_MS = 30_000; // 变更防抖窗口
-const INTERVAL_MS = 10 * 60_000; // 定时兜底
+const INTERVAL_MS = 60 * 60_000; // 定时兜底（60 分钟，原 10 分钟——流量限额改造降频）
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -31,7 +33,7 @@ export function notifyDataChanged(): void {
   }, DEBOUNCE_MS);
 }
 
-/** 启动自动同步：立即触发一次启动同步，并启动 10min 定时兜底（intervalId 已存在则跳过，幂等） */
+/** 启动自动同步：立即触发一次启动同步，并启动 60min 定时兜底（intervalId 已存在则跳过，幂等） */
 export function startAutoSync(): void {
   void runSync();
   if (intervalId === null) {

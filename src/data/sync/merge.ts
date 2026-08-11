@@ -1,7 +1,42 @@
-import type { SyncFolder, SyncTask } from './types';
+import type { SyncFolder, SyncSnapshot, SyncTask } from './types';
 
 /** 可合并记录的最小形状：合并引擎只依赖 id + updatedAt（Last-Write-Wins） */
 export type MergableRecord = { id: string; updatedAt: number };
+
+/**
+ * 快照"记录内容"是否相等（忽略数组顺序与导出元数据）：
+ * folders/tasks 各自按 id 排序后逐条比较（每条记录按键排序后稳定序列化再比对）。
+ * 只比较记录内容，不比较 exportedAt/deviceId——两者是每次导出都变的元数据，
+ * 参与比较会把"无数据变化"误判为"有变化"（见 engine.ts syncMerge 的节流判定）。
+ * 稳定序列化（对每条记录按 key 排序后拼串）可避免 v1 规范化与 v2 键序差异导致的误判。
+ */
+export function snapshotRecordsEqual(a: SyncSnapshot, b: SyncSnapshot): boolean {
+  return recordsEqual(a.folders, b.folders) && recordsEqual(a.tasks, b.tasks);
+}
+
+/** 记录数组内容是否相等：长度一致 + 按 id 排序后对应位置逐条比较（忽略数组原始顺序） */
+function recordsEqual(a: SyncFolder[] | SyncTask[], b: SyncFolder[] | SyncTask[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort(byId);
+  const sortedB = [...b].sort(byId);
+  for (let i = 0; i < sortedA.length; i++) {
+    if (stableSerialize(sortedA[i]) !== stableSerialize(sortedB[i])) return false;
+  }
+  return true;
+}
+
+function byId(x: { id: string }, y: { id: string }): number {
+  return x.id < y.id ? -1 : x.id > y.id ? 1 : 0;
+}
+
+/** 按 key 排序后稳定序列化单条记录（SyncFolder/SyncTask 字段均为标量，一层排序即可消除键序差异） */
+function stableSerialize(record: SyncFolder | SyncTask): string {
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    sorted[key] = (record as unknown as Record<string, unknown>)[key];
+  }
+  return JSON.stringify(sorted);
+}
 
 /**
  * 按 id + updatedAt 双向合并（Last-Write-Wins）：

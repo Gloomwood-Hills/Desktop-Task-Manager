@@ -1,4 +1,4 @@
-import { Search, Settings, Plus, Pin, PinOff, Upload, Download } from 'lucide-react';
+import { Search, Settings, Plus, Pin, PinOff, RefreshCw } from 'lucide-react';
 import { isMobile } from '../data/platform';
 
 interface TopBarProps {
@@ -8,15 +8,13 @@ interface TopBarProps {
   onNewTask: () => void;
   pinned: boolean;
   onTogglePin: () => void;
-  /** 上传覆盖（标题栏手动同步，覆盖云端备份） */
-  onSyncUpload: () => void;
-  /** 下载覆盖（标题栏手动同步，覆盖本地数据） */
-  onSyncDownload: () => void;
+  /** 一键更新（合并式同步：拉取→合并→写回两端，无需选择方向） */
+  onSync: () => void;
   /** 同步进行中：禁用同步按钮 */
   syncBusy?: boolean;
   /** 本设备上次成功同步时间戳（毫秒），null 表示尚未同步 */
   lastSyncedAt?: number | null;
-  /** 本设备上次同步操作：upload=上传覆盖 / download=下载覆盖 */
+  /** 本设备上次同步操作：upload=上传 / download=下载 / merged=合并 */
   lastSyncAction?: 'upload' | 'download' | 'merged' | null;
 }
 
@@ -32,13 +30,13 @@ function formatSyncTime(ts: number | null): string {
  * 移动端（Android）为全屏应用，无窗口可拖动。 */
 export default function TopBar({
   searchQuery, onSearchChange, onOpenSettings, onNewTask, pinned, onTogglePin,
-  onSyncUpload, onSyncDownload, syncBusy = false, lastSyncedAt = null, lastSyncAction = null,
+  onSync, syncBusy = false, lastSyncedAt = null, lastSyncAction = null,
 }: TopBarProps) {
   // 第一行控件（搜索框/新建）尺寸：桌面 34px，移动端 ≥44px（Apple HIG / Material 触控标准）
   const controlSize = isMobile ? 44 : 34;
   // 第二行图标按钮尺寸（缩小）：桌面 26px，移动端 36px
   const iconSize = isMobile ? 36 : 26;
-  // 图标按钮统一样式（图钉/设置/上传/下载）
+  // 图标按钮统一样式（图钉/设置/一键更新）
   const iconBtnStyle: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',
@@ -132,7 +130,7 @@ export default function TopBar({
         </button>
       </div>
 
-      {/* 第二行：图标按钮（图钉仅桌面端/设置/上传/下载，缩小） */}
+      {/* 第二行：图标按钮（图钉仅桌面端/设置/一键更新，缩小） */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, paddingLeft: 2 }}>
         {/* 置顶（DeskPins）仅桌面有意义：移动端全屏应用无窗口可锁定，隐藏 */}
         {!isMobile && (
@@ -152,22 +150,19 @@ export default function TopBar({
           <Settings style={{ width: iconGlyph, height: iconGlyph }} />
         </button>
         <button
-          onClick={onSyncUpload}
+          onClick={onSync}
           disabled={syncBusy}
-          aria-label="上传覆盖"
-          title="上传覆盖"
+          aria-label="一键更新云端与本地"
+          title="一键更新云端与本地"
           style={{ ...iconBtnStyle, color: syncBusy ? 'var(--muted-foreground)' : 'var(--icon-muted)', cursor: syncBusy ? 'default' : 'pointer' }}
         >
-          <Upload style={{ width: iconGlyph, height: iconGlyph }} />
-        </button>
-        <button
-          onClick={onSyncDownload}
-          disabled={syncBusy}
-          aria-label="下载覆盖"
-          title="下载覆盖"
-          style={{ ...iconBtnStyle, color: syncBusy ? 'var(--muted-foreground)' : 'var(--icon-muted)', cursor: syncBusy ? 'default' : 'pointer' }}
-        >
-          <Download style={{ width: iconGlyph, height: iconGlyph }} />
+          <RefreshCw
+            style={{
+              width: iconGlyph,
+              height: iconGlyph,
+              animation: syncBusy ? 'dtm-spin 1s linear infinite' : 'none',
+            }}
+          />
         </button>
       </div>
 
