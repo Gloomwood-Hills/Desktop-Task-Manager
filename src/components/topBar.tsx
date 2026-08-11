@@ -17,7 +17,7 @@ interface TopBarProps {
   /** 本设备上次成功同步时间戳（毫秒），null 表示尚未同步 */
   lastSyncedAt?: number | null;
   /** 本设备上次同步操作：upload=上传覆盖 / download=下载覆盖 */
-  lastSyncAction?: 'upload' | 'download' | null;
+  lastSyncAction?: 'upload' | 'download' | 'merged' | null;
 }
 
 /** 同步时间格式化：`2026.8.8 14:30`，无时间返回"尚未同步" */
@@ -175,7 +175,7 @@ export default function TopBar({
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, paddingLeft: 4 }}>
         <span style={{ fontSize: 10.5, color: 'var(--muted-foreground)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
           {lastSyncedAt
-            ? `上次同步 ${formatSyncTime(lastSyncedAt)} · ${lastSyncAction === 'download' ? '下载' : lastSyncAction === 'upload' ? '上传' : '未知'}`
+            ? `上次同步 ${formatSyncTime(lastSyncedAt)} · ${lastSyncAction === 'download' ? '下载' : lastSyncAction === 'upload' ? '上传' : lastSyncAction === 'merged' ? '合并' : '未知'}`
             : '尚未同步'}
         </span>
         {syncBusy && (

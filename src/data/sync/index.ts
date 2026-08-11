@@ -3,7 +3,9 @@ export { SYNC_SCHEMA_VERSION } from './types';
 export type { SyncSettings, SyncSnapshot, SyncFolder, SyncTask } from './types';
 export { buildSnapshot, parseSnapshot, snapshotToJson } from './snapshot';
 export { exportLocalSnapshot } from './exporter';
-export { importSnapshot } from './importer';
+export { importSnapshot, importMerged } from './importer';
+export { mergeRecords, mergeFolders, mergeTasks, selfCheckMerge } from './merge';
+export type { MergableRecord } from './merge';
 export { webdavFetch, webdavPut, joinWebdavPath } from './webdavClient';
 export type { WebdavFetchResult, WebdavPutResult } from './webdavClient';
 export {
@@ -11,7 +13,9 @@ export {
   probeRemote,
   uploadLocal,
   downloadRemote,
+  syncMerge,
   syncAuto,
   getDeviceId,
 } from './engine';
 export type { SyncResult, SyncProbe } from './engine';
+export { configureAutoSync, startAutoSync, stopAutoSync, notifyDataChanged } from './scheduler';

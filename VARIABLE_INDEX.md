@@ -22,16 +22,16 @@
 | `FolderNode` | 文件夹树节点：任务树 + 递归子文件夹（`children`） | `src/data/types.ts` | ≈30 处 |
 | `SyncSettings` | WebDAV 同步设置：URL / 用户名 / 密码（密码仅本地保存） | `src/data/sync/types.ts` | ≈3 处 |
 | `SyncSnapshot` | 云同步数据快照（版本化 JSON：schemaVersion/exportedAt/deviceId/folders/tasks） | `src/data/sync/types.ts` | ≈12 处 |
-| `SyncFolder` | 同步用文件夹传输格式 | `src/data/sync/types.ts` | ≈8 处 |
+| `SyncFolder` | 同步用文件夹传输格式（v2 起含 `deleted` 墓碑） | `src/data/sync/types.ts` | ≈17 处 |
 | `SyncTask` | 同步用任务传输格式 | `src/data/sync/types.ts` | ≈10 处 |
-| `SYNC_SCHEMA_VERSION` | 快照结构版本号常量（当前 = 1，结构变更必须递增） | `src/data/sync/types.ts` | ≈4 处 |
+| `SYNC_SCHEMA_VERSION` | 快照结构版本号常量（当前 = 2：SyncFolder 含 deleted 墓碑；v1 快照兼容导入，见 parseSnapshot） | `src/data/sync/types.ts` | ≈5 处 |
 | `UseTaskData` | `useTaskData` Hook 返回值接口（树/任务/设置/窗口状态及全部操作） | `src/hooks/useTaskData.ts` | ≈3 处 |
 | `ContextMenuState` | 右键菜单状态：坐标 x/y、关联 taskId、可选 folderId | `src/components/contextMenu.tsx` | ≈3 处 |
 | `ThemeMode` | 设置面板主题模式别名（`'light' \| 'dark'`） | `src/components/settingsPanel.tsx` | ≈3 处 |
 | `ViewMode` | 视图模式字面量：`'list' \| 'calendar' \| 'day'`（V2：列表 / 日历 / 日视图） | `src/data/types.ts` | ≈9 处（3 文件） |
 | `WebdavFetchResult` | WebDAV GET 结果接口：status / exists / lastModified / content | `src/data/sync/webdavClient.ts` | ≈4 处 |
 | `WebdavPutResult` | WebDAV PUT 结果接口：status / lastModified | `src/data/sync/webdavClient.ts` | ≈3 处 |
-| `SyncResult` | 同步结果接口：status（`'uploaded' \| 'downloaded' \| 'skipped' \| 'error'`）+ message | `src/data/sync/engine.ts` | ≈5 处 |
+| `SyncResult` | 同步结果接口：status（`'uploaded' \| 'downloaded' \| 'merged' \| 'skipped' \| 'error'`，V2.1 合并同步新增 `'merged'`）+ message | `src/data/sync/engine.ts` | ≈6 处 |
 | `SyncProbe` | 远端探测结果：remoteExists / remoteExportedAt / remoteModified | `src/data/sync/engine.ts` | ≈4 处 |
 | `CalendarViewProps` | 日历视图组件属性：tasks + onSelectDay（回调当天 00:00 时间戳） | `src/components/calendarView.tsx` | ≈3 处 |
 | `DayViewProps` | 日视图组件属性：tasks / date / onDateChange / onNewTask | `src/components/dayView.tsx` | ≈3 处 |
@@ -46,6 +46,14 @@
 | `Settings.webdavPassword` | WebDAV 密码（仅保存在本机数据库，默认 ''） | `src/data/types.ts` | ≈15 处（6 文件） |
 | `Settings.lastSyncedAt` | 上次成功同步时间戳（毫秒），null 表示尚未同步 | `src/data/types.ts` | ≈20 处（5 文件） |
 
+#### V2.1 新增：软删墓碑与自动同步
+
+| 字段名 | 变量注释（描述） | 出现位置 | 出现频率 |
+| --- | --- | --- | --- |
+| `Folder.deleted` | 软删墓碑：0/1，已删除记录用于跨端同步传播 | `src/data/types.ts` | ≈2 处 |
+| `Settings.autoSync` | 自动同步开关：开启时启动/变更防抖/定时自动同步，默认 true | `src/data/types.ts` | ≈6 处（2 文件） |
+| `Settings.lastSyncAction` | 上次成功同步操作（V2.1 Task 6.2 联合类型新增 `'merged'`：upload=上传覆盖 / download=下载覆盖 / merged=双向合并，null 表示尚未同步过） | `src/data/types.ts` | ≈7 处（4 文件） |
+
 ## 2. Repositories（`src/data/repositories/`）
 
 | 类 / 方法 | 变量注释（描述） | 出现位置 | 出现频率 |
@@ -54,13 +62,15 @@
 | ├ `.getAll()` | 获取全部文件夹（按 sortOrder 升序） | `FolderRepository.ts` | ≈4 处 |
 | ├ `.getById(id)` | 按 id 查询文件夹 | `FolderRepository.ts` | ≈4 处 |
 | ├ `.getByParentId(parentId)` | 按父 id 查询子文件夹（null = 顶层） | `FolderRepository.ts` | ≈3 处 |
-| ├ `.create(folder)` | 新建文件夹（自动补 createdAt/updatedAt） | `FolderRepository.ts` | ≈2 处 |
+| ├ `.getAllIncludingDeleted()` | 全量读取（含软删墓碑），供快照导出与合并使用 | `FolderRepository.ts` | ≈1 处 |
+| ├ `.create(folder)` | 新建文件夹（自动补 createdAt/updatedAt/deleted） | `FolderRepository.ts` | ≈2 处 |
 | ├ `.update(folder)` | 更新文件夹名称/父级/排序 | `FolderRepository.ts` | ≈2 处 |
-| ├ `.delete(id)` | 物理删除文件夹（级联删除子项） | `FolderRepository.ts` | ≈2 处 |
+| ├ `.delete(id)` | 软删级联：标记文件夹及其子树 + 直属任务 deleted=1（原物理删除 → 软删，保留墓碑供跨端同步） | `FolderRepository.ts` | ≈2 处 |
 | ├ `.updateSortOrder(id, order)` | 更新单个文件夹排序号 | `FolderRepository.ts` | ≈2 处 |
 | └ `.reorderFolders(orderedIds)` | 手动排序：按给定顺序批量更新同级 sortOrder | `FolderRepository.ts` | ≈2 处 |
 | `TaskRepository` | 任务数据访问类 | `src/data/repositories/TaskRepository.ts` | ≈10 处 |
 | ├ `.getAll()` | 获取全部未删除任务 | `TaskRepository.ts` | ≈2 处 |
+| ├ `.getAllIncludingDeleted()` | 全量读取（含软删墓碑），供快照导出与合并使用 | `TaskRepository.ts` | ≈1 处 |
 | ├ `.getById(id)` | 按 id 查询任务 | `TaskRepository.ts` | ≈5 处 |
 | ├ `.getByFolderId(folderId)` | 按文件夹查询任务 | `TaskRepository.ts` | ≈3 处 |
 | ├ `.getByParentId(parentId)` | 按父任务查询子任务 | `TaskRepository.ts` | ≈1 处 |
@@ -171,13 +181,36 @@
 | `joinWebdavPath()` | 拼接服务地址与远端路径，容错末尾/开头斜杠避免双斜杠 | `src/data/sync/webdavClient.ts` | ≈2 处 |
 | `webdavFetch()` | GET 远端文件（存在性探测 + 内容下载；Rust 侧直连规避 CORS） | `src/data/sync/webdavClient.ts` | ≈4 处（3 文件） |
 | `webdavPut()` | PUT 上传内容到远端（不存在创建、存在覆盖） | `src/data/sync/webdavClient.ts` | ≈3 处（3 文件） |
-| `importSnapshot()` | 从快照覆盖导入本地库（校验通过后全量替换） | `src/data/sync/importer.ts` | ≈4 处（3 文件） |
+| `importSnapshot()` | 从快照覆盖导入本地库（校验通过后全量替换，Folder INSERT 已含 deleted 墓碑） | `src/data/sync/importer.ts` | ≈4 处（3 文件） |
+| `importMerged()` | 合并结果写回本地库（不清空，逐条 INSERT OR REPLACE，含 deleted 墓碑；供双向合并同步） | `src/data/sync/importer.ts` | ≈2 处（2 文件） |
+| `mergeRecords()` | 通用双向合并（按 id + updatedAt Last-Write-Wins，deleted 墓碑参与 LWW；顺序以 local 为准，remote 独有追加末尾） | `src/data/sync/merge.ts` | ≈5 处（2 文件） |
+| `mergeFolders()` | 文件夹便捷合并（内部复用 mergeRecords） | `src/data/sync/merge.ts` | ≈2 处（2 文件） |
+| `mergeTasks()` | 任务便捷合并（内部复用 mergeRecords） | `src/data/sync/merge.ts` | ≈2 处（2 文件） |
+| `selfCheckMerge()` | 合并引擎运行时自检（内联断言场景 A-D，失败抛错；exportLocalSnapshot 每次导出前调用） | `src/data/sync/merge.ts` | ≈2 处（2 文件） |
 | `probeRemote()` | 探测远端：GET 备份文件并解析 exportedAt（损坏/版本不兼容抛错） | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
-| `uploadLocal()` | 上传本地快照到远端（buildSnapshot → snapshotToJson → webdavPut） | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
-| `downloadRemote()` | 从远端下载快照并覆盖本地库 | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
-| `syncAuto()` | 自动同步决策：Last-Modified Wins，较新者胜、相等跳过、冲突附说明 | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
+| `uploadLocal()` | 上传本地快照到远端（buildSnapshot → snapshotToJson → webdavPut；强制整库覆盖语义，手动上传保留） | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
+| `downloadRemote()` | 从远端下载快照并覆盖本地库（强制整库覆盖语义，手动下载保留） | `src/data/sync/engine.ts` | ≈5 处（3 文件） |
+| `syncMerge()` | 合并式同步主流程（V2.1 Task 5 新增）：拉取远端 → 与本地含墓碑按 id+updatedAt 记录级合并（LWW）→ importMerged 写回本地 → 合并结果快照上传远端；解析失败绝不覆盖远端 | `src/data/sync/engine.ts` | ≈3 处（2 文件） |
+| `syncAuto()` | 自动同步（V2.1 Task 5 起）：直接委托 syncMerge 记录级合并，替代原 Last-Modified Wins 整库覆盖；lastSyncedAt 参数仅为兼容调用方签名保留 | `src/data/sync/engine.ts` | ≈3 处（2 文件） |
 | `getDeviceId()` | 稳定设备标识：localStorage 持久化，`dtm-` 前缀（区分跨端数据来源） | `src/data/sync/engine.ts` | ≈4 处 |
 | `REMOTE_PATH` | 远端备份文件相对路径常量（`desktop-task-manager/backup.json`） | `src/data/sync/engine.ts` | ≈5 处 |
+
+#### V2.1 新增：自动同步调度器（`src/data/sync/scheduler.ts`）
+
+| 变量名 | 变量注释（描述） | 出现位置 | 出现频率 |
+| --- | --- | --- | --- |
+| `configureAutoSync(enabled)` | 依据 Settings.autoSync 更新调度器自动同步开关（App 在设置变化时调用） | `src/data/sync/scheduler.ts` | ≈3 处 |
+| `notifyDataChanged()` | 数据变更入口：未启用/同步中忽略；防抖 30s 后触发 runSync（每次调用重置计时器） | `src/data/sync/scheduler.ts` | ≈3 处 |
+| `startAutoSync()` | 启动自动同步：立即触发一次启动同步 + 10min setInterval 兜底（intervalId 已存在则跳过，幂等） | `src/data/sync/scheduler.ts` | ≈2 处 |
+| `stopAutoSync()` | 停止自动同步：清除定时兜底与未触发的防抖（供应用卸载时调用） | `src/data/sync/scheduler.ts` | ≈2 处 |
+| `runSync()` | 私有执行体：读最新 Settings，关闭/未配置 WebDAV 静默跳过；syncAuto 失败仅 console.error，成功回写 lastSyncedAt/lastSyncAction（merged/upload/download） | `src/data/sync/scheduler.ts` | ≈4 处 |
+
+#### V2.1 新增：旧库迁移函数（`src/data/database.ts`）
+
+| 变量名 | 变量注释（描述） | 出现位置 | 出现频率 |
+| --- | --- | --- | --- |
+| `migrateFolderAddDeleted()` | 旧库迁移：Folder 表缺 deleted 列时 `ALTER TABLE` 补列（默认 0） | `src/data/database.ts` | ≈2 处 |
+| `migrateSettingsAddAutoSync()` | 旧库迁移：Settings 表缺 autoSync 列时 `ALTER TABLE` 补列（默认 1） | `src/data/database.ts` | ≈2 处 |
 
 ## 5. Hooks
 
@@ -222,4 +255,4 @@
 | `src/data/index.ts` | `getDatabase`、四个 Repository、types 中 10 个类型（V2 新增 `ViewMode`）、`generateId/buildTaskTree/mapBooleanFields/parseJSONField` |
 | `src/data/repositories/index.ts` | `FolderRepository / TaskRepository / SettingsRepository / WindowStateRepository` |
 | `src/services/index.ts` | `FolderService / TaskService / SettingsService / WindowStateService` |
-| `src/data/sync/index.ts` | `SYNC_SCHEMA_VERSION`、Sync 类型、`buildSnapshot/parseSnapshot/snapshotToJson/exportLocalSnapshot/importSnapshot`、WebDAV 客户端（`webdavFetch/webdavPut/joinWebdavPath` + 结果类型）、同步引擎（`REMOTE_PATH/probeRemote/uploadLocal/downloadRemote/syncAuto/getDeviceId` + `SyncResult/SyncProbe`） |
+| `src/data/sync/index.ts` | `SYNC_SCHEMA_VERSION`、Sync 类型、`buildSnapshot/parseSnapshot/snapshotToJson/exportLocalSnapshot/importSnapshot/importMerged`、合并引擎（`mergeRecords/mergeFolders/mergeTasks/selfCheckMerge` + `MergableRecord`）、WebDAV 客户端（`webdavFetch/webdavPut/joinWebdavPath` + 结果类型）、同步引擎（`REMOTE_PATH/probeRemote/uploadLocal/downloadRemote/syncMerge/syncAuto/getDeviceId` + `SyncResult/SyncProbe`）、自动同步调度器（V2.1 Task 6：`configureAutoSync/startAutoSync/stopAutoSync/notifyDataChanged`） |

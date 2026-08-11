@@ -1,0 +1,93 @@
+/**
+ * 自动同步调度器（V2.1 Task 6）：模块级单例，不做 React 组件，供 App / useTaskData 调用。
+ * 触发时机：应用启动（startAutoSync 立即触发一次）→ 数据变更防抖 30s（notifyDataChanged）→
+ * 每 10 分钟定时兜底。所有失败均静默（仅 console.error），下一轮自动重试，不弹窗不阻塞主流程。
+ */
+import { getDatabase } from '../database';
+import { SettingsService } from '../../services/SettingsService';
+import { syncAuto } from './engine';
+import { SyncSettings } from './types';
+
+const DEBOUNCE_MS = 30_000; // 变更防抖窗口
+const INTERVAL_MS = 10 * 60_000; // 定时兜底
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let intervalId: ReturnType<typeof setInterval> | null = null;
+let syncing = false;
+let autoSyncEnabled = true; // 由 configureAutoSync 依据 Settings.autoSync 同步
+
+/** 依据 Settings.autoSync 更新自动同步开关（App 在设置变化时调用） */
+export function configureAutoSync(enabled: boolean): void {
+  autoSyncEnabled = enabled;
+}
+
+/** 数据变更入口：若未启用或正在同步则忽略；防抖 30s 后触发 runSync（每次调用重置计时器） */
+export function notifyDataChanged(): void {
+  if (!autoSyncEnabled || syncing) return;
+  if (debounceTimer !== null) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    void runSync();
+  }, DEBOUNCE_MS);
+}
+
+/** 启动自动同步：立即触发一次启动同步，并启动 10min 定时兜底（intervalId 已存在则跳过，幂等） */
+export function startAutoSync(): void {
+  void runSync();
+  if (intervalId === null) {
+    intervalId = setInterval(() => {
+      void runSync();
+    }, INTERVAL_MS);
+  }
+}
+
+/** 停止自动同步：清除定时兜底（供应用卸载时调用），同时取消未触发的防抖同步 */
+export function stopAutoSync(): void {
+  if (intervalId !== null) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+}
+
+/** 执行一次自动合并同步（私有）：配置未就绪/未开启时静默跳过，失败仅记日志，下轮自动重试 */
+async function runSync(): Promise<void> {
+  if (syncing || !autoSyncEnabled) return;
+  syncing = true;
+  try {
+    const db = await getDatabase();
+    const service = new SettingsService(db);
+    const settings = await service.getSettings();
+    // 设置为空 / 自动同步关闭 / WebDAV 未配置 → 静默跳过（下轮自动重试）
+    if (!settings || !settings.autoSync) return;
+    if (!settings.webdavUrl || !settings.webdavUsername || !settings.webdavPassword) return;
+
+    const syncSettings: SyncSettings = {
+      webdavUrl: settings.webdavUrl,
+      webdavUsername: settings.webdavUsername,
+      webdavPassword: settings.webdavPassword,
+    };
+    const result = await syncAuto(syncSettings, settings.lastSyncedAt);
+
+    if (result.status === 'error') {
+      // 静默失败：不弹窗，仅记录日志，下轮自动重试
+      console.error('[AutoSync] 同步失败（静默）:', result.message);
+    } else if (result.status === 'skipped') {
+      // 无变更/无需同步，忽略
+    } else {
+      // merged / uploaded / downloaded → 记录成功同步时间与操作
+      await service.updateSettings({
+        lastSyncedAt: Date.now(),
+        lastSyncAction: result.status === 'uploaded' ? 'upload' : result.status === 'downloaded' ? 'download' : 'merged',
+      });
+    }
+  } catch (error) {
+    // 异常静默：不影响主流程，下轮自动重试
+    console.error('[AutoSync] 同步异常（静默）:', error);
+  } finally {
+    syncing = false;
+  }
+}

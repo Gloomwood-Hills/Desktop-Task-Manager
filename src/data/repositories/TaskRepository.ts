@@ -26,6 +26,16 @@ export class TaskRepository {
     return rows.map(this.mapRow);
   }
 
+  /** 全量读取（含软删墓碑），供快照导出与合并使用 */
+  async getAllIncludingDeleted(): Promise<Task[]> {
+    const rows = await this.db.select<Task[]>(`
+      SELECT ${TASK_COLUMNS}
+      FROM Task
+      ORDER BY sortOrder ASC, createdAt DESC
+    `);
+    return rows.map(this.mapRow);
+  }
+
   async getById(id: string): Promise<Task | null> {
     const rows = await this.db.select<Task[]>(
       `SELECT ${TASK_COLUMNS} FROM Task WHERE id = ? AND deleted = 0`,

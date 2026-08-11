@@ -1,7 +1,8 @@
 import Database from '@tauri-apps/plugin-sql';
 import { Folder } from '../types';
+import { mapBooleanFields } from '../utils';
 
-const FOLDER_COLUMNS = 'id, name, parentId, sortOrder, createdAt, updatedAt';
+const FOLDER_COLUMNS = 'id, name, parentId, sortOrder, createdAt, updatedAt, deleted';
 
 export class FolderRepository {
   private db: Database;
@@ -12,30 +13,40 @@ export class FolderRepository {
 
   async getAll(): Promise<Folder[]> {
     const rows = await this.db.select<Folder[]>(
-      `SELECT ${FOLDER_COLUMNS} FROM Folder ORDER BY sortOrder ASC`
+      `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE deleted = 0 ORDER BY sortOrder ASC`
     );
-    return rows;
+    return rows.map(this.mapRow);
   }
 
   async getById(id: string): Promise<Folder | null> {
     const rows = await this.db.select<Folder[]>(
-      `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE id = ?`,
+      `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE id = ? AND deleted = 0`,
       [id]
     );
-    return rows[0] || null;
+    return rows[0] ? this.mapRow(rows[0]) : null;
   }
 
   async getByParentId(parentId: string | null): Promise<Folder[]> {
     if (parentId) {
-      return await this.db.select<Folder[]>(
-        `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE parentId = ? ORDER BY sortOrder ASC`,
+      const rows = await this.db.select<Folder[]>(
+        `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE parentId = ? AND deleted = 0 ORDER BY sortOrder ASC`,
         [parentId]
       );
+      return rows.map(this.mapRow);
     } else {
-      return await this.db.select<Folder[]>(
-        `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE parentId IS NULL ORDER BY sortOrder ASC`
+      const rows = await this.db.select<Folder[]>(
+        `SELECT ${FOLDER_COLUMNS} FROM Folder WHERE parentId IS NULL AND deleted = 0 ORDER BY sortOrder ASC`
       );
+      return rows.map(this.mapRow);
     }
+  }
+
+  /** 全量读取（含软删墓碑），供快照导出与合并使用 */
+  async getAllIncludingDeleted(): Promise<Folder[]> {
+    const rows = await this.db.select<Folder[]>(
+      `SELECT ${FOLDER_COLUMNS} FROM Folder ORDER BY sortOrder ASC`
+    );
+    return rows.map(this.mapRow);
   }
 
   async create(folder: Omit<Folder, 'createdAt' | 'updatedAt'>): Promise<Folder> {
@@ -47,9 +58,9 @@ export class FolderRepository {
     };
 
     await this.db.execute(
-      `INSERT INTO Folder (id, name, parentId, sortOrder, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [newFolder.id, newFolder.name, newFolder.parentId, newFolder.sortOrder, newFolder.createdAt, newFolder.updatedAt]
+      `INSERT INTO Folder (id, name, parentId, sortOrder, createdAt, updatedAt, deleted)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [newFolder.id, newFolder.name, newFolder.parentId, newFolder.sortOrder, newFolder.createdAt, newFolder.updatedAt, newFolder.deleted ? 1 : 0]
     );
 
     return newFolder;
@@ -74,9 +85,46 @@ export class FolderRepository {
     return updatedFolder;
   }
 
+  /**
+   * 软删级联删除：将目标文件夹及其整个子树（含自身）标记 deleted=1，
+   * 并同步软删子树下直属任务（原物理删除依赖 FK CASCADE，软删后必须手动级联，
+   * 否则任务残留且 UI 无法隐藏）。保留墓碑供跨端同步传播。
+   */
   async delete(id: string): Promise<boolean> {
-    const result = await this.db.execute(`DELETE FROM Folder WHERE id = ?`, [id]);
-    return result.rowsAffected > 0;
+    const folders = await this.getAllIncludingDeleted();
+    const folderById = new Map(folders.map((f) => [f.id, f]));
+
+    // 以 id 为根，用父链 parentId 递归收集整个子树（含自身）
+    const idsToDelete: string[] = [];
+    const visited = new Set<string>();
+    const collect = (folderId: string) => {
+      if (!folderById.has(folderId) || visited.has(folderId)) return;
+      visited.add(folderId);
+      idsToDelete.push(folderId);
+      folders.forEach((f) => {
+        if (f.parentId === folderId) collect(f.id);
+      });
+    };
+    collect(id);
+
+    if (idsToDelete.length === 0) return false;
+
+    const now = Date.now();
+    const placeholders = idsToDelete.map(() => '?').join(', ');
+
+    // 软删子树全部文件夹（now 在前，随后为 id 列表）
+    const folderResult = await this.db.execute(
+      `UPDATE Folder SET deleted = 1, updatedAt = ? WHERE id IN (${placeholders})`,
+      [now, ...idsToDelete]
+    );
+
+    // 软删子树下直属任务
+    await this.db.execute(
+      `UPDATE Task SET deleted = 1, updatedAt = ? WHERE folderId IN (${placeholders}) AND deleted = 0`,
+      [now, ...idsToDelete]
+    );
+
+    return folderResult.rowsAffected > 0;
   }
 
   async updateSortOrder(folderId: string, newSortOrder: number): Promise<boolean> {
@@ -98,5 +146,10 @@ export class FolderRepository {
       );
     }
     return true;
+  }
+
+  private mapRow(row: unknown): Folder {
+    const r = row as Record<string, unknown>;
+    return mapBooleanFields(r, ['deleted'] as (keyof Folder)[]) as unknown as Folder;
   }
 }

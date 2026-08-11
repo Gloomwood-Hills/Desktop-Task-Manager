@@ -11,7 +11,7 @@ export class SettingsRepository {
 
   async get(): Promise<Settings | null> {
     const rows = await this.db.select<Settings[]>(
-      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt
+      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, autoSync, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt
        FROM Settings WHERE id = ?`,
       ['default']
     );
@@ -31,7 +31,7 @@ export class SettingsRepository {
 
     await this.db.execute(
       `UPDATE Settings
-       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, autoPin = ?, autoStart = ?, deadlineGradient = ?, viewMode = ?, webdavUrl = ?, webdavUsername = ?, webdavPassword = ?, lastSyncedAt = ?, lastSyncAction = ?, updatedAt = ?
+       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, autoPin = ?, autoStart = ?, deadlineGradient = ?, viewMode = ?, autoSync = ?, webdavUrl = ?, webdavUsername = ?, webdavPassword = ?, lastSyncedAt = ?, lastSyncAction = ?, updatedAt = ?
        WHERE id = ?`,
       [
         updatedSettings.theme,
@@ -45,6 +45,7 @@ export class SettingsRepository {
         updatedSettings.autoStart ? 1 : 0,
         updatedSettings.deadlineGradient ? 1 : 0,
         updatedSettings.viewMode,
+        updatedSettings.autoSync ? 1 : 0,
         updatedSettings.webdavUrl,
         updatedSettings.webdavUsername,
         updatedSettings.webdavPassword,
@@ -90,6 +91,6 @@ export class SettingsRepository {
 
   private mapRow(row: unknown): Settings {
     const r = row as Record<string, unknown>;
-    return mapBooleanFields(r, ['glassEffect', 'importantTop', 'reminderEnabled', 'autoPin', 'autoStart', 'deadlineGradient'] as (keyof Settings)[]) as unknown as Settings;
+    return mapBooleanFields(r, ['glassEffect', 'importantTop', 'reminderEnabled', 'autoPin', 'autoStart', 'deadlineGradient', 'autoSync'] as (keyof Settings)[]) as unknown as Settings;
   }
 }

@@ -6,6 +6,7 @@ import { SettingsService } from '../services/SettingsService';
 import { WindowStateService } from '../services/WindowStateService';
 import { buildFolderTree, buildTaskTree, sortTasksByType, sortFolders } from '../data/utils';
 import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings, WindowState } from '../data/types';
+import { notifyDataChanged } from '../data/sync';
 
 export interface UseTaskData {
   folderTree: FolderNode[];
@@ -98,6 +99,12 @@ export function useTaskData(): UseTaskData {
     }
   }, []);
 
+  /** 数据变更统一收尾：刷新视图 + 通知自动同步调度器（内部 30s 防抖） */
+  const afterMutation = async (): Promise<void> => {
+    await refresh();
+    notifyDataChanged();
+  };
+
   /** 过滤文件夹根级已完成任务，保留子任务结构 */
   function cleanFolderRoot(node: FolderNode): FolderNode {
     return {
@@ -171,14 +178,14 @@ export function useTaskData(): UseTaskData {
   ): Promise<Task | null> => {
     if (!taskServiceRef.current) return null;
     const task = await taskServiceRef.current.createTask(title, folderId, options);
-    await refresh();
+    await afterMutation();
     return task;
   }, [refresh]);
 
   const toggleCompleted = useCallback(async (id: string): Promise<Task | null> => {
     if (!taskServiceRef.current) return null;
     const task = await taskServiceRef.current.toggleTaskCompleted(id);
-    await refresh();
+    await afterMutation();
     return task;
   }, [refresh]);
 
@@ -188,56 +195,56 @@ export function useTaskData(): UseTaskData {
   ): Promise<Task | null> => {
     if (!taskServiceRef.current) return null;
     const task = await taskServiceRef.current.updateTask(id, updates);
-    await refresh();
+    await afterMutation();
     return task;
   }, [refresh]);
 
   const deleteTask = useCallback(async (id: string): Promise<boolean> => {
     if (!taskServiceRef.current) return false;
     const ok = await taskServiceRef.current.deleteTask(id);
-    await refresh();
+    await afterMutation();
     return ok;
   }, [refresh]);
 
   const restoreTask = useCallback(async (id: string): Promise<boolean> => {
     if (!taskServiceRef.current) return false;
     const ok = await taskServiceRef.current.restoreTask(id);
-    await refresh();
+    await afterMutation();
     return ok;
   }, [refresh]);
 
   const reorderTasks = useCallback(async (orderedIds: string[]): Promise<boolean> => {
     if (!taskServiceRef.current) return false;
     const ok = await taskServiceRef.current.reorderTasks(orderedIds);
-    await refresh();
+    await afterMutation();
     return ok;
   }, [refresh]);
 
   const reorderFolders = useCallback(async (orderedIds: string[]): Promise<boolean> => {
     if (!folderServiceRef.current) return false;
     const ok = await folderServiceRef.current.reorderFolders(orderedIds);
-    await refresh();
+    await afterMutation();
     return ok;
   }, [refresh]);
 
   const createFolder = useCallback(async (name: string, parentId: string | null = null): Promise<Folder | null> => {
     if (!folderServiceRef.current) return null;
     const folder = await folderServiceRef.current.createFolder(name, parentId);
-    await refresh();
+    await afterMutation();
     return folder;
   }, [refresh]);
 
   const renameFolder = useCallback(async (id: string, name: string): Promise<Folder | null> => {
     if (!folderServiceRef.current) return null;
     const folder = await folderServiceRef.current.updateFolder(id, name);
-    await refresh();
+    await afterMutation();
     return folder;
   }, [refresh]);
 
   const deleteFolder = useCallback(async (id: string): Promise<boolean> => {
     if (!folderServiceRef.current) return false;
     const ok = await folderServiceRef.current.deleteFolder(id);
-    await refresh();
+    await afterMutation();
     return ok;
   }, [refresh]);
 

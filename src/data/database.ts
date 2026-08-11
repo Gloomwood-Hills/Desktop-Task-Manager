@@ -35,11 +35,15 @@ async function initDatabase(db: Database): Promise<void> {
       sortOrder INTEGER NOT NULL DEFAULT 0,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
+      deleted INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (parentId) REFERENCES Folder(id) ON DELETE CASCADE
     )
   `);
   await db.execute('CREATE INDEX IF NOT EXISTS idx_folder_parentId ON Folder(parentId)');
   await db.execute('CREATE INDEX IF NOT EXISTS idx_folder_sortOrder ON Folder(sortOrder)');
+
+  // 旧库迁移：Folder 新增 deleted 列（软删墓碑，已删除记录用于跨端同步传播）
+  await migrateFolderAddDeleted(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS Task (
@@ -86,6 +90,7 @@ async function initDatabase(db: Database): Promise<void> {
       autoStart INTEGER NOT NULL DEFAULT 1,
       deadlineGradient INTEGER NOT NULL DEFAULT 1,
       viewMode TEXT NOT NULL DEFAULT 'list',
+      autoSync INTEGER NOT NULL DEFAULT 1,
       webdavUrl TEXT NOT NULL DEFAULT '',
       webdavUsername TEXT NOT NULL DEFAULT '',
       webdavPassword TEXT NOT NULL DEFAULT '',
@@ -116,6 +121,9 @@ async function initDatabase(db: Database): Promise<void> {
 
   // 旧库迁移：Settings 新增 lastSyncAction 列（上次同步操作）
   await migrateSettingsAddSyncAction(db);
+
+  // 旧库迁移：Settings 新增 autoSync 列（自动同步开关，默认开启）
+  await migrateSettingsAddAutoSync(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
@@ -270,5 +278,21 @@ async function migrateSettingsAddSyncAction(db: Database): Promise<void> {
   if (!cols.some((c) => c.name === 'lastSyncAction')) {
     // 可空列，null 表示尚未同步过
     await db.execute('ALTER TABLE Settings ADD COLUMN lastSyncAction TEXT');
+  }
+}
+
+/** 旧库迁移：Folder 新增 deleted 列（软删墓碑，默认未删除；已删除记录用于跨端同步传播） */
+async function migrateFolderAddDeleted(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Folder)');
+  if (!cols.some((c) => c.name === 'deleted')) {
+    await db.execute('ALTER TABLE Folder ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+/** 旧库迁移：Settings 新增 autoSync 列（自动同步开关，默认开启） */
+async function migrateSettingsAddAutoSync(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'autoSync')) {
+    await db.execute('ALTER TABLE Settings ADD COLUMN autoSync INTEGER NOT NULL DEFAULT 1');
   }
 }

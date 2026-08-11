@@ -4,8 +4,8 @@
  * 供 WebDAV 双向同步使用；同步设置放在本文件，避免改动 src/data/types.ts。
  */
 
-/** 快照结构版本号：结构变更时必须递增，旧版本快照应拒绝导入 */
-export const SYNC_SCHEMA_VERSION = 1;
+/** 快照结构版本号：结构变更时必须递增；当前 v2（SyncFolder 含 deleted 墓碑），v1 快照兼容导入（见 parseSnapshot） */
+export const SYNC_SCHEMA_VERSION = 2;
 
 /** WebDAV 同步设置（密码仅本地保存，禁止写入 git/远端） */
 export interface SyncSettings {
@@ -32,6 +32,8 @@ export interface SyncFolder {
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
+  /** 软删墓碑：true=已删除，供跨端删除传播 */
+  deleted: boolean;
 }
 
 export interface SyncTask {

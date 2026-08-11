@@ -34,6 +34,7 @@ export class FolderService {
       name,
       parentId,
       sortOrder,
+      deleted: false,
     });
   }
 

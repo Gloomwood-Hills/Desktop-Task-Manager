@@ -5,6 +5,8 @@ export interface Folder {
   sortOrder: number;
   createdAt: number;
   updatedAt: number;
+  /** 软删墓碑：0/1，已删除记录用于跨端同步传播 */
+  deleted: boolean;
 }
 
 export type Priority = 'normal' | 'important';
@@ -53,6 +55,8 @@ export interface Settings {
   deadlineGradient: boolean;
   /** 当前视图模式，默认 list */
   viewMode: ViewMode;
+  /** 自动同步开关：开启时启动/变更防抖/定时自动同步，默认 true */
+  autoSync: boolean;
   /** WebDAV 服务器地址（如 https://dav.jianguoyun.com/dav/），默认 '' */
   webdavUrl: string;
   /** WebDAV 账号，默认 '' */
@@ -61,8 +65,8 @@ export interface Settings {
   webdavPassword: string;
   /** 上次成功同步时间戳（毫秒），null 表示尚未同步过 */
   lastSyncedAt: number | null;
-  /** 上次成功同步操作：upload=上传覆盖 / download=下载覆盖，null 表示尚未同步过 */
-  lastSyncAction: 'upload' | 'download' | null;
+  /** 上次成功同步操作：upload=上传覆盖 / download=下载覆盖 / merged=双向合并（自动同步），null 表示尚未同步过 */
+  lastSyncAction: 'upload' | 'download' | 'merged' | null;
   createdAt: number;
   updatedAt: number;
 }

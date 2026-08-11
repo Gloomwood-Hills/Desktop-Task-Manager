@@ -18,7 +18,7 @@ import { useTaskData } from './hooks/useTaskData';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState } from './data/types';
 import { isMobile } from './data/platform';
 import { formatDeadline } from './components/utils/formatDate';
-import { uploadLocal, downloadRemote } from './data/sync';
+import { uploadLocal, downloadRemote, configureAutoSync, startAutoSync, stopAutoSync } from './data/sync';
 
 /** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为底部固定导航条
  * （触控高度 ≥ 44px）。isMobile 为模块级常量，两套样式互不影响，桌面视觉零回归。 */
@@ -390,6 +390,18 @@ function App() {
     if (settings.autoStart) autostartEnable().catch(() => {});
     else autostartDisable().catch(() => {});
   }, [settings]);
+
+  // ===== 自动同步（V2.1 Task 6）：settings.autoSync 变化时联动调度器；startAutoSync 幂等不重复建 interval =====
+  useEffect(() => {
+    if (!settings) return;
+    configureAutoSync(settings.autoSync);
+    startAutoSync();
+  }, [settings?.autoSync]);
+
+  // 应用卸载时停止自动同步定时器
+  useEffect(() => {
+    return () => { stopAutoSync(); };
+  }, []);
 
   // ===== 任务提醒（Task 13）：到达提前提醒窗口触发 Windows 通知 + 可选自动置顶 =====
 

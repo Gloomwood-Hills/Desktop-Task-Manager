@@ -51,6 +51,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [autoPin, setAutoPin] = useState(settings?.autoPin ?? true);
   const [autoStart, setAutoStart] = useState(settings?.autoStart ?? true);
   const [deadlineGradient, setDeadlineGradient] = useState(settings?.deadlineGradient ?? true);
+  const [autoSync, setAutoSync] = useState(settings?.autoSync ?? true);
 
   // ===== 同步 tab 状态 =====
   /** 最近一次同步/连接测试结果（ok 决定状态区颜色） */
@@ -431,9 +432,22 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </div>
                 <p style={{ ...descStyle, lineHeight: 1.6 }}>
                   填写任意 WebDAV 服务器（如坚果云免费空间 dav.jianguoyun.com/dav/），即可把任务数据备份到云端。
-                  本应用采用手动同步，不会自动实时上传；需要时可点击标题栏的「上传」「下载」按钮手动同步。
+                  可开启下方「自动同步」，应用会在启动、数据变更（30 秒后）与每 10 分钟自动双向合并同步；
+                  也可点击标题栏的「上传」「下载」按钮手动同步。
                   密码仅保存在本机数据库，不会上传到任何地方。
                 </p>
+              </div>
+
+              {/* 自动同步开关（V2.1 Task 7）：绑定 Settings.autoSync，切换即持久化 */}
+              <div style={rowStyle}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <label style={labelStyle}>自动同步</label>
+                  <p style={descStyle}>开启后应用会在启动、数据变更（30 秒后）与每 10 分钟自动双向合并同步</p>
+                </div>
+                <div style={switchStyle} onClick={() => { setAutoSync(!autoSync); onChange({ autoSync: !autoSync }); }}>
+                  <span style={switchTrack(autoSync)} />
+                  <span style={{ ...switchThumb, transform: autoSync ? 'translateX(20px)' : 'none' }} />
+                </div>
               </div>
 
               {/* 坚果云账密获取指南（可展开） */}
@@ -538,7 +552,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>上次同步</span>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--foreground)', fontVariantNumeric: 'tabular-nums' }}>
                     {settings?.lastSyncedAt
-                      ? `${formatSyncTime(settings.lastSyncedAt)} · ${settings.lastSyncAction === 'download' ? '下载' : settings.lastSyncAction === 'upload' ? '上传' : '未知'}`
+                      ? `${formatSyncTime(settings.lastSyncedAt)} · ${settings.lastSyncAction === 'download' ? '下载' : settings.lastSyncAction === 'upload' ? '上传' : settings.lastSyncAction === 'merged' ? '合并' : '未知'}`
                       : '尚未同步'}
                   </span>
                 </div>
