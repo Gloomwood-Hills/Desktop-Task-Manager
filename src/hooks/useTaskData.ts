@@ -146,6 +146,16 @@ export function useTaskData(): UseTaskData {
     return () => { cancelled = true; };
   }, [refresh]);
 
+  /** 小部件（Android 桌面小部件）等外部进程直接改库后，应用回到前台时重新拉取数据，
+   * 否则 React 内存态停留在旧数据（表现为"小部件完成/撤销/新建不同步到应用"）。 */
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [refresh]);
+
   const setTheme = useCallback(async (newTheme: Theme) => {
     setThemeState(newTheme);
     if (settingsServiceRef.current) {
