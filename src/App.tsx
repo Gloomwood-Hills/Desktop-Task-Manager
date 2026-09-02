@@ -670,6 +670,7 @@ function App() {
             setCaptureFolder(null);
             setCaptureOpen(true);
           }}
+          onNewFolder={() => setDialog({ type: 'create-folder', parentId: null })}
           pinned={pinned}
           onTogglePin={() => setPinned(!pinned)}
           onSync={handleOneClickSync}
@@ -700,6 +701,10 @@ function App() {
             flex: 1,
             overflowY: 'auto',
             minHeight: 0,
+            // Android WebView 触摸滚动：显式允许纵向滚动手势（触屏不启动拖拽排序）
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
+            touchAction: 'pan-y',
             padding: '8px 20px 20px',
           }}
         >

@@ -203,7 +203,9 @@ export default function FolderTree({
     dropRef.current = null;
   };
 
-  /** 开始拖动（仅左键 + 手动排序模式） */
+  /** 开始拖动（仅鼠标左键 + 手动排序模式）。
+   * 触屏（pointerType ≠ mouse）不启动拖动：让出触摸手势给列表原生滚动，
+   * 否则 touch-action:none + preventDefault 会让 Android 上手指拖不动列表。 */
   const startDrag = (
     e: React.PointerEvent,
     kind: 'task' | 'folder',
@@ -213,6 +215,7 @@ export default function FolderTree({
     label: string,
   ) => {
     if (!manualSort) return;
+    if (e.pointerType !== 'mouse') return;
     if (e.button !== 0) return;
     e.preventDefault();
     const state: DragState = {
@@ -255,7 +258,6 @@ export default function FolderTree({
           position: 'relative',
           cursor: isDragging && drag?.moved ? 'grabbing' : (manualSort ? 'grab' : undefined),
           opacity: isDragging && drag?.moved ? 0.35 : undefined,
-          touchAction: 'none',
         }}
       >
         {isTarget && (
@@ -327,7 +329,6 @@ export default function FolderTree({
             opacity: isDragging && drag?.moved ? 0.35 : undefined,
             transition: 'background-color 0.15s ease',
             userSelect: 'none',
-            touchAction: 'none',
           }}
           onMouseOver={(e) => {
             if (!dragRef.current) e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 80%, transparent)';

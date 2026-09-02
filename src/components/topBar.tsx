@@ -1,4 +1,4 @@
-import { Search, Settings, Plus, Pin, PinOff, RefreshCw } from 'lucide-react';
+import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw } from 'lucide-react';
 import { isMobile } from '../data/platform';
 
 interface TopBarProps {
@@ -6,6 +6,8 @@ interface TopBarProps {
   onSearchChange: (value: string) => void;
   onOpenSettings: () => void;
   onNewTask: () => void;
+  /** 顶栏「新建文件夹」入口（搜索栏与「新建」之间） */
+  onNewFolder: () => void;
   pinned: boolean;
   onTogglePin: () => void;
   /** 一键更新（合并式同步：拉取→合并→写回两端，无需选择方向） */
@@ -29,7 +31,7 @@ function formatSyncTime(ts: number | null): string {
 /** 顶栏（三行布局）：第一行搜索框+新建，第二行图标按钮（缩小），第三行上次同步信息。
  * 移动端（Android）为全屏应用，无窗口可拖动。 */
 export default function TopBar({
-  searchQuery, onSearchChange, onOpenSettings, onNewTask, pinned, onTogglePin,
+  searchQuery, onSearchChange, onOpenSettings, onNewTask, onNewFolder, pinned, onTogglePin,
   onSync, syncBusy = false, lastSyncedAt = null, lastSyncAction = null,
 }: TopBarProps) {
   // 第一行控件（搜索框/新建）尺寸：桌面 34px，移动端 ≥44px（Apple HIG / Material 触控标准）
@@ -98,6 +100,35 @@ export default function TopBar({
             aria-label="搜索任务"
           />
         </div>
+
+        {/* 新建文件夹（搜索栏与「新建」之间） */}
+        <button
+          onClick={onNewFolder}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 5,
+            height: controlSize,
+            padding: isMobile ? '0 14px' : '0 12px',
+            border: '0.5px solid var(--border)',
+            borderRadius: 999,
+            background: 'transparent',
+            color: 'var(--foreground)',
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            transition: 'background-color 0.18s ease, border-color 0.18s ease',
+            fontFamily: 'var(--font-sans)',
+            flexShrink: 0,
+          }}
+          onMouseOver={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--foreground) 6%, transparent)'; }}
+          onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
+        >
+          <FolderPlus style={{ width: 13, height: 13, color: 'var(--primary)' }} />
+          <span>新建文件夹</span>
+        </button>
 
         {/* 新建任务 */}
         <button

@@ -263,7 +263,12 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 20px 24px' }}>
+        <div style={{
+          flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 20px 24px',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-y',
+        }}>
 
           {/* ===== 外观 ===== */}
           {tab === '外观' && (
