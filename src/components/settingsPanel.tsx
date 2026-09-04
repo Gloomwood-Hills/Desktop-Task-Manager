@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { X, Cloud, BookOpen, ChevronDown } from 'lucide-react';
-import { Settings, SortType } from '../data/types';
-import { probeRemote, syncAuto } from '../data/sync';
-import type { SyncSettings } from '../data/sync';
+import { useState, useEffect } from 'react';
+import { X, Cloud, BookOpen, ChevronDown, Bug, RefreshCw, Clipboard, Trash2, CheckCircle2, XCircle } from 'lucide-react';
+import { Settings, SortType, DEFAULT_WEBDAV_URL } from '../data/types';
+import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from '../data/sync';
+import type { SyncSettings, SyncLogEntry } from '../data/sync';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -14,13 +14,14 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type TabId = '外观' | '排序' | '提醒' | '同步';
+type TabId = '外观' | '排序' | '提醒' | '同步' | '排障';
 
 const TABS: { id: TabId; disabled?: boolean }[] = [
   { id: '外观' },
   { id: '排序' },
   { id: '提醒' },
   { id: '同步' },
+  { id: '排障' },
 ];
 
 const SORT_OPTIONS: { label: string; value: SortType }[] = [
@@ -59,6 +60,59 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [syncBusy, setSyncBusy] = useState(false);
   /** 坚果云账密获取指南是否展开 */
   const [guideOpen, setGuideOpen] = useState(false);
+
+  // ===== 排障 tab 状态 =====
+  const [logs, setLogs] = useState<SyncLogEntry[]>([]);
+  const [diagCopied, setDiagCopied] = useState(false);
+  /** 进入排障 tab 时刷新日志 */
+  useEffect(() => {
+    if (tab === '排障') {
+      setLogs(getSyncLogs());
+      setDiagCopied(false);
+    }
+  }, [tab]);
+
+  /** 构造"诊断信息"纯文本：状态自查摘要 + 全部日志 */
+  const buildDiagText = (): string => {
+    const s = settings;
+    const lines: string[] = [
+      '===== Desktop Task Manager 同步诊断信息 =====',
+      `服务器：${s?.webdavUrl || DEFAULT_WEBDAV_URL}`,
+      `账号：${s?.webdavUsername ? '已填写' : '未填写'}`,
+      `应用密码：${s?.webdavPassword ? '已填写' : '未填写'}`,
+      `自动同步：${s?.autoSync ? '开' : '关'}`,
+      `上次同步：${s?.lastSyncedAt ? formatSyncTime(s.lastSyncedAt) : '无'}${s?.lastSyncAction ? `（${s.lastSyncAction === 'download' ? '下载' : s.lastSyncAction === 'upload' ? '上传' : '合并'}）` : ''}`,
+      '----------------------------------------',
+    ];
+    return lines.join('\n') + '\n' + exportSyncLogsText();
+  };
+
+  /** 复制诊断信息（剪贴板不可用时回退为选中文本） */
+  const handleCopyDiag = () => {
+    const text = buildDiagText();
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      setDiagCopied(ok);
+      if (ok) logSync('info', '排障', '已复制诊断信息');
+    } catch {
+      setDiagCopied(false);
+    }
+  };
+
+  const handleClearLogs = () => {
+    clearSyncLogs();
+    setLogs([]);
+    logSync('info', '排障', '已清空日志');
+  };
+
+  const handleRefreshLogs = () => setLogs(getSyncLogs());
 
   const switchStyle: React.CSSProperties = {
     position: 'relative',
@@ -153,6 +207,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const handleProbe = async () => {
     if (syncBusy) return;
     setSyncBusy(true);
+    logSync('info', '连接测试', '开始探测远端');
     try {
       const probe = await probeRemote(buildSyncSettings());
       setSyncResult({
@@ -161,8 +216,11 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
           ? `连接成功，远端存在备份${probe.remoteExportedAt ? `（最后导出 ${formatSyncTime(probe.remoteExportedAt)}）` : ''}`
           : '连接成功，远端暂无备份（首次同步将自动上传本地数据）',
       });
+      logSync('success', '连接测试', probe.remoteExists ? '连接成功，远端存在备份' : '连接成功，远端暂无备份');
     } catch (error) {
-      setSyncResult({ ok: false, message: `连接失败：${error instanceof Error ? error.message : String(error)}` });
+      const msg = error instanceof Error ? error.message : String(error);
+      setSyncResult({ ok: false, message: `连接失败：${msg}` });
+      logSync('error', '连接测试', `连接失败：${msg}`);
     } finally {
       setSyncBusy(false);
     }
@@ -172,8 +230,10 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const handleOneClickSync = async () => {
     if (syncBusy) return;
     setSyncBusy(true);
+    logSync('info', '一键更新', '开始合并式同步（面板触发）');
     try {
       const result = await syncAuto(buildSyncSettings(), settings?.lastSyncedAt ?? null);
+      logSync(result.status === 'error' ? 'error' : result.status === 'skipped' ? 'info' : 'success', '一键更新', result.message);
       setSyncResult({ ok: result.status !== 'error', message: result.message });
       // merged→合并 / uploaded→上传 / downloaded→下载；skipped 无需写
       if (result.status === 'merged' || result.status === 'uploaded' || result.status === 'downloaded') {
@@ -183,7 +243,9 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
         });
       }
     } catch (error) {
-      setSyncResult({ ok: false, message: `同步失败：${error instanceof Error ? error.message : String(error)}` });
+      const msg = error instanceof Error ? error.message : String(error);
+      logSync('error', '一键更新', `异常：${msg}`);
+      setSyncResult({ ok: false, message: `同步失败：${msg}` });
     } finally {
       setSyncBusy(false);
     }
@@ -598,10 +660,123 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
               </div>
             </section>
           )}
+
+          {/* ===== 排障 ===== */}
+          {tab === '排障' && (
+            <section>
+              {/* 状态自查 */}
+              <div style={{
+                borderRadius: 'calc(var(--radius) * 0.8)', padding: '12px 14px',
+                background: 'var(--muted)', border: '1px solid var(--border)', marginBottom: 16,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Bug style={{ width: 15, height: 15, color: 'var(--primary)' }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)' }}>状态自查</span>
+                </div>
+                {[
+                  { label: '服务器', value: settings?.webdavUrl || DEFAULT_WEBDAV_URL },
+                  { label: '账号', value: settings?.webdavUsername ? '已填写' : '未填写', ok: !!settings?.webdavUsername },
+                  { label: '应用密码', value: settings?.webdavPassword ? '已填写' : '未填写', ok: !!settings?.webdavPassword },
+                  { label: '自动同步', value: settings?.autoSync ? '开' : '关', ok: !!settings?.autoSync },
+                  {
+                    label: '上次同步',
+                    value: settings?.lastSyncedAt
+                      ? `${formatSyncTime(settings.lastSyncedAt)}${settings.lastSyncAction ? `（${settings.lastSyncAction === 'download' ? '下载' : settings.lastSyncAction === 'upload' ? '上传' : '合并'}）` : ''}`
+                      : '无',
+                    ok: !!settings?.lastSyncedAt,
+                  },
+                ].map((row) => (
+                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                    <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{row.label}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: row.ok === false ? 'var(--destructive)' : 'var(--foreground)' }}>
+                      {row.ok === false && <XCircle style={{ width: 13, height: 13, verticalAlign: 'text-bottom', marginRight: 3, color: 'var(--destructive)' }} />}
+                      {row.ok === true && <CheckCircle2 style={{ width: 13, height: 13, verticalAlign: 'text-bottom', marginRight: 3, color: 'var(--primary)' }} />}
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 操作 */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                <button
+                  onClick={handleCopyDiag}
+                  style={secondaryBtn}
+                >
+                  <Clipboard style={{ width: 14, height: 14, verticalAlign: 'text-bottom', marginRight: 5, color: 'var(--primary)' }} />
+                  复制诊断信息
+                </button>
+                <button onClick={handleRefreshLogs} style={{ ...secondaryBtn, flex: '0 0 auto', padding: '0 16px' }}>
+                  <RefreshCw style={{ width: 14, height: 14, verticalAlign: 'text-bottom', marginRight: 5 }} />
+                  刷新
+                </button>
+                <button
+                  onClick={handleClearLogs}
+                  style={{ ...secondaryBtn, flex: '0 0 auto', padding: '0 16px', color: 'var(--destructive)', borderColor: 'color-mix(in srgb, var(--destructive) 40%, transparent)' }}
+                >
+                  <Trash2 style={{ width: 14, height: 14, verticalAlign: 'text-bottom', marginRight: 5 }} />
+                  清空
+                </button>
+              </div>
+              {diagCopied && <p style={{ ...descStyle, marginBottom: 8, color: 'var(--primary)' }}>诊断信息已复制，可粘贴发送给开发者或留存备查</p>}
+
+              {/* 最近日志 */}
+              <label style={labelStyle}>最近日志（本地保留 400 条，重启不丢）</label>
+              <div style={{
+                marginTop: 8, marginBottom: 20, padding: '8px 10px',
+                borderRadius: 'calc(var(--radius) * 0.8)',
+                background: 'var(--background)', border: '1px solid var(--border)',
+                maxHeight: 240, overflowY: 'auto',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                fontSize: 11, lineHeight: 1.7,
+              }}>
+                {logs.length === 0 ? (
+                  <span style={{ color: 'var(--muted-foreground)' }}>暂无日志。执行一次"一键更新/连接测试"或等自动同步触发后，这里会记录每次同步的触发来源与结果。</span>
+                ) : logs.map((e, i) => (
+                  <div key={i} style={{
+                    color: e.lvl === 'error' ? 'var(--destructive)' : e.lvl === 'warn' ? '#ff9500' : e.lvl === 'success' ? 'var(--primary)' : 'var(--foreground)',
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                  }}>
+                    {`${logTime(e.t)} [${e.lvl}] [${e.phase}] ${e.msg}`}
+                  </div>
+                ))}
+              </div>
+
+              {/* 常见问题速查 */}
+              <label style={labelStyle}>常见问题速查</label>
+              <div style={{
+                marginTop: 8, borderRadius: 'calc(var(--radius) * 0.8)', padding: '4px 14px',
+                background: 'var(--muted)', border: '1px solid var(--border)',
+              }}>
+                {[
+                  { s: '连接失败 / 401', a: '坚果云必须使用「应用密码」而非登录密码：坚果云 → 账户信息 → 安全选项 → 第三方应用管理 → 添加应用' },
+                  { s: '自动同步没触发', a: '确认「自动同步」开 + 账号/密码已填；本机变更后约 30 秒防抖触发，另有每 60 分钟兜底' },
+                  { s: '同步慢 / 卡住', a: '在「同步」页点「连接测试」验证网络；查看上方日志里最近的错误类型' },
+                  { s: '两台同改一任务丢内容', a: '本应用为记录级合并（Last-Write-Wins），后写覆盖先写；请避免两台同时编辑同一任务' },
+                  { s: '想确认上次基准', a: '看「状态自查」的上次同步时间与操作（上传/下载/合并）' },
+                ].map((f) => (
+                  <div key={f.s} style={{ padding: '9px 0', borderBottom: '0.5px solid var(--border)' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--foreground)' }}>{f.s}</div>
+                    <div style={{ ...descStyle, marginTop: 2, lineHeight: 1.6 }}>{f.a}</div>
+                  </div>
+                ))}
+                <p style={{ ...descStyle, marginTop: 8, lineHeight: 1.6 }}>
+                  排障日志覆盖自动同步 / 一键更新 / 连接测试的触发来源与结果；如需更细的每文件级日志或导出最近 N 轮摘要，可在本页基础上继续扩展。
+                </p>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </>
   );
+}
+
+/** 日志行内时间：HH:mm:ss */
+function logTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 /** 同步时间格式化：`2026.8.8 14:30`，无时间返回"尚未同步" */

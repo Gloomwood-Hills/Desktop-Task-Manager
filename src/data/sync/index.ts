@@ -6,7 +6,7 @@ export { exportLocalSnapshot } from './exporter';
 export { importSnapshot, importMerged } from './importer';
 export { mergeRecords, mergeFolders, mergeTasks, selfCheckMerge } from './merge';
 export type { MergableRecord } from './merge';
-export { webdavFetch, webdavPut, joinWebdavPath } from './webdavClient';
+export { webdavFetch, webdavPut } from './webdavClient';
 export type { WebdavFetchResult, WebdavPutResult } from './webdavClient';
 export {
   REMOTE_PATH,
@@ -19,3 +19,5 @@ export {
 } from './engine';
 export type { SyncResult, SyncProbe } from './engine';
 export { configureAutoSync, startAutoSync, stopAutoSync, notifyDataChanged } from './scheduler';
+export { logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from './syncLog';
+export type { SyncLogEntry, SyncLogLevel } from './syncLog';

@@ -18,7 +18,7 @@ import { useTaskData } from './hooks/useTaskData';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState } from './data/types';
 import { isMobile } from './data/platform';
 import { formatDeadline } from './components/utils/formatDate';
-import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync } from './data/sync';
+import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync, logSync } from './data/sync';
 
 /** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为顶栏下方的分段控件
  * （不再做底部固定导航——回到顶部区域、靠近顶栏操作）。isMobile 为模块级常量，
@@ -487,10 +487,12 @@ function App() {
   const handleOneClickSync = async () => {
     if (syncBusy || !settings) return;
     if (!syncConfigReady()) {
+      logSync('warn', '一键更新', '未配置坚果云账号/应用密码（设置 → 同步）');
       setToast('请先在 设置 → 同步 中配置 WebDAV 账号');
       return;
     }
     setSyncBusy(true);
+    logSync('info', '一键更新', '开始合并式同步');
     try {
       const syncSettings = {
         webdavUrl: settings.webdavUrl,
@@ -498,6 +500,7 @@ function App() {
         webdavPassword: settings.webdavPassword,
       };
       const result = await syncAuto(syncSettings, settings.lastSyncedAt);
+      logSync(result.status === 'error' ? 'error' : 'success', '一键更新', result.message);
       setToast(result.message);
       // 成功后记录本设备上次同步时间与操作（merged→合并 / uploaded→上传 / downloaded→下载；skipped 无需写）
       if (result.status === 'merged' || result.status === 'uploaded' || result.status === 'downloaded') {
@@ -507,6 +510,7 @@ function App() {
         });
       }
     } catch (error) {
+      logSync('error', '一键更新', `异常：${error instanceof Error ? error.message : String(error)}`);
       setToast(`同步失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSyncBusy(false);

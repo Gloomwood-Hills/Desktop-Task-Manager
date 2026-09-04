@@ -9,6 +9,7 @@ import { getDatabase } from '../database';
 import { SettingsService } from '../../services/SettingsService';
 import { syncAuto } from './engine';
 import { SyncSettings } from './types';
+import { logSync } from './syncLog';
 
 const DEBOUNCE_MS = 30_000; // 变更防抖窗口
 const INTERVAL_MS = 60 * 60_000; // 定时兜底（60 分钟，原 10 分钟——流量限额改造降频）
@@ -64,23 +65,32 @@ async function runSync(): Promise<void> {
     const service = new SettingsService(db);
     const settings = await service.getSettings();
     // 设置为空 / 自动同步关闭 / WebDAV 未配置 → 静默跳过（下轮自动重试）
-    if (!settings || !settings.autoSync) return;
-    if (!settings.webdavUrl || !settings.webdavUsername || !settings.webdavPassword) return;
+    if (!settings || !settings.autoSync) {
+      logSync('info', '自动同步', '已关闭或设置未就绪，跳过本轮');
+      return;
+    }
+    if (!settings.webdavUrl || !settings.webdavUsername || !settings.webdavPassword) {
+      logSync('warn', '自动同步', '未配置坚果云账号/应用密码，跳过本轮（设置 → 同步 填写）');
+      return;
+    }
 
     const syncSettings: SyncSettings = {
       webdavUrl: settings.webdavUrl,
       webdavUsername: settings.webdavUsername,
       webdavPassword: settings.webdavPassword,
     };
+    logSync('info', '自动同步', `开始（本机上次同步 ${settings.lastSyncedAt ? new Date(settings.lastSyncedAt).toLocaleString() : '无'}）`);
     const result = await syncAuto(syncSettings, settings.lastSyncedAt);
 
     if (result.status === 'error') {
       // 静默失败：不弹窗，仅记录日志，下轮自动重试
+      logSync('error', '自动同步', `失败：${result.message}`);
       console.error('[AutoSync] 同步失败（静默）:', result.message);
     } else if (result.status === 'skipped') {
-      // 无变更/无需同步，忽略
+      logSync('info', '自动同步', '无变更，跳过（skipped）');
     } else {
       // merged / uploaded / downloaded → 记录成功同步时间与操作
+      logSync('success', '自动同步', `成功：${result.message}`);
       await service.updateSettings({
         lastSyncedAt: Date.now(),
         lastSyncAction: result.status === 'uploaded' ? 'upload' : result.status === 'downloaded' ? 'download' : 'merged',
@@ -88,6 +98,7 @@ async function runSync(): Promise<void> {
     }
   } catch (error) {
     // 异常静默：不影响主流程，下轮自动重试
+    logSync('error', '自动同步', `异常：${error instanceof Error ? error.message : String(error)}`);
     console.error('[AutoSync] 同步异常（静默）:', error);
   } finally {
     syncing = false;
