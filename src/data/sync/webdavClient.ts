@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { SyncSettings } from './types';
+import { logSync } from './syncLog';
 
 export interface WebdavFetchResult {
   status: number;
@@ -58,17 +59,6 @@ export async function decompressContent(bytes: Uint8Array): Promise<string> {
 }
 
 /**
- * 拼接 WebDAV 服务地址与远端相对路径，保证两者之间恰好一个斜杠。
- * 服务地址可能以 "/" 结尾（如 "https://dav.jianguoyun.com/dav/"）、
- * 路径可能以 "/" 开头，两种写法都要容忍，避免出现双斜杠或缺失斜杠。
- */
-export function joinWebdavPath(url: string, remotePath: string): string {
-  const base = url.trim().replace(/\/+$/, '');
-  const path = remotePath.replace(/^\/+/, '');
-  return base ? `${base}/${path}` : `/${path}`;
-}
-
-/**
  * 归一化 WebDAV 服务器地址：去除首尾空格；缺失协议时自动补 https://。
  * 避免用户漏填协议导致 reqwest builder 解析失败（表现为"网络请求失败：builder error"）。
  */
@@ -76,6 +66,53 @@ export function normalizeWebdavUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+// ===== 瞬态失败退避重试（对齐《插件同步功能实现思路》"执行与重试：503 退避"） =====
+
+/** 可重试的瞬态状态码：坚果云限流 429、服务端临时 5xx */
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+/** 最多尝试次数（1 次原始 + 2 次重试） */
+const MAX_ATTEMPTS = 3;
+/** 重试退避（秒 → 毫秒）：第 1 次重试等 800ms，第 2 次等 2.4s */
+const BACKOFF_MS = [800, 2400];
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * 对 WebDAV 请求做有限退避重试：
+ * - 网络层抛错（断网/超时）→ 重试；始终失败则向上抛；
+ * - 返回状态 ∈ {429,500,502,503,504} → 重试；重试耗尽后【抛错】（绝不把瞬态失败
+ *   误判为"远端文件不存在"——否则可能把本地快照当首次同步上传覆盖远端）；
+ * - 其余状态（401/404/409/301/405/2xx…）与成功直接返回，不重试。
+ * 每次重试写入排障日志（设置 → 排障 可见）。
+ */
+async function withRetry<T>(op: string, run: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let detail = '';
+    try {
+      const result = await run();
+      const status = (result as { status?: number }).status;
+      if (typeof status === 'number' && RETRYABLE_STATUS.has(status)) {
+        detail = `HTTP ${status}`;
+      } else {
+        return result;
+      }
+    } catch (error) {
+      if (attempt >= MAX_ATTEMPTS) throw error;
+      detail = error instanceof Error ? error.message : String(error);
+    }
+
+    if (attempt < MAX_ATTEMPTS) {
+      const wait = BACKOFF_MS[attempt - 1] ?? 2000;
+      logSync('warn', '同步重试', `${op}：${detail}（瞬态），${wait / 1000}s 后第 ${attempt + 1}/${MAX_ATTEMPTS} 次重试`);
+      await sleep(wait);
+      continue;
+    }
+    // 最后一次尝试仍是可重试状态 → 抛错（由调用方按同步失败处理）
+    throw new Error(`${op}：${detail}（重试 ${MAX_ATTEMPTS} 次后仍失败）`);
+  }
+  throw new Error(`${op}：重试次数用尽`);
 }
 
 /**
@@ -90,12 +127,14 @@ export async function webdavFetch(
   settings: SyncSettings,
   remotePath: string
 ): Promise<WebdavFetchResult> {
-  const raw = await invoke<WebdavFetchResultRaw>('webdav_fetch', {
-    url: normalizeWebdavUrl(settings.webdavUrl),
-    username: settings.webdavUsername,
-    password: settings.webdavPassword,
-    remotePath,
-  });
+  const raw = await withRetry(`下载远端 ${remotePath}`, () =>
+    invoke<WebdavFetchResultRaw>('webdav_fetch', {
+      url: normalizeWebdavUrl(settings.webdavUrl),
+      username: settings.webdavUsername,
+      password: settings.webdavPassword,
+      remotePath,
+    })
+  );
   return {
     status: raw.status,
     exists: raw.exists,
@@ -117,13 +156,15 @@ export async function webdavPut(
   content: string
 ): Promise<WebdavPutResult> {
   const bytes = await gzipText(content);
-  return invoke<WebdavPutResult>('webdav_put', {
-    url: normalizeWebdavUrl(settings.webdavUrl),
-    username: settings.webdavUsername,
-    password: settings.webdavPassword,
-    remotePath,
-    content: Array.from(bytes),
-  });
+  return withRetry(`上传远端 ${remotePath}`, () =>
+    invoke<WebdavPutResult>('webdav_put', {
+      url: normalizeWebdavUrl(settings.webdavUrl),
+      username: settings.webdavUsername,
+      password: settings.webdavPassword,
+      remotePath,
+      content: Array.from(bytes),
+    })
+  );
 }
 
 /**
@@ -135,10 +176,12 @@ export async function webdavMkcol(
   settings: SyncSettings,
   remotePath: string
 ): Promise<WebdavMkcolResult> {
-  return invoke<WebdavMkcolResult>('webdav_mkcol', {
-    url: normalizeWebdavUrl(settings.webdavUrl),
-    username: settings.webdavUsername,
-    password: settings.webdavPassword,
-    remotePath,
-  });
+  return withRetry(`创建远端目录 ${remotePath}`, () =>
+    invoke<WebdavMkcolResult>('webdav_mkcol', {
+      url: normalizeWebdavUrl(settings.webdavUrl),
+      username: settings.webdavUsername,
+      password: settings.webdavPassword,
+      remotePath,
+    })
+  );
 }

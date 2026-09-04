@@ -4,6 +4,7 @@ import { mergeFolders, mergeTasks, snapshotRecordsEqual } from './merge';
 import { parseSnapshot, snapshotToJson } from './snapshot';
 import { SyncSettings, SyncSnapshot, SYNC_SCHEMA_VERSION } from './types';
 import { webdavFetch, webdavMkcol, webdavPut } from './webdavClient';
+import { logSync } from './syncLog';
 
 /** 远端备份文件的相对路径：放在坚果云「Desktop-task-manager」子文件夹中，便于用户管理。
  * 该目录在上传前会自动创建（MKCOL），无需用户手动建文件夹。 */
@@ -99,6 +100,11 @@ export async function downloadRemote(settings: SyncSettings): Promise<SyncResult
  * 配合 gzip 压缩传输与 60min 定时兜底，控制坚果云免费版月度上传/下载配额消耗。
  */
 export async function syncMerge(settings: SyncSettings): Promise<SyncResult> {
+  return enqueueSync(() => doSyncMerge(settings));
+}
+
+/** 实际的合并流程（由 syncMerge 经互斥队列串行调用） */
+async function doSyncMerge(settings: SyncSettings): Promise<SyncResult> {
   try {
     const remote = await webdavFetch(settings, REMOTE_PATH);
 
@@ -172,6 +178,36 @@ export async function syncAuto(
 }
 
 const DEVICE_ID_KEY = 'dtm_device_id';
+
+// ===== 同步互斥队列（对齐《插件同步功能实现思路》"并发控制 inFlight"） =====
+// 自动同步（启动/防抖/定时）、一键更新（顶栏）、设置面板同步可能同时触发；
+// 不加锁会并发读写远端快照（下载→合并→PUT），造成无谓竞争甚至双写。
+// 实现：模块级 promise 链串行执行，重叠请求排队等待，并写排障日志。
+
+let syncQueue: Promise<unknown> = Promise.resolve();
+let syncRunning = false;
+
+/** 返回当前是否已有同步在跑（供调用方展示状态） */
+export function isSyncRunning(): boolean {
+  return syncRunning;
+}
+
+/** 把同步任务串行进队列；队列空闲时立即执行 */
+function enqueueSync<T>(task: () => Promise<T>): Promise<T> {
+  if (syncRunning) {
+    logSync('info', '同步引擎', '有同步正在进行，本轮排队等待（防并发双写远端）');
+  }
+  const run = syncQueue.then(async () => {
+    syncRunning = true;
+    try {
+      return await task();
+    } finally {
+      syncRunning = false;
+    }
+  });
+  syncQueue = run.catch(() => undefined);
+  return run;
+}
 
 /**
  * 稳定设备标识：localStorage 持久化，首次调用生成 `dtm-{时间戳}-{随机串}` 并保存。
