@@ -2,6 +2,7 @@ import {
   Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus,
   Plus, RefreshCw, Settings, Power, CheckCircle2,
 } from 'lucide-react';
+import { isMobile } from '../data/platform';
 
 export interface ContextMenuState {
   x: number;
@@ -95,13 +96,15 @@ export default function ContextMenu({
   ];
 
   // 空白区/文件夹区菜单项（新建任务 / 新建文件夹）
+  // 移动端：仅文件夹长按菜单保留这两项（在该文件夹内新建任务 / 新建子文件夹）；
+  // 空白处长按已在 App 层不触发（新建由顶栏按钮承担，不照搬桌面右键菜单）。
   const blankItems: MenuItem[] = [
     {
       key: 'new-task',
       icon: <Plus style={iconStyle} />,
       label: '新建任务',
       hint: 'Ctrl+N',
-      visible: !isTaskContext,
+      visible: !isTaskContext && (!isMobile || isFolderContext),
       // 右键文件夹时自动预选该文件夹（任务创建后归入该文件夹）
       action: () => isFolderContext && state.folderId
         ? onNewTaskInFolder(state.folderId)
@@ -112,7 +115,7 @@ export default function ContextMenu({
       icon: <FolderPlus style={iconStyle} />,
       label: '新建文件夹',
       hint: '',
-      visible: !isTaskContext,
+      visible: !isTaskContext && (!isMobile || isFolderContext),
       action: () => onCreateFolder(state.folderId || null),
     },
   ];
@@ -138,14 +141,14 @@ export default function ContextMenu({
     },
   ];
 
-  // 通用菜单项（空白区显示）
+  // 通用菜单项（空白区显示；移动端不显示——全部展开/折叠、刷新、设置、退出为桌面概念）
   const commonItems: MenuItem[] = [
     {
       key: 'expand',
       icon: <ChevronsDown style={iconStyle} />,
       label: '全部展开',
       hint: 'Ctrl+E',
-      visible: !isTaskContext,
+      visible: !isTaskContext && !isMobile,
       action: onExpandAll,
     },
     {
@@ -153,7 +156,7 @@ export default function ContextMenu({
       icon: <ChevronsUp style={iconStyle} />,
       label: '全部折叠',
       hint: 'Ctrl+S',
-      visible: !isTaskContext,
+      visible: !isTaskContext && !isMobile,
       action: onCollapseAll,
     },
     {
@@ -161,7 +164,7 @@ export default function ContextMenu({
       icon: <RefreshCw style={iconStyle} />,
       label: '刷新',
       hint: '',
-      visible: !isTaskContext,
+      visible: !isTaskContext && !isMobile,
       action: onRefresh,
     },
     {
@@ -169,7 +172,7 @@ export default function ContextMenu({
       icon: <Settings style={iconStyle} />,
       label: '设置',
       hint: '',
-      visible: !isTaskContext,
+      visible: !isTaskContext && !isMobile,
       action: onOpenSettings,
     },
     {
@@ -177,7 +180,7 @@ export default function ContextMenu({
       icon: <Power style={iconStyle} />,
       label: '退出',
       hint: '',
-      visible: !isTaskContext,
+      visible: !isTaskContext && !isMobile,
       action: onExit,
     },
   ];
@@ -209,7 +212,7 @@ export default function ContextMenu({
     >
       {item.icon}
       <span style={{ ...labelStyle, ...(item.destructive ? { color: 'var(--destructive)' } : {}) }}>{item.label}</span>
-      {item.hint && <span style={{ ...hintStyle, ...(item.destructive ? { color: 'var(--destructive)', opacity: 0.7 } : {}) }}>{item.hint}</span>}
+      {!isMobile && item.hint && <span style={{ ...hintStyle, ...(item.destructive ? { color: 'var(--destructive)', opacity: 0.7 } : {}) }}>{item.hint}</span>}
     </div>
   );
 
@@ -271,7 +274,7 @@ export default function ContextMenu({
             >
               <Trash2 style={{ ...iconStyle, color: 'var(--destructive)' }} />
               <span style={{ ...labelStyle, color: 'var(--destructive)' }}>删除</span>
-              <span style={{ ...hintStyle, color: 'var(--destructive)', opacity: 0.7 }}>Delete</span>
+              {!isMobile && <span style={{ ...hintStyle, color: 'var(--destructive)', opacity: 0.7 }}>Delete</span>}
             </div>
           </>
         )}

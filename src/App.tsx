@@ -20,8 +20,9 @@ import { isMobile } from './data/platform';
 import { formatDeadline } from './components/utils/formatDate';
 import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync } from './data/sync';
 
-/** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为底部固定导航条
- * （触控高度 ≥ 44px）。isMobile 为模块级常量，两套样式互不影响，桌面视觉零回归。 */
+/** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为顶栏下方的分段控件
+ * （不再做底部固定导航——回到顶部区域、靠近顶栏操作）。isMobile 为模块级常量，
+ * 两套样式互不影响，桌面视觉零回归。 */
 function ViewTabs({ mode, onChange, mobile }: {
   mode: ViewMode;
   onChange: (m: ViewMode) => void;
@@ -30,14 +31,9 @@ function ViewTabs({ mode, onChange, mobile }: {
   return (
     <div style={mobile ? {
       display: 'flex',
+      gap: 4,
       flexShrink: 0,
-      borderTop: '0.5px solid var(--border)',
-      background: 'color-mix(in srgb, var(--background) 85%, transparent)',
-      WebkitBackdropFilter: 'saturate(180%) blur(40px)',
-      backdropFilter: 'saturate(180%) blur(40px)',
-      // 避开 Android 全面屏手势区（底部安全区）
-      paddingBottom: 'env(safe-area-inset-bottom)',
-      zIndex: 5,
+      padding: '6px 12px 8px',
     } : {
       display: 'flex', gap: 2, padding: '8px 20px 0', flexShrink: 0,
     }}>
@@ -54,16 +50,16 @@ function ViewTabs({ mode, onChange, mobile }: {
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              height: 48,
+              height: 32,
               border: 'none',
-              background: 'transparent',
+              borderRadius: 9,
               cursor: 'pointer',
               fontFamily: 'var(--font-sans)',
               fontSize: 13,
-              fontWeight: active ? 700 : 500,
+              fontWeight: active ? 600 : 500,
               color: active ? 'var(--brand-400)' : 'var(--muted-foreground)',
-              boxShadow: active ? 'inset 0 -2px 0 var(--primary)' : 'none',
-              transition: 'color 0.15s ease',
+              background: active ? 'color-mix(in srgb, var(--brand-400) 12%, transparent)' : 'transparent',
+              transition: 'color 0.15s ease, background-color 0.15s ease',
             } : {
               display: 'inline-flex',
               alignItems: 'center',
@@ -628,6 +624,8 @@ function App() {
         // 顶部栏右键不弹出菜单
         if ((e.target as HTMLElement).closest('header')) return;
         e.preventDefault();
+        // 移动端：空白处长按不再弹桌面式右键菜单（新建/展开/退出等由顶栏与系统手势承担）
+        if (isMobile) return;
         setContextMenu({ x: e.clientX, y: e.clientY, taskId: null });
       }}
     >
@@ -682,10 +680,8 @@ function App() {
         {/* 分隔线 */}
         <div style={{ height: 0.5, background: 'var(--border)', margin: '0 20px', flexShrink: 0, opacity: 0.6 }} />
 
-        {/* 视图切换（V2：列表 / 日历 / 日）；桌面保持顶部按钮组 */}
-        {!isMobile && (
-          <ViewTabs mode={viewMode} onChange={changeViewMode} mobile={false} />
-        )}
+        {/* 视图切换（V2：列表 / 日历 / 日）；桌面顶部胶囊组，移动端同步键下方的分段控件 */}
+        <ViewTabs mode={viewMode} onChange={changeViewMode} mobile={isMobile} />
 
         {/* 搜索提示 */}
         {searchQuery.trim() && (
@@ -705,7 +701,8 @@ function App() {
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain',
             touchAction: 'pan-y',
-            padding: '8px 20px 20px',
+            // 移动端无底部导航：底部留手势区安全高度
+            padding: isMobile ? '8px 16px calc(20px + env(safe-area-inset-bottom))' : '8px 20px 20px',
           }}
         >
           {/* 列表视图：文件夹树 + 已完成区（现有行为保持不变） */}
@@ -772,10 +769,7 @@ function App() {
           )}
         </main>
 
-        {/* 移动端底部固定视图导航（触控高度 48px ≥ 44px 标准；桌面端不渲染） */}
-        {isMobile && (
-          <ViewTabs mode={viewMode} onChange={changeViewMode} mobile />
-        )}
+        {/* 移动端底部导航已移除：视图切换移到顶栏下方（同步键下），底部让给列表内容 + 手势区 */}
       </div>
 
       {/* 右键菜单 */}
