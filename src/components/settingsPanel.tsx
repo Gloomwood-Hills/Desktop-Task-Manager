@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Cloud, BookOpen, ChevronDown, Bug, RefreshCw, Clipboard, Trash2, CheckCircle2, XCircle } from 'lucide-react';
+import { X, Cloud, BookOpen, ChevronDown } from 'lucide-react';
 import { Settings, SortType, DEFAULT_WEBDAV_URL } from '../data/types';
 import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from '../data/sync';
 import type { SyncSettings, SyncLogEntry } from '../data/sync';
@@ -585,20 +585,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 )}
               </div>
 
-              {/* WebDAV 配置：服务器地址已内置坚果云（无需输入），只填账号与应用密码；输入即保存 */}
-              <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>服务器地址</label>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
-                  height: 40, padding: '0 14px',
-                  borderRadius: 'calc(var(--radius) * 0.8)',
-                  background: 'var(--muted)', border: '1px solid var(--border)',
-                }}>
-                  <Cloud style={{ width: 14, height: 14, color: 'var(--primary)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, color: 'var(--foreground)' }}>坚果云（已内置，无需填写）</span>
-                </div>
-                <p style={{ ...descStyle, marginTop: 4 }}>https://dav.jianguoyun.com/dav/</p>
-              </div>
+              {/* WebDAV 配置（服务器地址已内置坚果云，不显示）：只填账号与应用密码；输入即保存 */}
 
               <div style={{ marginBottom: 16 }}>
                 <label style={labelStyle}>账号</label>
@@ -669,8 +656,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 borderRadius: 'calc(var(--radius) * 0.8)', padding: '12px 14px',
                 background: 'var(--muted)', border: '1px solid var(--border)', marginBottom: 16,
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <Bug style={{ width: 15, height: 15, color: 'var(--primary)' }} />
+                <div style={{ marginBottom: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)' }}>状态自查</span>
                 </div>
                 {[
@@ -689,8 +675,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                     <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{row.label}</span>
                     <span style={{ fontSize: 12.5, fontWeight: 600, color: row.ok === false ? 'var(--destructive)' : 'var(--foreground)' }}>
-                      {row.ok === false && <XCircle style={{ width: 13, height: 13, verticalAlign: 'text-bottom', marginRight: 3, color: 'var(--destructive)' }} />}
-                      {row.ok === true && <CheckCircle2 style={{ width: 13, height: 13, verticalAlign: 'text-bottom', marginRight: 3, color: 'var(--primary)' }} />}
                       {row.value}
                     </span>
                   </div>
@@ -699,22 +683,16 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
 
               {/* 操作 */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                <button
-                  onClick={handleCopyDiag}
-                  style={secondaryBtn}
-                >
-                  <Clipboard style={{ width: 14, height: 14, verticalAlign: 'text-bottom', marginRight: 5, color: 'var(--primary)' }} />
+                <button onClick={handleCopyDiag} style={secondaryBtn}>
                   复制诊断信息
                 </button>
                 <button onClick={handleRefreshLogs} style={{ ...secondaryBtn, flex: '0 0 auto', padding: '0 16px' }}>
-                  <RefreshCw style={{ width: 14, height: 14, verticalAlign: 'text-bottom', marginRight: 5 }} />
                   刷新
                 </button>
                 <button
                   onClick={handleClearLogs}
                   style={{ ...secondaryBtn, flex: '0 0 auto', padding: '0 16px', color: 'var(--destructive)', borderColor: 'color-mix(in srgb, var(--destructive) 40%, transparent)' }}
                 >
-                  <Trash2 style={{ width: 14, height: 14, verticalAlign: 'text-bottom', marginRight: 5 }} />
                   清空
                 </button>
               </div>
