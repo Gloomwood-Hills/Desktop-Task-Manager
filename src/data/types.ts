@@ -1,3 +1,6 @@
+/** 内置 WebDAV 服务器（坚果云免费空间）：服务器地址无需用户输入，只填账号与应用密码 */
+export const DEFAULT_WEBDAV_URL = 'https://dav.jianguoyun.com/dav/';
+
 export interface Folder {
   id: string;
   name: string;

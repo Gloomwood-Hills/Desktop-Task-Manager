@@ -640,7 +640,9 @@ function App() {
         flexDirection: 'column',
         borderRadius: isMobile ? 0 : 'calc(var(--radius) * 1.1)',
         // 移动端 edge-to-edge：顶部留出状态栏高度空白（env 兜底 12px），避免内容被通知栏遮挡无法点击
-        paddingTop: isMobile ? 'max(env(safe-area-inset-top), 12px)' : 0,
+        // 移动端系统栏避让由原生层（MainActivity 按 WindowInsets 内缩）统一处理，
+        // CSS 不再依赖 env(safe-area-inset-*)（部分 WebView/鸿蒙返回 0），避免双重留白。
+        paddingTop: isMobile ? 12 : 0,
         background: glassEnabled
           ? `color-mix(in srgb, var(--background) ${transparency}%, transparent)`
           : 'var(--background)',
@@ -701,8 +703,8 @@ function App() {
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain',
             touchAction: 'pan-y',
-            // 移动端无底部导航：底部留手势区安全高度
-            padding: isMobile ? '8px 16px calc(20px + env(safe-area-inset-bottom))' : '8px 20px 20px',
+            // 移动端系统栏（导航栏）避让由原生层处理，此处仅留视觉留白
+            padding: isMobile ? '8px 16px 24px' : '8px 20px 20px',
           }}
         >
           {/* 列表视图：文件夹树 + 已完成区（现有行为保持不变） */}

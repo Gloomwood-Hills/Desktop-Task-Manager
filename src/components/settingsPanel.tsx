@@ -457,7 +457,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)' }}>WebDAV 云备份</span>
                 </div>
                 <p style={{ ...descStyle, lineHeight: 1.6 }}>
-                  填写任意 WebDAV 服务器（如坚果云免费空间 dav.jianguoyun.com/dav/），即可把任务数据备份到云端。
+                  服务器地址已内置为坚果云免费空间（dav.jianguoyun.com/dav/），无需填写；只需在下填入坚果云账号与应用密码，即可把任务数据备份到云端。
                   可开启下方「自动同步」，应用会在启动、数据变更（30 秒后）与每 60 分钟自动双向合并同步；
                   也可点击「一键更新」手动同步：自动合并云端与本地，无需选择方向。
                   密码仅保存在本机数据库，不会上传到任何地方。
@@ -510,7 +510,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                       <li>点击 <b>添加应用</b>，名称随意（如 DesktopTaskManager），确认后生成 16 位 <b>应用密码</b>（仅显示一次，请先复制保存）</li>
                       <li>回到本应用填写：
                         <div style={{ marginTop: 4, paddingLeft: 12, color: 'var(--muted-foreground)', lineHeight: 1.8 }}>
-                          服务器地址：<code>https://dav.jianguoyun.com/dav/</code><br />
+                          服务器地址：已内置 <code>https://dav.jianguoyun.com/dav/</code>（无需填写）<br />
                           账号：坚果云<b>登录邮箱</b><br />
                           密码：第 4 步生成的<b>应用密码</b>
                         </div>
@@ -523,17 +523,19 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 )}
               </div>
 
-              {/* WebDAV 配置：输入即保存（沿用其他 tab 的 onChange 持久化模式） */}
-              <div style={{ marginBottom: 16 }}>
+              {/* WebDAV 配置：服务器地址已内置坚果云（无需输入），只填账号与应用密码；输入即保存 */}
+              <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>服务器地址</label>
-                <input
-                  type="url"
-                  value={settings?.webdavUrl ?? ''}
-                  placeholder="https://dav.jianguoyun.com/dav/"
-                  onChange={(e) => onChange({ webdavUrl: e.target.value })}
-                  style={{ ...inputStyle, marginTop: 8 }}
-                  aria-label="WebDAV 服务器地址"
-                />
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
+                  height: 40, padding: '0 14px',
+                  borderRadius: 'calc(var(--radius) * 0.8)',
+                  background: 'var(--muted)', border: '1px solid var(--border)',
+                }}>
+                  <Cloud style={{ width: 14, height: 14, color: 'var(--primary)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: 'var(--foreground)' }}>坚果云（已内置，无需填写）</span>
+                </div>
+                <p style={{ ...descStyle, marginTop: 4 }}>https://dav.jianguoyun.com/dav/</p>
               </div>
 
               <div style={{ marginBottom: 16 }}>

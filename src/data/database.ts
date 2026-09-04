@@ -1,5 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import { appDataDir, join } from '@tauri-apps/api/path';
+import { DEFAULT_WEBDAV_URL } from './types';
 
 let db: Database | undefined = undefined;
 let initError: Error | null = null;
@@ -91,7 +92,7 @@ async function initDatabase(db: Database): Promise<void> {
       deadlineGradient INTEGER NOT NULL DEFAULT 1,
       viewMode TEXT NOT NULL DEFAULT 'list',
       autoSync INTEGER NOT NULL DEFAULT 1,
-      webdavUrl TEXT NOT NULL DEFAULT '',
+      webdavUrl TEXT NOT NULL DEFAULT '${DEFAULT_WEBDAV_URL}',
       webdavUsername TEXT NOT NULL DEFAULT '',
       webdavPassword TEXT NOT NULL DEFAULT '',
       lastSyncedAt INTEGER,
@@ -125,6 +126,9 @@ async function initDatabase(db: Database): Promise<void> {
   // 旧库迁移：Settings 新增 autoSync 列（自动同步开关，默认开启）
   await migrateSettingsAddAutoSync(db);
 
+  // 旧库迁移：webdavUrl 为空 → 填内置坚果云地址（V2.1.1：服务器地址内嵌，无需用户输入）
+  await migrateSettingsFillDefaultWebdavUrl(db);
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
       id TEXT PRIMARY KEY,
@@ -149,7 +153,7 @@ async function insertDefaultData(db: Database): Promise<void> {
     await db.execute(
       `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', '', '', '', null, null, now, now]
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', DEFAULT_WEBDAV_URL, '', '', null, null, now, now]
     );
   }
 
@@ -295,4 +299,14 @@ async function migrateSettingsAddAutoSync(db: Database): Promise<void> {
   if (!cols.some((c) => c.name === 'autoSync')) {
     await db.execute('ALTER TABLE Settings ADD COLUMN autoSync INTEGER NOT NULL DEFAULT 1');
   }
+}
+
+/** 旧库迁移：webdavUrl 为空 → 填内置坚果云地址（V2.1.1 内嵌服务器，幂等） */
+async function migrateSettingsFillDefaultWebdavUrl(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'webdavUrl')) return;
+  await db.execute(
+    `UPDATE Settings SET webdavUrl = ? WHERE webdavUrl = '' OR webdavUrl IS NULL`,
+    [DEFAULT_WEBDAV_URL]
+  );
 }
