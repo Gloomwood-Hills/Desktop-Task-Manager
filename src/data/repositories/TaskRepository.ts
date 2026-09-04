@@ -36,6 +36,24 @@ export class TaskRepository {
     return rows.map(this.mapRow);
   }
 
+  /** 读取软删任务（已删除，用于「已删除」查看；保留 30 天以内的） */
+  async getAllDeleted(): Promise<Task[]> {
+    const rows = await this.db.select<Task[]>(
+      `SELECT ${TASK_COLUMNS} FROM Task WHERE deleted = 1 ORDER BY updatedAt DESC`,
+      []
+    );
+    return rows.map(this.mapRow);
+  }
+
+  /** 物理清除超过保留期的软删任务（deleted=1 且 updatedAt <= threshold），返回清除条数 */
+  async purgeDeleted(thresholdMs: number): Promise<number> {
+    const result = await this.db.execute(
+      'DELETE FROM Task WHERE deleted = 1 AND updatedAt <= ?',
+      [thresholdMs]
+    );
+    return result.rowsAffected ?? 0;
+  }
+
   async getById(id: string): Promise<Task | null> {
     const rows = await this.db.select<Task[]>(
       `SELECT ${TASK_COLUMNS} FROM Task WHERE id = ? AND deleted = 0`,

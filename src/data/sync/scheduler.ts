@@ -80,7 +80,7 @@ async function runSync(): Promise<void> {
       webdavPassword: settings.webdavPassword,
     };
     logSync('info', '自动同步', `开始（本机上次同步 ${settings.lastSyncedAt ? new Date(settings.lastSyncedAt).toLocaleString() : '无'}）`);
-    const result = await syncAuto(syncSettings, settings.lastSyncedAt);
+    const result = await syncAuto(syncSettings, settings.lastSyncedAt, settings.syncPolicy);
 
     if (result.status === 'error') {
       // 静默失败：不弹窗，仅记录日志，下轮自动重试

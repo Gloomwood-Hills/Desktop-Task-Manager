@@ -11,7 +11,7 @@ export class SettingsRepository {
 
   async get(): Promise<Settings | null> {
     const rows = await this.db.select<Settings[]>(
-      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, autoSync, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt
+      `SELECT id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, autoSync, syncPolicy, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt
        FROM Settings WHERE id = ?`,
       ['default']
     );
@@ -31,7 +31,7 @@ export class SettingsRepository {
 
     await this.db.execute(
       `UPDATE Settings
-       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, autoPin = ?, autoStart = ?, deadlineGradient = ?, viewMode = ?, autoSync = ?, webdavUrl = ?, webdavUsername = ?, webdavPassword = ?, lastSyncedAt = ?, lastSyncAction = ?, updatedAt = ?
+       SET theme = ?, glassEffect = ?, transparency = ?, sortType = ?, importantTop = ?, reminderEnabled = ?, reminderOffset = ?, autoPin = ?, autoStart = ?, deadlineGradient = ?, viewMode = ?, autoSync = ?, syncPolicy = ?, webdavUrl = ?, webdavUsername = ?, webdavPassword = ?, lastSyncedAt = ?, lastSyncAction = ?, updatedAt = ?
        WHERE id = ?`,
       [
         updatedSettings.theme,
@@ -46,6 +46,7 @@ export class SettingsRepository {
         updatedSettings.deadlineGradient ? 1 : 0,
         updatedSettings.viewMode,
         updatedSettings.autoSync ? 1 : 0,
+        updatedSettings.syncPolicy,
         updatedSettings.webdavUrl,
         updatedSettings.webdavUsername,
         updatedSettings.webdavPassword,

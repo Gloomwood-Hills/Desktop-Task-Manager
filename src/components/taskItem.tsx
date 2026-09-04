@@ -58,6 +58,25 @@ function deadlineColor(deadline: number, gradient: boolean, dark: boolean): { bg
   };
 }
 
+/** 是否已过期：有截止时间、未完成、且截止时间已过 */
+function isTaskExpired(task: { deadline: number | null; completed: boolean }): boolean {
+  return task.deadline !== null && !task.completed && task.deadline < Date.now();
+}
+
+/** 已过期标签（浅紫底白字） */
+function ExpiredBadge() {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+      padding: '1px 6px', borderRadius: 7,
+      background: '#c4b5fd', color: '#ffffff',
+      fontSize: 10, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
+    }}>
+      已过期
+    </span>
+  );
+}
+
 /** 日期徽章（开始 + 截止，含颜色渐变提醒） */
 function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task; deadlineGradient?: boolean; dark?: boolean }) {
   const showStart = task.startDate !== null;
@@ -166,6 +185,7 @@ function SubtaskRow({
         >
           <Highlight text={task.title} query={searchQuery} />
         </span>
+        {isTaskExpired(task) && <ExpiredBadge />}
         {/* 子任务展开/折叠 + 进度 */}
         {hasChildren && (
           <>
@@ -320,6 +340,7 @@ export default function TaskItem({
             >
               <Highlight text={task.title} query={searchQuery} />
             </span>
+            {isTaskExpired(task) && <ExpiredBadge />}
             {/* 详情展开指示 */}
             {hasDetails && (
               <span style={{ display: 'inline-flex', flexShrink: 0, opacity: 0.7 }}>

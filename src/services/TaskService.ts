@@ -64,6 +64,16 @@ export class TaskService {
     return this.taskRepository.softDelete(id);
   }
 
+  /** 读取已删除任务（30 天保留期内） */
+  async getAllDeleted(): Promise<Task[]> {
+    return this.taskRepository.getAllDeleted();
+  }
+
+  /** 物理清除超过保留期的已删除任务（deleted=1 且 updatedAt <= threshold），返回清除条数 */
+  async purgeDeleted(thresholdMs: number): Promise<number> {
+    return this.taskRepository.purgeDeleted(thresholdMs);
+  }
+
   async restoreTask(id: string): Promise<boolean> {
     return this.taskRepository.restore(id);
   }

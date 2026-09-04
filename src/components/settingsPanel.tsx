@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { X, Cloud, BookOpen, ChevronDown } from 'lucide-react';
-import { Settings, SortType, DEFAULT_WEBDAV_URL } from '../data/types';
+import { Settings, SortType, SyncPolicy, DEFAULT_WEBDAV_URL } from '../data/types';
 import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from '../data/sync';
 import type { SyncSettings, SyncLogEntry } from '../data/sync';
+import { isMobile } from '../data/platform';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -31,14 +32,6 @@ const SORT_OPTIONS: { label: string; value: SortType }[] = [
   { label: '手动排序', value: 'manual' },
 ];
 
-const REMINDER_OPTIONS: { label: string; value: number }[] = [
-  { label: '提前1天', value: 86400 },
-  { label: '提前3小时', value: 10800 },
-  { label: '提前1小时', value: 3600 },
-  { label: '提前30分钟', value: 1800 },
-  { label: '不提醒', value: 0 },
-];
-
 /** 设置面板（右侧滑入，对齐设计稿 settings） */
 export default function SettingsPanel({ theme, onThemeChange, settings, onChange, onClose }: SettingsPanelProps) {
   const [tab, setTab] = useState<TabId>('外观');
@@ -47,7 +40,6 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [transparency, setTransparency] = useState(Math.round((settings?.transparency ?? 0.8) * 100));
   const [sortType, setSortType] = useState<SortType>(settings?.sortType ?? 'deadline');
   const [priorityTop, setPriorityTop] = useState(settings?.importantTop ?? false);
-  const [reminderOffset, setReminderOffset] = useState(settings?.reminderOffset ?? 86400);
   const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
   const [autoPin, setAutoPin] = useState(settings?.autoPin ?? true);
   const [autoStart, setAutoStart] = useState(settings?.autoStart ?? true);
@@ -358,44 +350,48 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </div>
               </div>
 
-              {/* 毛玻璃 */}
-              <div style={rowStyle}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <label style={labelStyle}>毛玻璃效果</label>
-                  <p style={descStyle}>窗口背景启用 Mica 半透明效果</p>
+              {/* 毛玻璃（仅桌面，移动端隐藏） */}
+              {!isMobile && (
+                <div style={rowStyle}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <label style={labelStyle}>毛玻璃效果</label>
+                    <p style={descStyle}>窗口背景启用 Mica 半透明效果</p>
+                  </div>
+                  <div style={switchStyle} onClick={() => { setGlassEffect(!glassEffect); onChange({ glassEffect: !glassEffect }); }}>
+                    <span style={switchTrack(glassEffect)} />
+                    <span style={{ ...switchThumb, transform: glassEffect ? 'translateX(20px)' : 'none' }} />
+                  </div>
                 </div>
-                <div style={switchStyle} onClick={() => { setGlassEffect(!glassEffect); onChange({ glassEffect: !glassEffect }); }}>
-                  <span style={switchTrack(glassEffect)} />
-                  <span style={{ ...switchThumb, transform: glassEffect ? 'translateX(20px)' : 'none' }} />
-                </div>
-              </div>
+              )}
 
-              {/* 透明度 */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <label style={labelStyle}>透明度</label>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)', fontVariantNumeric: 'tabular-nums' }}>
-                    {transparency}%
-                  </span>
+              {/* 透明度（仅桌面，移动端隐藏） */}
+              {!isMobile && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <label style={labelStyle}>透明度</label>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)', fontVariantNumeric: 'tabular-nums' }}>
+                      {transparency}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={100}
+                    value={transparency}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setTransparency(v);
+                      onChange({ transparency: v / 100 });
+                    }}
+                    style={{
+                      width: '100%', height: 6, borderRadius: 999, appearance: 'none', cursor: 'pointer',
+                      background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${(transparency - 20) / 80 * 100}%, var(--border) ${(transparency - 20) / 80 * 100}%, var(--border) 100%)`,
+                    }}
+                    aria-label="透明度"
+                  />
+                  <p style={descStyle}>调整窗口背景的不透明程度</p>
                 </div>
-                <input
-                  type="range"
-                  min={20}
-                  max={100}
-                  value={transparency}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setTransparency(v);
-                    onChange({ transparency: v / 100 });
-                  }}
-                  style={{
-                    width: '100%', height: 6, borderRadius: 999, appearance: 'none', cursor: 'pointer',
-                    background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${(transparency - 20) / 80 * 100}%, var(--border) ${(transparency - 20) / 80 * 100}%, var(--border) 100%)`,
-                  }}
-                  aria-label="透明度"
-                />
-                <p style={descStyle}>调整窗口背景的不透明程度</p>
-              </div>
+              )}
 
               <div style={rowStyle}>
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -461,30 +457,9 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
           {/* ===== 提醒 ===== */}
           {tab === '提醒' && (
             <section>
-              <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>默认提醒时间</label>
-                <div style={selectWrapper}>
-                  <select
-                    value={reminderOffset}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setReminderOffset(v);
-                      onChange({ reminderOffset: v });
-                    }}
-                    style={{ ...selectStyle, marginTop: 8 }}
-                    aria-label="默认提醒时间"
-                  >
-                    {REMINDER_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                  </select>
-                  <span style={{ position: 'absolute', right: 12, top: 'calc(50% + 4px)', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--icon-muted)' }}>
-                    <span style={{ fontSize: 12 }}>▼</span>
-                  </span>
-                </div>
-              </div>
-
               <div style={rowStyle}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <label style={labelStyle}>开启 Windows 通知</label>
+                  <label style={labelStyle}>开启系统通知</label>
                   <p style={descStyle}>在系统通知中心显示任务提醒</p>
                 </div>
                 <div style={switchStyle} onClick={() => { setWinNotify(!winNotify); onChange({ reminderEnabled: !winNotify }); }}>
@@ -535,6 +510,38 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 <div style={switchStyle} onClick={() => { setAutoSync(!autoSync); onChange({ autoSync: !autoSync }); }}>
                   <span style={switchTrack(autoSync)} />
                   <span style={{ ...switchThumb, transform: autoSync ? 'translateX(20px)' : 'none' }} />
+                </div>
+              </div>
+
+              {/* 默认同步策略（新增）：双向合并 / 仅上传云端 / 仅覆盖本地 */}
+              <div style={{ marginBottom: 20 }}>
+                <label style={labelStyle}>默认同步策略</label>
+                <p style={descStyle}>决定「自动同步」与「一键更新」的同步方式；顶栏「上传云端 / 覆盖本地」为手动强制，不受此影响</p>
+                <div style={{ display: 'inline-flex', borderRadius: 999, padding: 2, background: 'var(--muted)', border: '1px solid var(--border)', marginTop: 8 }}>
+                  {([
+                    { id: 'twoWay', label: '双向同步' },
+                    { id: 'uploadOnly', label: '仅上传云端' },
+                    { id: 'downloadOnly', label: '仅覆盖本地' },
+                  ] as { id: SyncPolicy; label: string }[]).map((opt) => {
+                    const active = (settings?.syncPolicy ?? 'twoWay') === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => onChange({ syncPolicy: opt.id })}
+                        style={{
+                          flex: 1, padding: '6px 14px', border: 'none', borderRadius: 999,
+                          cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                          fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap',
+                          color: active ? 'var(--foreground)' : 'var(--muted-foreground)',
+                          background: active ? 'var(--background)' : 'transparent',
+                          boxShadow: active ? 'var(--shadow-xs)' : 'none',
+                          transition: 'color .15s ease, background-color .15s ease',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -623,19 +630,11 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </button>
               </div>
 
-              {/* 状态区：上次同步时间 + 操作 + 最近一次结果 */}
+              {/* 状态区：最近一次同步/连接测试结果（同步时间已在主界面移除） */}
               <div style={{
                 borderRadius: 'calc(var(--radius) * 0.8)', padding: '12px 14px',
                 background: 'var(--muted)', border: '1px solid var(--border)',
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>上次同步</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--foreground)', fontVariantNumeric: 'tabular-nums' }}>
-                    {settings?.lastSyncedAt
-                      ? `${formatSyncTime(settings.lastSyncedAt)} · ${settings.lastSyncAction === 'download' ? '下载' : settings.lastSyncAction === 'upload' ? '上传' : settings.lastSyncAction === 'merged' ? '合并' : '未知'}`
-                      : '尚未同步'}
-                  </span>
-                </div>
                 {syncResult && (
                   <p style={{
                     fontSize: 12.5, margin: 0, lineHeight: 1.6,
@@ -643,6 +642,9 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   }}>
                     {syncResult.message}
                   </p>
+                )}
+                {!syncResult && (
+                  <p style={{ fontSize: 12.5, margin: 0, color: 'var(--muted-foreground)' }}>执行「连接测试」或「一键更新」后，这里显示最近一次结果。</p>
                 )}
               </div>
             </section>

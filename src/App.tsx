@@ -15,7 +15,9 @@ import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
-import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState } from './data/types';
+import { getDatabase } from './data';
+import { TaskService } from './services';
+import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy } from './data/types';
 import { isMobile } from './data/platform';
 import { formatDeadline } from './components/utils/formatDate';
 import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync, logSync } from './data/sync';
@@ -126,6 +128,9 @@ function App() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   /** 顶栏同步按钮状态：进行中禁用点击并旋转图标 */
   const [syncBusy, setSyncBusy] = useState(false);
+  /** 已删除任务查看弹窗 */
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
 
   // ===== 视图切换（V2：列表 / 日历 / 日） =====
   /** 当前视图模式：从持久化 Settings 初始化，切换后回写 */
@@ -484,25 +489,26 @@ function App() {
     !!settings?.webdavUrl && !!settings.webdavUsername && !!settings.webdavPassword;
 
   /** 一键更新：执行合并式同步（拉取→合并→写回两端），无需选择方向 */
-  const handleOneClickSync = async () => {
+  /** 以指定策略执行同步（一键更新按默认策略；上传/覆盖键强制特定策略） */
+  const runSyncWithPolicy = async (policy: SyncPolicy, label: string) => {
     if (syncBusy || !settings) return;
     if (!syncConfigReady()) {
-      logSync('warn', '一键更新', '未配置坚果云账号/应用密码（设置 → 同步）');
+      logSync('warn', label, '未配置坚果云账号/应用密码（设置 → 同步）');
       setToast('请先在 设置 → 同步 中配置 WebDAV 账号');
       return;
     }
     setSyncBusy(true);
-    logSync('info', '一键更新', '开始合并式同步');
+    const policyLabel = policy === 'uploadOnly' ? '仅上传云端' : policy === 'downloadOnly' ? '仅覆盖本地' : '双向合并';
+    logSync('info', label, `开始（策略：${policyLabel}）`);
     try {
       const syncSettings = {
         webdavUrl: settings.webdavUrl,
         webdavUsername: settings.webdavUsername,
         webdavPassword: settings.webdavPassword,
       };
-      const result = await syncAuto(syncSettings, settings.lastSyncedAt);
-      logSync(result.status === 'error' ? 'error' : 'success', '一键更新', result.message);
+      const result = await syncAuto(syncSettings, settings.lastSyncedAt, policy);
+      logSync(result.status === 'error' ? 'error' : 'success', label, result.message);
       setToast(result.message);
-      // 成功后记录本设备上次同步时间与操作（merged→合并 / uploaded→上传 / downloaded→下载；skipped 无需写）
       if (result.status === 'merged' || result.status === 'uploaded' || result.status === 'downloaded') {
         await updateSettings({
           lastSyncedAt: Date.now(),
@@ -510,11 +516,26 @@ function App() {
         });
       }
     } catch (error) {
-      logSync('error', '一键更新', `异常：${error instanceof Error ? error.message : String(error)}`);
+      logSync('error', label, `异常：${error instanceof Error ? error.message : String(error)}`);
       setToast(`同步失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSyncBusy(false);
     }
+  };
+
+  /** 一键更新：按用户设置的默认同步策略执行（当前默认双向合并） */
+  const handleOneClickSync = () => runSyncWithPolicy(settings?.syncPolicy ?? 'twoWay', '一键更新');
+  /** 强制策略同步（顶栏 上传云端 / 覆盖本地 键） */
+  const handleForceSync = (policy: SyncPolicy) =>
+    runSyncWithPolicy(policy, policy === 'uploadOnly' ? '上传云端' : '覆盖本地');
+
+  /** 打开已删除任务查看（30 天内保留） */
+  const handleOpenDeleted = async () => {
+    setDeletedOpen(true);
+    try {
+      const db = await getDatabase();
+      setDeletedTasks(await new TaskService(db).getAllDeleted());
+    } catch { /* 打开失败时忽略 */ }
   };
 
   // ===== 视图数据（V2）：日历 / 日视图共用的展平活动任务列表 =====
@@ -678,9 +699,10 @@ function App() {
           pinned={pinned}
           onTogglePin={() => setPinned(!pinned)}
           onSync={handleOneClickSync}
+          onUploadCloud={() => handleForceSync('uploadOnly')}
+          onDownloadCloud={() => handleForceSync('downloadOnly')}
+          onOpenDeleted={handleOpenDeleted}
           syncBusy={syncBusy}
-          lastSyncedAt={settings?.lastSyncedAt ?? null}
-          lastSyncAction={settings?.lastSyncAction ?? null}
         />
 
         {/* 分隔线 */}
@@ -948,6 +970,36 @@ function App() {
               撤销
             </button>
           )}
+        </div>
+      )}
+
+      {/* 已删除任务查看（30 天内保留，到期自动清除） */}
+      {deletedOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} onClick={() => setDeletedOpen(false)} />
+          <div style={{ position: 'relative', width: 'min(520px, 92vw)', maxHeight: '75vh', display: 'flex', flexDirection: 'column', background: 'var(--background)', borderRadius: 'calc(var(--radius)*1.1)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px 10px' }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--foreground)' }}>已删除任务</span>
+              <button
+                onClick={() => setDeletedOpen(false)}
+                aria-label="关闭"
+                style={{ width: 28, height: 28, border: 'none', background: 'transparent', color: 'var(--icon-muted)', borderRadius: 6, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '0 18px 6px', fontSize: 12, color: 'var(--muted-foreground)' }}>已删除任务仅保留 30 天，到期自动清除。</div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '6px 18px 18px', touchAction: 'pan-y' }}>
+              {deletedTasks.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--muted-foreground)', padding: '32px 0', fontSize: 13 }}>暂无已删除任务</div>
+              ) : deletedTasks.map((t) => (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 4px', borderBottom: '0.5px solid var(--border)' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--foreground)', textDecoration: 'line-through', opacity: 0.75 }}>{t.title}</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>{t.updatedAt ? new Date(t.updatedAt).toLocaleString() : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

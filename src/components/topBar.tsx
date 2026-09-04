@@ -1,4 +1,4 @@
-import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw } from 'lucide-react';
+import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw, UploadCloud, DownloadCloud, Trash2 } from 'lucide-react';
 import { isMobile } from '../data/platform';
 
 interface TopBarProps {
@@ -12,27 +12,21 @@ interface TopBarProps {
   onTogglePin: () => void;
   /** 一键更新（合并式同步：拉取→合并→写回两端，无需选择方向） */
   onSync: () => void;
+  /** 仅上传云端（本地强推覆盖远端，不拉取/不合并） */
+  onUploadCloud: () => void;
+  /** 仅覆盖本地（下载远端覆盖本地，不上传） */
+  onDownloadCloud: () => void;
+  /** 查看已删除任务 */
+  onOpenDeleted: () => void;
   /** 同步进行中：禁用同步按钮 */
   syncBusy?: boolean;
-  /** 本设备上次成功同步时间戳（毫秒），null 表示尚未同步 */
-  lastSyncedAt?: number | null;
-  /** 本设备上次同步操作：upload=上传 / download=下载 / merged=合并 */
-  lastSyncAction?: 'upload' | 'download' | 'merged' | null;
 }
 
-/** 同步时间格式化：`2026.8.8 14:30`，无时间返回"尚未同步" */
-function formatSyncTime(ts: number | null): string {
-  if (!ts) return '尚未同步';
-  const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** 顶栏（三行布局）：第一行搜索框+新建，第二行图标按钮（缩小），第三行上次同步信息。
+/** 顶栏（两行布局）：第一行搜索框+新建，第二行图标按钮（同步/上传/下载/删除/设置）。
  * 移动端（Android）为全屏应用，无窗口可拖动。 */
 export default function TopBar({
   searchQuery, onSearchChange, onOpenSettings, onNewTask, onNewFolder, pinned, onTogglePin,
-  onSync, syncBusy = false, lastSyncedAt = null, lastSyncAction = null,
+  onSync, onUploadCloud, onDownloadCloud, onOpenDeleted, syncBusy = false,
 }: TopBarProps) {
   // 第一行控件（搜索框/新建）尺寸：桌面 34px，移动端 ≥44px（Apple HIG / Material 触控标准）
   const controlSize = isMobile ? 44 : 34;
@@ -184,7 +178,7 @@ export default function TopBar({
           onClick={onSync}
           disabled={syncBusy}
           aria-label="一键更新云端与本地"
-          title="一键更新云端与本地"
+          title="一键更新（双向合并）"
           style={{ ...iconBtnStyle, color: syncBusy ? 'var(--muted-foreground)' : 'var(--icon-muted)', cursor: syncBusy ? 'default' : 'pointer' }}
         >
           <RefreshCw
@@ -195,18 +189,36 @@ export default function TopBar({
             }}
           />
         </button>
-      </div>
 
-      {/* 第三行：本设备上次同步时间 + 操作 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, paddingLeft: 4 }}>
-        <span style={{ fontSize: 10.5, color: 'var(--muted-foreground)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-          {lastSyncedAt
-            ? `上次同步 ${formatSyncTime(lastSyncedAt)} · ${lastSyncAction === 'download' ? '下载' : lastSyncAction === 'upload' ? '上传' : lastSyncAction === 'merged' ? '合并' : '未知'}`
-            : '尚未同步'}
-        </span>
-        {syncBusy && (
-          <span style={{ fontSize: 10.5, color: 'var(--primary)' }}>同步中…</span>
-        )}
+        {/* 仅上传云端 */}
+        <button
+          onClick={onUploadCloud}
+          aria-label="仅上传云端"
+          title="仅上传云端（本地强推覆盖远端）"
+          style={{ ...iconBtnStyle, color: 'var(--icon-muted)' }}
+        >
+          <UploadCloud style={{ width: iconGlyph, height: iconGlyph }} />
+        </button>
+
+        {/* 仅覆盖本地 */}
+        <button
+          onClick={onDownloadCloud}
+          aria-label="仅覆盖本地"
+          title="仅覆盖本地（下载远端覆盖本地）"
+          style={{ ...iconBtnStyle, color: 'var(--icon-muted)' }}
+        >
+          <DownloadCloud style={{ width: iconGlyph, height: iconGlyph }} />
+        </button>
+
+        {/* 已删除（查看 + 30 天保留清理） */}
+        <button
+          onClick={onOpenDeleted}
+          aria-label="已删除任务"
+          title="已删除任务"
+          style={{ ...iconBtnStyle, color: 'var(--icon-muted)' }}
+        >
+          <Trash2 style={{ width: iconGlyph, height: iconGlyph }} />
+        </button>
       </div>
     </header>
   );

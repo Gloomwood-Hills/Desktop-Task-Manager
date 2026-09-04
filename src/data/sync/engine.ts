@@ -3,6 +3,7 @@ import { importMerged, importSnapshot } from './importer';
 import { mergeFolders, mergeTasks, snapshotRecordsEqual } from './merge';
 import { parseSnapshot, snapshotToJson } from './snapshot';
 import { SyncSettings, SyncSnapshot, SYNC_SCHEMA_VERSION } from './types';
+import { SyncPolicy } from '../types';
 import { webdavFetch, webdavMkcol, webdavPut } from './webdavClient';
 import { logSync } from './syncLog';
 
@@ -99,13 +100,22 @@ export async function downloadRemote(settings: SyncSettings): Promise<SyncResult
  * （不写库、不 PUT，零流量）；仅本地缺云端记录时只写本地不上传；仅远端落后时只上传。
  * 配合 gzip 压缩传输与 60min 定时兜底，控制坚果云免费版月度上传/下载配额消耗。
  */
-export async function syncMerge(settings: SyncSettings): Promise<SyncResult> {
-  return enqueueSync(() => doSyncMerge(settings));
+export async function syncMerge(settings: SyncSettings, policy: SyncPolicy = 'twoWay'): Promise<SyncResult> {
+  return enqueueSync(() => doSyncMerge(settings, policy));
 }
 
 /** 实际的合并流程（由 syncMerge 经互斥队列串行调用） */
-async function doSyncMerge(settings: SyncSettings): Promise<SyncResult> {
+async function doSyncMerge(settings: SyncSettings, policy: SyncPolicy): Promise<SyncResult> {
   try {
+    // 默认同步策略分支：
+    // 仅上传云端 → 只把本地推上去（不强拉、不合并）；仅覆盖本地 → 只拉远端覆盖本地（不上传）。
+    if (policy === 'uploadOnly') {
+      return await uploadLocal(settings);
+    }
+    if (policy === 'downloadOnly') {
+      return await downloadRemote(settings);
+    }
+
     const remote = await webdavFetch(settings, REMOTE_PATH);
 
     // 远端不存在 → 首次同步：上传本地全量（uploadLocal 内部负责 MKCOL 建目录 + PUT）
@@ -172,9 +182,10 @@ async function doSyncMerge(settings: SyncSettings): Promise<SyncResult> {
  */
 export async function syncAuto(
   settings: SyncSettings,
-  _lastSyncedAt: number | null
+  _lastSyncedAt: number | null,
+  policy: SyncPolicy = 'twoWay'
 ): Promise<SyncResult> {
-  return syncMerge(settings);
+  return syncMerge(settings, policy);
 }
 
 const DEVICE_ID_KEY = 'dtm_device_id';

@@ -92,6 +92,7 @@ async function initDatabase(db: Database): Promise<void> {
       deadlineGradient INTEGER NOT NULL DEFAULT 1,
       viewMode TEXT NOT NULL DEFAULT 'list',
       autoSync INTEGER NOT NULL DEFAULT 1,
+      syncPolicy TEXT NOT NULL DEFAULT 'twoWay',
       webdavUrl TEXT NOT NULL DEFAULT '${DEFAULT_WEBDAV_URL}',
       webdavUsername TEXT NOT NULL DEFAULT '',
       webdavPassword TEXT NOT NULL DEFAULT '',
@@ -129,6 +130,9 @@ async function initDatabase(db: Database): Promise<void> {
   // 旧库迁移：webdavUrl 为空 → 填内置坚果云地址（V2.1.1：服务器地址内嵌，无需用户输入）
   await migrateSettingsFillDefaultWebdavUrl(db);
 
+  // 旧库迁移：Settings 新增 syncPolicy 列（默认同步策略，默认为双向合并）
+  await migrateSettingsAddSyncPolicy(db);
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
       id TEXT PRIMARY KEY,
@@ -143,6 +147,9 @@ async function initDatabase(db: Database): Promise<void> {
   `);
 
   await insertDefaultData(db);
+
+  // 数据保留策略：已删除任务仅保留 30 天，到期物理清除（软删墓碑不再需要时回收）
+  await db.execute('DELETE FROM Task WHERE deleted = 1 AND updatedAt <= ?', [Date.now() - 30 * 24 * 60 * 60 * 1000]);
 }
 
 async function insertDefaultData(db: Database): Promise<void> {
@@ -151,9 +158,9 @@ async function insertDefaultData(db: Database): Promise<void> {
   const existingSettings = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM Settings', []);
   if (existingSettings[0].count === 0) {
     await db.execute(
-      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', DEFAULT_WEBDAV_URL, '', '', null, null, now, now]
+      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, autoSync, syncPolicy, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', 1, 'twoWay', DEFAULT_WEBDAV_URL, '', '', null, null, now, now]
     );
   }
 
@@ -309,4 +316,12 @@ async function migrateSettingsFillDefaultWebdavUrl(db: Database): Promise<void> 
     `UPDATE Settings SET webdavUrl = ? WHERE webdavUrl = '' OR webdavUrl IS NULL`,
     [DEFAULT_WEBDAV_URL]
   );
+}
+
+/** 旧库迁移：Settings 新增 syncPolicy 列（默认同步策略，默认双向合并） */
+async function migrateSettingsAddSyncPolicy(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'syncPolicy')) {
+    await db.execute("ALTER TABLE Settings ADD COLUMN syncPolicy TEXT NOT NULL DEFAULT 'twoWay'");
+  }
 }
