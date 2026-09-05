@@ -100,12 +100,13 @@ export function useTaskData(): UseTaskData {
         list.map((t) => ({
           ...t,
           repeatCount: t.repeatSeriesId ? (repeatCountMap.get(t.repeatSeriesId) ?? 0) : 0,
-          subtasks: annotate(t.subtasks),
+          // 已完成任务等无 subtasks 数组时兜底为空数组，避免对 undefined 调 .map
+          subtasks: annotate(t.subtasks ?? []),
         }));
       const annotateFolder = (n: FolderNode): FolderNode => ({
         ...n,
         tasks: annotate(n.tasks),
-        children: n.children.map(annotateFolder),
+        children: (n.children ?? []).map(annotateFolder),
       });
       setFolderTree(cleanTree.map(sortFolderNode).map(annotateFolder));
       // 未分类任务（folderId 为 null）：顶层显示，与文件夹同级
