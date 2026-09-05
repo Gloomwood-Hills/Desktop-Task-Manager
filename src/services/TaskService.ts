@@ -56,6 +56,7 @@ export class TaskService {
       repeatIntervalDays: options?.repeatIntervalDays ?? null,
       // 带重复规则的任务：首实例以自身 id 作为系列标识（模板也计入"累计完成x次"）
       repeatSeriesId: options?.repeatRule ? id : null,
+      repeatNextId: null,
     });
   }
 
@@ -102,6 +103,15 @@ export class TaskService {
       await this.spawnNextInstance(task);
     }
 
+    // 撤销完成重复任务：删除自动生成的下一实例（避免列表出现两项同样的重复任务 / 数据爆炸）
+    if (updated && !newCompleted && task.repeatRule && task.repeatNextId) {
+      const next = await this.taskRepository.getById(task.repeatNextId);
+      if (next && !next.completed && !next.deleted) {
+        await this.taskRepository.softDelete(next.id);
+      }
+      await this.taskRepository.update(task.id, { repeatNextId: null });
+    }
+
     return updated;
   }
 
@@ -136,11 +146,12 @@ export class TaskService {
     }
   }
 
-  /** 生成重复任务的下一实例（复制标题/备注/优先级/容器，截止顺延，不重复的提醒清空，继承重复系列） */
+  /** 生成重复任务的下一实例（复制标题/备注/优先级/容器，截止顺延，不重复的提醒清空，继承重复系列），并在父任务记录 repeatNextId */
   private async spawnNextInstance(task: Task): Promise<Task | null> {
     const next = TaskService.nextDeadline(task.deadline!, task.repeatRule!, task.repeatIntervalDays);
-    return this.taskRepository.create({
-      id: generateId(),
+    const nextId = generateId();
+    const created = await this.taskRepository.create({
+      id: nextId,
       title: task.title,
       remark: task.remark,
       folderId: task.folderId,
@@ -152,7 +163,11 @@ export class TaskService {
       repeatRule: task.repeatRule,
       repeatIntervalDays: task.repeatIntervalDays,
       repeatSeriesId: task.repeatSeriesId ?? task.id,
+      repeatNextId: null,
     });
+    // 记录父任务自动生成的下一实例，供撤销完成时删除（避免重复任务/数据爆炸）
+    await this.taskRepository.update(task.id, { repeatNextId: nextId });
+    return created;
   }
 
   /** 统计同一重复系列已完成的实例数（用于"已重复 N 次"） */

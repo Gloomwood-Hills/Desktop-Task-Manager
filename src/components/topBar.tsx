@@ -1,4 +1,4 @@
-import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw, UploadCloud, DownloadCloud, Trash2 } from 'lucide-react';
+import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw, UploadCloud, DownloadCloud, Trash2, ChevronsUp, ChevronsDown } from 'lucide-react';
 import { isMobile } from '../data/platform';
 
 interface TopBarProps {
@@ -18,6 +18,10 @@ interface TopBarProps {
   onDownloadCloud: () => void;
   /** 查看已删除任务 */
   onOpenDeleted: () => void;
+  /** 是否已展开全部（切换「展开全部/折叠全部」） */
+  allExpanded?: boolean;
+  /** 切换展开/折叠全部（同名功能键，替代右键菜单里的「展开全部/折叠全部」） */
+  onToggleExpandAll?: () => void;
   /** 同步进行中：禁用同步按钮 */
   syncBusy?: boolean;
 }
@@ -26,7 +30,7 @@ interface TopBarProps {
  * 移动端（Android）为全屏应用，无窗口可拖动。 */
 export default function TopBar({
   searchQuery, onSearchChange, onOpenSettings, onNewTask, onNewFolder, pinned, onTogglePin,
-  onSync, onUploadCloud, onDownloadCloud, onOpenDeleted, syncBusy = false,
+  onSync, onUploadCloud, onDownloadCloud, onOpenDeleted, allExpanded = false, onToggleExpandAll, syncBusy = false,
 }: TopBarProps) {
   // 第一行控件（搜索框/新建）尺寸：桌面 34px，移动端 ≥44px（Apple HIG / Material 触控标准）
   const controlSize = isMobile ? 44 : 34;
@@ -174,6 +178,19 @@ export default function TopBar({
         >
           <Settings style={{ width: iconGlyph, height: iconGlyph }} />
         </button>
+
+        {/* 展开/折叠全部（同一功能键，替代右键菜单） */}
+        <button
+          onClick={onToggleExpandAll}
+          aria-label={allExpanded ? "折叠全部" : "展开全部"}
+          title={allExpanded ? "折叠全部" : "展开全部"}
+          style={{ ...iconBtnStyle, color: allExpanded ? 'var(--primary)' : 'var(--icon-muted)' }}
+        >
+          {allExpanded
+            ? <ChevronsUp style={{ width: iconGlyph, height: iconGlyph }} />
+            : <ChevronsDown style={{ width: iconGlyph, height: iconGlyph }} />}
+        </button>
+
         <button
           onClick={onSync}
           disabled={syncBusy}

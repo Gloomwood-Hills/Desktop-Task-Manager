@@ -37,6 +37,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     repeatRule: null,
     repeatIntervalDays: null,
     repeatSeriesId: null,
+    repeatNextId: null,
     createdAt: 1000,
     updatedAt: 1000,
     ...overrides,

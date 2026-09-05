@@ -195,9 +195,10 @@ function SubtaskRow({
             color: task.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
             textDecoration: task.completed ? 'line-through' : 'none',
             flex: 1, minWidth: 0,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            whiteSpace: 'normal',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            lineHeight: 1.3,
           }}
         >
           <Highlight text={task.title} query={searchQuery} />
@@ -350,9 +351,10 @@ export default function TaskItem({
                 fontWeight: 600,
                 color: task.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
                 textDecoration: task.completed ? 'line-through' : 'none',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+                lineHeight: 1.3,
                 minWidth: 0,
               }}
             >

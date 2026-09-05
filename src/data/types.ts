@@ -42,6 +42,8 @@ export interface Task {
   repeatIntervalDays: number | null;
   /** 重复系列标识：同一重复链的实例共享（首个实例生成下一实例时写入自身 id，便于统计已重复次数） */
   repeatSeriesId: string | null;
+  /** 由本任务完成时自动生成的下一实例 id（用于撤销完成时删除该实例，避免重复任务/数据爆炸） */
+  repeatNextId: string | null;
   createdAt: number;
   updatedAt: number;
 }

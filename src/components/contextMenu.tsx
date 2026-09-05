@@ -1,5 +1,5 @@
 import {
-  Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus,
+  Pencil, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus,
   Plus, RefreshCw, Settings, Power, CheckCircle2, Repeat,
 } from 'lucide-react';
 import { isMobile } from '../data/platform';
@@ -21,8 +21,6 @@ interface ContextMenuProps {
   onEditTask: (taskId: string) => void;
   onAddSubtask: (taskId: string) => void;
   onToggleComplete: (taskId: string) => void;
-  onExpandAll: () => void;
-  onCollapseAll: () => void;
   onDeleteTask: (taskId: string) => void;
   onCreateFolder: (parentId: string | null) => void;
   onRenameFolder: (folderId: string) => void;
@@ -49,7 +47,7 @@ interface MenuItem {
 
 /** 右键菜单（对齐设计稿 context-menu，Task 12） */
 export default function ContextMenu({
-  state, onClose, onEditTask, onAddSubtask, onToggleComplete, onExpandAll, onCollapseAll,
+  state, onClose, onEditTask, onAddSubtask, onToggleComplete,
   onDeleteTask, onCreateFolder, onRenameFolder, onDeleteFolder, onNewTask, onNewTaskInFolder,
   onRefresh, onOpenSettings, onExit, onStopRepeat,
 }: ContextMenuProps) {
@@ -153,24 +151,8 @@ export default function ContextMenu({
     },
   ];
 
-  // 通用菜单项（空白区显示；移动端不显示——全部展开/折叠、刷新、设置、退出为桌面概念）
+  // 通用菜单项（空白区显示；移动端不显示——刷新、设置、退出为桌面概念；展开/折叠全部已移到顶栏功能键）
   const commonItems: MenuItem[] = [
-    {
-      key: 'expand',
-      icon: <ChevronsDown style={iconStyle} />,
-      label: '全部展开',
-      hint: 'Ctrl+E',
-      visible: !isTaskContext && !isMobile,
-      action: onExpandAll,
-    },
-    {
-      key: 'collapse',
-      icon: <ChevronsUp style={iconStyle} />,
-      label: '全部折叠',
-      hint: 'Ctrl+S',
-      visible: !isTaskContext && !isMobile,
-      action: onCollapseAll,
-    },
     {
       key: 'refresh',
       icon: <RefreshCw style={iconStyle} />,

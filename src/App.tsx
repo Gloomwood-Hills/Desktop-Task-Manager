@@ -130,6 +130,8 @@ function App() {
   /** 已删除任务查看弹窗 */
   const [deletedOpen, setDeletedOpen] = useState(false);
   const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
+  /** 是否已展开全部（顶栏同名功能键） */
+  const [allExpanded, setAllExpanded] = useState(false);
 
   // ===== 视图切换（V2：列表 / 日历 / 日） =====
   /** 当前视图模式：从持久化 Settings 初始化，切换后回写 */
@@ -276,12 +278,20 @@ function App() {
     };
     collect(folderTree);
     setExpandedFolders(allFolderIds);
+    setAllExpanded(true);
   };
 
   /** 全部折叠：折叠所有文件夹与任务子列表 */
   const collapseAll = () => {
     setExpandedFolders(new Set());
     setExpandedTasks(new Set());
+    setAllExpanded(false);
+  };
+
+  /** 顶栏：展开/折叠全部 切换（同一功能键） */
+  const handleToggleExpandAll = () => {
+    if (allExpanded) collapseAll();
+    else expandAll();
   };
 
   // Ctrl 快捷键撤销/展开/折叠/新建（输入框内不触发）
@@ -682,6 +692,8 @@ function App() {
           onUploadCloud={() => handleForceSync('uploadOnly')}
           onDownloadCloud={() => handleForceSync('downloadOnly')}
           onOpenDeleted={handleOpenDeleted}
+          allExpanded={allExpanded}
+          onToggleExpandAll={handleToggleExpandAll}
           syncBusy={syncBusy}
         />
 
@@ -794,8 +806,6 @@ function App() {
           setDialog({ type: 'add-subtask', taskId, folderId: task?.folderId ?? null });
         }}
         onToggleComplete={handleToggleCompleted}
-        onExpandAll={expandAll}
-        onCollapseAll={collapseAll}
         onDeleteTask={handleDeleteTask}
         onStopRepeat={async (taskId) => {
           const t = findTaskAnywhere(taskId);

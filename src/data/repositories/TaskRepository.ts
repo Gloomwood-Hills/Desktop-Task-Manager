@@ -2,11 +2,11 @@ import Database from '@tauri-apps/plugin-sql';
 import { Task } from '../types';
 import { mapBooleanFields } from '../utils';
 
-type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays'>>;
+type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays' | 'repeatNextId'>>;
 
 const TASK_COLUMNS = `
   id, title, remark, folderId, parentId, startDate, deadline, priority, sortOrder,
-  completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, createdAt, updatedAt
+  completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId, createdAt, updatedAt
 `;
 
 export class TaskRepository {
@@ -117,13 +117,13 @@ export class TaskRepository {
 
     await this.db.execute(
       `INSERT INTO Task (id, title, remark, folderId, parentId, startDate, deadline, priority,
-                         sortOrder, completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         sortOrder, completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newTask.id, newTask.title, newTask.remark, newTask.folderId, newTask.parentId,
         newTask.startDate, newTask.deadline, newTask.priority, newTask.sortOrder,
         newTask.completed ? 1 : 0, newTask.completedAt, newTask.deleted ? 1 : 0,
-        newTask.reminderAt, newTask.reminderFired ? 1 : 0, newTask.repeatRule, newTask.repeatIntervalDays, newTask.repeatSeriesId,
+        newTask.reminderAt, newTask.reminderFired ? 1 : 0, newTask.repeatRule, newTask.repeatIntervalDays, newTask.repeatSeriesId, newTask.repeatNextId,
         newTask.createdAt, newTask.updatedAt,
       ]
     );
@@ -157,12 +157,12 @@ export class TaskRepository {
     await this.db.execute(
       `UPDATE Task
        SET title = ?, remark = ?, folderId = ?, parentId = ?, startDate = ?, deadline = ?,
-           priority = ?, repeatRule = ?, repeatIntervalDays = ?, reminderAt = ?, updatedAt = ?
+           priority = ?, repeatRule = ?, repeatIntervalDays = ?, reminderAt = ?, repeatNextId = ?, updatedAt = ?
        WHERE id = ?`,
       [
         updatedTask.title, updatedTask.remark, updatedTask.folderId, updatedTask.parentId,
         updatedTask.startDate, updatedTask.deadline, updatedTask.priority,
-        updatedTask.repeatRule, updatedTask.repeatIntervalDays, updatedTask.reminderAt,
+        updatedTask.repeatRule, updatedTask.repeatIntervalDays, updatedTask.reminderAt, updatedTask.repeatNextId,
         updatedTask.updatedAt, updatedTask.id,
       ]
     );
