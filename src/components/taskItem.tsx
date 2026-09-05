@@ -77,6 +77,20 @@ function ExpiredBadge() {
   );
 }
 
+/** 已重复次数标签 */
+function RepeatBadge({ count }: { count: number }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+      padding: '1px 6px', borderRadius: 7,
+      background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
+      color: 'var(--primary)', fontSize: 10, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
+    }}>
+      重复×{count}
+    </span>
+  );
+}
+
 /** 日期徽章（开始 + 截止，含颜色渐变提醒） */
 function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task; deadlineGradient?: boolean; dark?: boolean }) {
   const showStart = task.startDate !== null;
@@ -186,6 +200,7 @@ function SubtaskRow({
           <Highlight text={task.title} query={searchQuery} />
         </span>
         {isTaskExpired(task) && <ExpiredBadge />}
+        {task.repeatRule && <RepeatBadge count={task.repeatCount ?? 0} />}
         {/* 子任务展开/折叠 + 进度 */}
         {hasChildren && (
           <>
@@ -341,6 +356,7 @@ export default function TaskItem({
               <Highlight text={task.title} query={searchQuery} />
             </span>
             {isTaskExpired(task) && <ExpiredBadge />}
+            {task.repeatRule && <RepeatBadge count={task.repeatCount ?? 0} />}
             {/* 详情展开指示 */}
             {hasDetails && (
               <span style={{ display: 'inline-flex', flexShrink: 0, opacity: 0.7 }}>

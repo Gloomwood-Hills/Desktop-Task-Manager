@@ -54,6 +54,7 @@ export class TaskService {
       reminderAt: options?.reminderAt ?? null,
       repeatRule: options?.repeatRule ?? null,
       repeatIntervalDays: options?.repeatIntervalDays ?? null,
+      repeatSeriesId: null,
     });
   }
 
@@ -134,7 +135,7 @@ export class TaskService {
     }
   }
 
-  /** 生成重复任务的下一实例（复制标题/备注/优先级/容器，截止顺延，不重复的提醒清空） */
+  /** 生成重复任务的下一实例（复制标题/备注/优先级/容器，截止顺延，不重复的提醒清空，继承重复系列） */
   private async spawnNextInstance(task: Task): Promise<Task | null> {
     const next = TaskService.nextDeadline(task.deadline!, task.repeatRule!, task.repeatIntervalDays);
     return this.taskRepository.create({
@@ -149,7 +150,18 @@ export class TaskService {
       reminderAt: null,
       repeatRule: task.repeatRule,
       repeatIntervalDays: task.repeatIntervalDays,
+      repeatSeriesId: task.repeatSeriesId ?? task.id,
     });
+  }
+
+  /** 统计同一重复系列已完成的实例数（用于"已重复 N 次"） */
+  async countRepeatDone(seriesId: string): Promise<number> {
+    return this.taskRepository.getCompletedCountBySeries(seriesId);
+  }
+
+  /** 结束重复：清除该任务的重复规则（不再生成下一实例） */
+  async stopRepeat(id: string): Promise<Task | null> {
+    return this.taskRepository.update(id, { repeatRule: null, repeatIntervalDays: null });
   }
 
   /** 读取提醒时间已到且未触发、未完成、未删除的任务 */

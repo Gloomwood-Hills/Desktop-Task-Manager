@@ -6,7 +6,7 @@ type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'pa
 
 const TASK_COLUMNS = `
   id, title, remark, folderId, parentId, startDate, deadline, priority, sortOrder,
-  completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, createdAt, updatedAt
+  completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, createdAt, updatedAt
 `;
 
 export class TaskRepository {
@@ -117,13 +117,13 @@ export class TaskRepository {
 
     await this.db.execute(
       `INSERT INTO Task (id, title, remark, folderId, parentId, startDate, deadline, priority,
-                         sortOrder, completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         sortOrder, completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newTask.id, newTask.title, newTask.remark, newTask.folderId, newTask.parentId,
         newTask.startDate, newTask.deadline, newTask.priority, newTask.sortOrder,
         newTask.completed ? 1 : 0, newTask.completedAt, newTask.deleted ? 1 : 0,
-        newTask.reminderAt, newTask.reminderFired ? 1 : 0, newTask.repeatRule, newTask.repeatIntervalDays,
+        newTask.reminderAt, newTask.reminderFired ? 1 : 0, newTask.repeatRule, newTask.repeatIntervalDays, newTask.repeatSeriesId,
         newTask.createdAt, newTask.updatedAt,
       ]
     );
@@ -206,6 +206,15 @@ export class TaskRepository {
     );
 
     return updatedTask;
+  }
+
+  /** 统计同一重复系列已完成的实例数（用于"已重复 N 次"） */
+  async getCompletedCountBySeries(seriesId: string): Promise<number> {
+    const rows = await this.db.select<{ count: number }[]>(
+      `SELECT COUNT(*) as count FROM Task WHERE repeatSeriesId = ? AND completed = 1 AND deleted = 0`,
+      [seriesId]
+    );
+    return rows[0]?.count ?? 0;
   }
 
   /** 读取 to-do：提醒时间已到且未触发、未完成、未删除的任务 */

@@ -63,6 +63,7 @@ async function initDatabase(db: Database): Promise<void> {
       reminderFired INTEGER NOT NULL DEFAULT 0,
       repeatRule TEXT,
       repeatIntervalDays INTEGER,
+      repeatSeriesId TEXT,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
       FOREIGN KEY (folderId) REFERENCES Folder(id) ON DELETE CASCADE,
@@ -206,6 +207,7 @@ async function migrateTaskFolderNullable(db: Database): Promise<void> {
       reminderFired INTEGER NOT NULL DEFAULT 0,
       repeatRule TEXT,
       repeatIntervalDays INTEGER,
+      repeatSeriesId TEXT,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
       FOREIGN KEY (folderId) REFERENCES Folder(id) ON DELETE CASCADE,
@@ -249,6 +251,9 @@ async function migrateTaskAddReminderRepeat(db: Database): Promise<void> {
   }
   if (!cols.some((c) => c.name === 'repeatIntervalDays')) {
     await db.execute('ALTER TABLE Task ADD COLUMN repeatIntervalDays INTEGER');
+  }
+  if (!cols.some((c) => c.name === 'repeatSeriesId')) {
+    await db.execute('ALTER TABLE Task ADD COLUMN repeatSeriesId TEXT');
   }
 }
 

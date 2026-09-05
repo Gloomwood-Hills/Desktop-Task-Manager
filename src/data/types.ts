@@ -40,6 +40,8 @@ export interface Task {
   repeatRule: TaskRepeatRule | null;
   /** 自定义重复的间隔天数（repeatRule=custom 时有效） */
   repeatIntervalDays: number | null;
+  /** 重复系列标识：同一重复链的实例共享（首个实例生成下一实例时写入自身 id，便于统计已重复次数） */
+  repeatSeriesId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -103,6 +105,8 @@ export interface WindowState {
 
 export interface TaskWithSubtasks extends Task {
   subtasks: TaskWithSubtasks[];
+  /** 已重复次数（同一重复系列已完成实例数），用于主视图展示 */
+  repeatCount?: number;
 }
 
 export interface FolderWithTasks extends Folder {

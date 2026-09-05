@@ -36,6 +36,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     reminderFired: false,
     repeatRule: null,
     repeatIntervalDays: null,
+    repeatSeriesId: null,
     createdAt: 1000,
     updatedAt: 1000,
     ...overrides,

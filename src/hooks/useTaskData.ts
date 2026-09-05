@@ -89,12 +89,30 @@ export function useTaskData(): UseTaskData {
         // 同级子文件夹也按当前默认排序方式排序（manual 保持 sortOrder）
         children: sortFolders(node.children.map(sortFolderNode), sortType),
       });
-      setFolderTree(cleanTree.map(sortFolderNode));
+      // 已重复次数：同一重复系列已完成实例数（tasks 含已完成，deleted=0）
+      const repeatCountMap = new Map<string, number>();
+      for (const t of tasks) {
+        if (t.completed && t.repeatSeriesId) {
+          repeatCountMap.set(t.repeatSeriesId, (repeatCountMap.get(t.repeatSeriesId) ?? 0) + 1);
+        }
+      }
+      const annotate = (list: TaskWithSubtasks[]): TaskWithSubtasks[] =>
+        list.map((t) => ({
+          ...t,
+          repeatCount: t.repeatSeriesId ? (repeatCountMap.get(t.repeatSeriesId) ?? 0) : 0,
+          subtasks: annotate(t.subtasks),
+        }));
+      const annotateFolder = (n: FolderNode): FolderNode => ({
+        ...n,
+        tasks: annotate(n.tasks),
+        children: n.children.map(annotateFolder),
+      });
+      setFolderTree(cleanTree.map(sortFolderNode).map(annotateFolder));
       // 未分类任务（folderId 为 null）：顶层显示，与文件夹同级
       const unclassifiedTree = buildTaskTree(tasks.filter((t) => t.folderId === null))
         .filter((t) => !t.completed);
-      setUnclassifiedTasks(sortTaskList(unclassifiedTree));
-      setCompletedTasks(completed);
+      setUnclassifiedTasks(annotate(sortTaskList(unclassifiedTree)));
+      setCompletedTasks(annotate(completed as TaskWithSubtasks[]));
     } catch (e) {
       setError((e as Error).message);
     }

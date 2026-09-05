@@ -243,6 +243,14 @@ function App() {
     }
   };
 
+  /** 取消删除（恢复已删除任务），并在"已删除"列表实时移除 */
+  const handleRestoreDeleted = async (id: string) => {
+    const t = deletedTasks.find((x) => x.id === id);
+    await restoreTask(id);
+    setDeletedTasks((prev) => prev.filter((x) => x.id !== id));
+    setToast(t ? `已恢复 "${t.title}"` : '已恢复任务');
+  };
+
   const handleUndo = async () => {
     if (!lastAction) return;
     const { kind, taskId } = lastAction;
@@ -727,7 +735,8 @@ function App() {
                 onContextMenuTask={(e, taskId) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setContextMenu({ x: e.clientX, y: e.clientY, taskId });
+                  const t = findTaskAnywhere(taskId);
+                  setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
                 }}
                 onContextMenuFolder={(e, folderId) => {
                   e.preventDefault();
@@ -788,6 +797,13 @@ function App() {
         onExpandAll={expandAll}
         onCollapseAll={collapseAll}
         onDeleteTask={handleDeleteTask}
+        onStopRepeat={async (taskId) => {
+          const t = findTaskAnywhere(taskId);
+          if (t) {
+            await updateTask(taskId, { repeatRule: null, repeatIntervalDays: null });
+            setToast('已结束重复');
+          }
+        }}
         onCreateFolder={(parentId) => {
           setDialog({ type: 'create-folder', parentId });
         }}
@@ -965,9 +981,29 @@ function App() {
               {deletedTasks.length === 0 ? (
                 <div style={{ textAlign: 'center', color: 'var(--muted-foreground)', padding: '32px 0', fontSize: 13 }}>暂无已删除任务</div>
               ) : deletedTasks.map((t) => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 4px', borderBottom: '0.5px solid var(--border)' }}>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--foreground)', textDecoration: 'line-through', opacity: 0.75 }}>{t.title}</span>
-                  <span style={{ fontSize: 11, color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>{t.updatedAt ? new Date(t.updatedAt).toLocaleString() : ''}</span>
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 4px', borderBottom: '0.5px solid var(--border)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      {t.priority === 'important' && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ff6b3d', flexShrink: 0 }} />}
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--foreground)', textDecoration: 'line-through', opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                      >{t.title}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, fontSize: 11, color: 'var(--muted-foreground)' }}>
+                      {t.deadline !== null && <span>截止 {new Date(t.deadline).toLocaleString()}</span>}
+                      {t.deadline === null && <span>无截止日期</span>}
+                      <span>{t.updatedAt ? `删除于 ${new Date(t.updatedAt).toLocaleString()}` : ''}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRestoreDeleted(t.id)}
+                    style={{
+                      flexShrink: 0, height: 28, padding: '0 12px', fontSize: 12, fontWeight: 600,
+                      border: '1px solid var(--border)', borderRadius: 999, background: 'var(--muted)',
+                      color: 'var(--primary)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                    }}
+                  >
+                    取消删除
+                  </button>
                 </div>
               ))}
             </div>

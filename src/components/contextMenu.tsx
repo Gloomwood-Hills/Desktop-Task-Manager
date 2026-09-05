@@ -1,6 +1,6 @@
 import {
   Pencil, ChevronsDown, ChevronsUp, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus,
-  Plus, RefreshCw, Settings, Power, CheckCircle2,
+  Plus, RefreshCw, Settings, Power, CheckCircle2, Repeat,
 } from 'lucide-react';
 import { isMobile } from '../data/platform';
 
@@ -11,6 +11,8 @@ export interface ContextMenuState {
   taskId: string | null;
   /** 菜单关联的文件夹 ID（右键文件夹时设置） */
   folderId?: string | null;
+  /** 该任务是否设置了重复规则（决定是否显示"结束重复"） */
+  canStopRepeat?: boolean;
 }
 
 interface ContextMenuProps {
@@ -31,6 +33,8 @@ interface ContextMenuProps {
   onRefresh: () => void;
   onOpenSettings: () => void;
   onExit: () => void;
+  /** 结束重复：清除该任务重复规则（仅重复任务显示） */
+  onStopRepeat: (taskId: string) => void;
 }
 
 interface MenuItem {
@@ -47,7 +51,7 @@ interface MenuItem {
 export default function ContextMenu({
   state, onClose, onEditTask, onAddSubtask, onToggleComplete, onExpandAll, onCollapseAll,
   onDeleteTask, onCreateFolder, onRenameFolder, onDeleteFolder, onNewTask, onNewTaskInFolder,
-  onRefresh, onOpenSettings, onExit,
+  onRefresh, onOpenSettings, onExit, onStopRepeat,
 }: ContextMenuProps) {
   if (!state) return null;
 
@@ -92,6 +96,14 @@ export default function ContextMenu({
       hint: 'Space',
       visible: isTaskContext,
       action: () => state.taskId && onToggleComplete(state.taskId),
+    },
+    {
+      key: 'stop-repeat',
+      icon: <Repeat style={iconStyle} />,
+      label: '结束重复',
+      hint: '',
+      visible: isTaskContext && !!state.canStopRepeat,
+      action: () => state.taskId && onStopRepeat(state.taskId),
     },
   ];
 
