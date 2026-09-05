@@ -77,7 +77,7 @@ function ExpiredBadge() {
   );
 }
 
-/** 已重复次数标签 */
+/** 累计完成次数标签（重复系列：即使已结束重复也保留显示，只是不再更新） */
 function RepeatBadge({ count }: { count: number }) {
   return (
     <span style={{
@@ -86,13 +86,13 @@ function RepeatBadge({ count }: { count: number }) {
       background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
       color: 'var(--primary)', fontSize: 10, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
     }}>
-      重复×{count}
+      累计完成×{count}
     </span>
   );
 }
 
-/** 日期徽章（开始 + 截止，含颜色渐变提醒） */
-function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task; deadlineGradient?: boolean; dark?: boolean }) {
+/** 日期徽章（开始 + 截止，含颜色渐变提醒）；已过期/累计完成次数标签与截止时间同一行 */
+function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task & { repeatCount?: number }; deadlineGradient?: boolean; dark?: boolean }) {
   const showStart = task.startDate !== null;
   const showDeadline = task.deadline !== null;
 
@@ -128,6 +128,9 @@ function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task
           <span>{formatDeadlineYMD(task.deadline!)}</span>
         </span>
       )}
+      {/* 已过期 / 累计完成次数：与截止时间同一行（任务描述下方） */}
+      {isTaskExpired(task) && <ExpiredBadge />}
+      {task.repeatSeriesId !== null && <RepeatBadge count={task.repeatCount ?? 0} />}
     </div>
   );
 }
@@ -355,8 +358,6 @@ export default function TaskItem({
             >
               <Highlight text={task.title} query={searchQuery} />
             </span>
-            {isTaskExpired(task) && <ExpiredBadge />}
-            {task.repeatRule && <RepeatBadge count={task.repeatCount ?? 0} />}
             {/* 详情展开指示 */}
             {hasDetails && (
               <span style={{ display: 'inline-flex', flexShrink: 0, opacity: 0.7 }}>

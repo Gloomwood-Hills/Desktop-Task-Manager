@@ -54,7 +54,8 @@ export class TaskService {
       reminderAt: options?.reminderAt ?? null,
       repeatRule: options?.repeatRule ?? null,
       repeatIntervalDays: options?.repeatIntervalDays ?? null,
-      repeatSeriesId: null,
+      // 带重复规则的任务：首实例以自身 id 作为系列标识（模板也计入"累计完成x次"）
+      repeatSeriesId: options?.repeatRule ? id : null,
     });
   }
 
