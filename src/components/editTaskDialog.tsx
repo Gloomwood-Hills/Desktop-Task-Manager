@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { X, Calendar as CalendarIcon, CalendarClock, Star, Check, ChevronDown } from 'lucide-react';
-import { Task } from '../data/types';
+import { X, Calendar as CalendarIcon, CalendarClock, Star, Check, ChevronDown, Bell } from 'lucide-react';
+import { Task, TaskRepeatRule } from '../data/types';
 import { parseNaturalDateTime, formatDeadline } from './utils/formatDate';
 
 interface EditTaskDialogProps {
   task: Task;
-  onSave: (updates: Partial<Pick<Task, 'title' | 'remark' | 'startDate' | 'deadline' | 'priority'>>) => Promise<void>;
+  onSave: (updates: Partial<Pick<Task, 'title' | 'remark' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays'>>) => Promise<void>;
   onClose: () => void;
 }
 
@@ -30,6 +30,10 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
   const [manualDeadline, setManualDeadline] = useState<number | null>(task.deadline);
   const [startOpen, setStartOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
+  const [reminderAt, setReminderAt] = useState<number | null>(task.reminderAt);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(task.repeatRule);
+  const [repeatIntervalDays, setRepeatIntervalDays] = useState<number | null>(task.repeatIntervalDays);
 
   // 视口过小时启用紧凑模式：缩小字号 / 输入框 / 按钮 / 内边距，保证窗口内完整显示
   const [compact, setCompact] = useState(false);
@@ -62,6 +66,9 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
       priority: important ? 'important' : 'normal',
       startDate: manualStart,
       deadline: manualDeadline,
+      reminderAt,
+      repeatRule,
+      repeatIntervalDays: repeatRule === 'custom' ? repeatIntervalDays : null,
     });
     onClose();
   };
@@ -259,6 +266,90 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
             <span style={{ fontWeight: 600 }}>{manualDeadline !== null ? formatDeadline(manualDeadline) : '截止时间'}</span>
             <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
           </div>
+        </div>
+
+        {/* 截止附带：重复规则 */}
+        <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
+          <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>重复</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <select
+              value={repeatRule ?? ''}
+              onChange={(e) => setRepeatRule((e.target.value || null) as TaskRepeatRule | null)}
+              style={{
+                height: s.fieldHeight, padding: '0 10px', boxSizing: 'border-box',
+                border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
+                background: 'var(--background)', color: 'inherit',
+                fontSize: s.fieldFont, outline: 'none', fontFamily: 'var(--font-sans)',
+              }}
+              aria-label="重复规则"
+            >
+              <option value="">无（不重复）</option>
+              <option value="daily">每天</option>
+              <option value="weekly">每周（按截止日星期）</option>
+              <option value="monthly">每月（按截止日）</option>
+              <option value="yearly">每年（按截止日）</option>
+              <option value="custom">自定义（每 N 天）</option>
+            </select>
+            {repeatRule === 'custom' && (
+              <input
+                type="number" min={1}
+                value={repeatIntervalDays ?? ''}
+                onChange={(e) => setRepeatIntervalDays(e.target.value ? Number(e.target.value) : null)}
+                placeholder="间隔天数"
+                style={{
+                  width: 90, height: s.fieldHeight, padding: '0 10px', boxSizing: 'border-box',
+                  border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
+                  background: 'var(--background)', color: 'inherit',
+                  fontSize: s.fieldFont, outline: 'none', fontFamily: 'var(--font-sans)',
+                }}
+                aria-label="重复间隔天数"
+              />
+            )}
+          </div>
+          {repeatRule && !manualDeadline && (
+            <div style={{ fontSize: 11, color: 'var(--destructive)', marginTop: 6 }}>设置重复前请先选择截止时间（重复按截止日顺延）</div>
+          )}
+        </div>
+
+        {/* 提醒：截止时间附带的按任务提醒（需先有截止时间） */}
+        <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
+          <div onClick={() => setReminderOpen(!reminderOpen)} style={chipStyle(reminderAt !== null)}>
+            <Bell style={{ width: 13, height: 13, flexShrink: 0 }} />
+            <span style={{ fontWeight: 600 }}>{reminderAt !== null ? `提醒 ${formatDeadline(reminderAt)}` : '提醒'}</span>
+            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
+          </div>
+          {!manualDeadline && (
+            <div style={{ fontSize: 11, color: 'var(--destructive)', marginTop: 6 }}>设置提醒前请先选择截止时间</div>
+          )}
+          {manualDeadline && reminderOpen && (
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--primary)', marginBottom: 6 }}>
+                <CalendarIcon style={{ width: 12, height: 12 }} />
+                截止时间：{formatDeadline(manualDeadline)}（提醒默认等同截止）
+              </div>
+              <input
+                type="datetime-local"
+                value={reminderAt !== null ? toLocalInputValue(reminderAt) : toLocalInputValue(manualDeadline)}
+                onChange={(e) => { if (e.target.value) setReminderAt(new Date(e.target.value).getTime()); }}
+                style={{
+                  width: '100%', height: compact ? 26 : 30, padding: '0 8px', boxSizing: 'border-box',
+                  border: '1px solid var(--input)', borderRadius: 8,
+                  background: 'var(--background)', color: 'inherit',
+                  fontSize: s.chipFont, outline: 'none', fontFamily: 'var(--font-sans)',
+                }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <button
+                  onClick={() => { setReminderAt(manualDeadline); setReminderOpen(false); }}
+                  style={{ height: 26, padding: '0 10px', fontSize: s.chipFont, border: '1px solid var(--border)', borderRadius: 999, background: 'var(--muted)', color: 'var(--foreground)', cursor: 'pointer', fontWeight: 600 }}
+                >提醒=截止时间</button>
+                <button
+                  onClick={() => { setReminderAt(null); setReminderOpen(false); }}
+                  style={{ height: 26, padding: '0 10px', fontSize: s.chipFont, border: '1px solid var(--border)', borderRadius: 999, background: 'transparent', color: 'var(--muted-foreground)', cursor: 'pointer' }}
+                >无提醒</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {startOpen && (

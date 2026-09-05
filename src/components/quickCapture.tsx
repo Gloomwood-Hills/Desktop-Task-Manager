@@ -3,7 +3,7 @@ import {
   Folder as FolderIcon, ChevronDown, Calendar as CalendarIcon, CalendarClock, Bell, Check, Star,
   Plus, Sparkles,
 } from 'lucide-react';
-import { FolderNode, Priority } from '../data/types';
+import { FolderNode, Priority, TaskRepeatRule } from '../data/types';
 import { parseNaturalDateTime, formatDeadline, formatDeadlineYMD } from './utils/formatDate';
 
 interface QuickCaptureProps {
@@ -12,7 +12,7 @@ interface QuickCaptureProps {
   onCreate: (
     title: string,
     folderId: string | null,
-    options: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string }
+    options: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string; reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
   ) => void;
   /** 预填的默认截止日期（归一化为当天 00:00）；不传时保持原有行为 */
   initialDate?: number;
@@ -20,7 +20,6 @@ interface QuickCaptureProps {
   initialFolderId?: string | null;
 }
 
-const REMINDER_OPTIONS = ['提前30分钟', '提前1小时', '提前3小时', '提前1天', '不提醒'];
 /** 开始时间快捷项（日期语义，归一化为当日 00:00） */
 const DATE_QUICK_START = ['今天', '明天', '后天', '下周一', '月底'];
 /** 截止时间快捷项：一小时后为具体时刻，其余为日期 */
@@ -48,9 +47,10 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
   const [startOpen, setStartOpen] = useState(false);
   /** 手动选择的开始时间；null 表示无开始日期 */
   const [manualStart, setManualStart] = useState<number | null>(null);
-  const [reminderOn, setReminderOn] = useState(true);
+  const [reminderAt, setReminderAt] = useState<number | null>(null);
   const [reminderOpen, setReminderOpen] = useState(false);
-  const [reminderValue, setReminderValue] = useState(REMINDER_OPTIONS[0]);
+  const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(null);
+  const [repeatIntervalDays, setRepeatIntervalDays] = useState<number | null>(null);
   const [important, setImportant] = useState(false);
 
   // 扁平化文件夹用于选择器（含"未分类"顶层项）
@@ -79,6 +79,9 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       startDate: manualStart,
       deadline: effectiveDeadline,
       remark: remark.trim(),
+      reminderAt: effectiveDeadline && reminderAt !== null ? reminderAt : null,
+      repeatRule: effectiveDeadline ? repeatRule : null,
+      repeatIntervalDays: effectiveDeadline && repeatRule === 'custom' ? repeatIntervalDays : null,
     });
   };
 
@@ -124,23 +127,20 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             <ChevronDown style={{ width: 11, height: 11, color: 'var(--primary)', flexShrink: 0 }} />
           </div>
 
-          {/* 提醒 */}
+          {/* 提醒（需先有截止时间，选择 x月x日x时x分） */}
           <div
-            onClick={() => {
-              setReminderOn(!reminderOn);
-              if (reminderOn) setReminderOpen(false);
-            }}
+            onClick={() => setReminderOpen(!reminderOpen)}
             style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-              background: reminderOn ? 'var(--brand-50)' : 'transparent',
-              border: `1px solid ${reminderOn ? 'var(--brand-200)' : 'var(--border)'}`,
+              background: (reminderAt !== null || reminderOpen) ? 'var(--brand-50)' : 'transparent',
+              border: `1px solid ${(reminderAt !== null || reminderOpen) ? 'var(--brand-200)' : 'var(--border)'}`,
               cursor: 'pointer', fontSize: 12.5,
-              color: reminderOn ? 'var(--primary)' : 'var(--muted-foreground)',
+              color: (reminderAt !== null || reminderOpen) ? 'var(--primary)' : 'var(--muted-foreground)',
             }}
           >
             <Bell style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>提醒</span>
-            {reminderOn && <Check style={{ width: 12, height: 12, flexShrink: 0 }} />}
+            <span style={{ fontWeight: 600 }}>{reminderAt !== null ? formatDeadline(reminderAt) : '提醒'}</span>
+            {(reminderAt !== null || reminderOpen) && <Check style={{ width: 12, height: 12, flexShrink: 0 }} />}
           </div>
 
           {/* 重要 */}
@@ -194,8 +194,8 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
           </div>
         )}
 
-        {/* 展开面板：提醒选项 */}
-        {reminderOpen && reminderOn && (
+        {/* 展开面板：提醒（按截止时间选具体时刻，未设截止则提示） */}
+        {reminderOpen && (
           <div style={{ padding: '10px 24px 0' }}>
             <div style={{
               borderRadius: 14,
@@ -207,25 +207,34 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
               display: 'inline-flex',
               flexDirection: 'column',
             }}>
-              {REMINDER_OPTIONS.map((opt, i) => (
-                <div key={opt}>
-                  {i === REMINDER_OPTIONS.length - 1 && (
-                    <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
-                  )}
-                  <div
-                    onClick={() => { setReminderValue(opt); setReminderOpen(false); }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-                      cursor: 'pointer', fontSize: 12.5,
-                      color: opt === reminderValue ? 'var(--primary)' : 'var(--muted-foreground)',
-                      background: opt === reminderValue ? 'var(--brand-50)' : 'transparent',
-                    }}
-                  >
-                    <span style={{ fontWeight: opt === reminderValue ? 600 : 500 }}>{opt}</span>
-                    {opt === reminderValue && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
-                  </div>
+              <div style={{ padding: '7px 12px', fontSize: 12, color: effectiveDeadline ? 'var(--primary)' : 'var(--destructive)', fontWeight: 600 }}>
+                {effectiveDeadline ? `截止时间：${formatDeadline(effectiveDeadline)}（提醒默认等同截止）` : '请先设置截止时间，才能设置提醒'}
+              </div>
+              <div style={{ padding: '4px 12px 8px' }}>
+                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>提醒时刻（x月x日x时x分）</div>
+                <input
+                  type="datetime-local"
+                  disabled={!effectiveDeadline}
+                  value={reminderAt !== null ? toLocalInputValue(reminderAt) : (effectiveDeadline ? toLocalInputValue(effectiveDeadline) : '')}
+                  onChange={(e) => { if (e.target.value) setReminderAt(new Date(e.target.value).getTime()); }}
+                  style={{
+                    width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
+                    border: '1px solid var(--input)', borderRadius: 8,
+                    background: 'var(--background)', color: 'inherit',
+                    fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)', opacity: effectiveDeadline ? 1 : 0.5,
+                  }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                  <button
+                    onClick={() => { if (effectiveDeadline) { setReminderAt(effectiveDeadline); setReminderOpen(false); } }}
+                    style={{ height: 26, padding: '0 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 999, background: 'var(--muted)', color: 'var(--foreground)', cursor: 'pointer', fontWeight: 600 }}
+                  >提醒=截止</button>
+                  <button
+                    onClick={() => { setReminderAt(null); setReminderOpen(false); }}
+                    style={{ height: 26, padding: '0 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 999, background: 'transparent', color: 'var(--muted-foreground)', cursor: 'pointer' }}
+                  >无提醒</button>
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         )}
@@ -315,6 +324,47 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             <span style={{ fontWeight: 600 }}>{effectiveDeadline ? formatDeadline(effectiveDeadline) : '截止时间'}</span>
             <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
           </div>
+        </div>
+
+        {/* 重复规则（需先有截止时间） */}
+        <div style={{ padding: '10px 24px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>重复</span>
+          <select
+            value={repeatRule ?? ''}
+            onChange={(e) => setRepeatRule((e.target.value || null) as TaskRepeatRule | null)}
+            style={{
+              height: 32, padding: '0 10px', boxSizing: 'border-box',
+              border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
+              background: 'var(--background)', color: 'inherit',
+              fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
+            }}
+            aria-label="重复规则"
+          >
+            <option value="">无（不重复）</option>
+            <option value="daily">每天</option>
+            <option value="weekly">每周（按截止日星期）</option>
+            <option value="monthly">每月（按截止日）</option>
+            <option value="yearly">每年（按截止日）</option>
+            <option value="custom">自定义（每 N 天）</option>
+          </select>
+          {repeatRule === 'custom' && (
+            <input
+              type="number" min={1}
+              value={repeatIntervalDays ?? ''}
+              onChange={(e) => setRepeatIntervalDays(e.target.value ? Number(e.target.value) : null)}
+              placeholder="天数"
+              style={{
+                width: 70, height: 32, padding: '0 8px', boxSizing: 'border-box',
+                border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
+                background: 'var(--background)', color: 'inherit',
+                fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
+              }}
+              aria-label="重复间隔天数"
+            />
+          )}
+          {repeatRule && !effectiveDeadline && (
+            <span style={{ fontSize: 11, color: 'var(--destructive)' }}>先设截止时间</span>
+          )}
         </div>
 
         {/* 展开面板：开始时间选择 */}

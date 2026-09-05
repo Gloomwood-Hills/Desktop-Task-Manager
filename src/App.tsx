@@ -17,9 +17,8 @@ import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
 import { getDatabase } from './data';
 import { TaskService } from './services';
-import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy } from './data/types';
+import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy, TaskRepeatRule } from './data/types';
 import { isMobile } from './data/platform';
-import { formatDeadline } from './components/utils/formatDate';
 import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync, logSync } from './data/sync';
 
 /** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为顶栏下方的分段控件
@@ -404,77 +403,50 @@ function App() {
     return () => { stopAutoSync(); };
   }, []);
 
+  // ===== 任务提醒轮询（30s）：提醒时间到且未完成 → 发系统/手机通知并标记已触发 =====
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const db = await getDatabase();
+        const svc = new TaskService(db);
+        const due = await svc.getDueReminders(Date.now());
+        if (due.length === 0) return;
+        // 通知权限：Android 需 POST_NOTIFICATIONS；桌面直接发
+        let granted = true;
+        try {
+          granted = await isPermissionGranted();
+          if (!granted) {
+            const p: unknown = await requestPermission();
+            granted = p === 'granted' || p === true;
+          }
+        } catch { granted = true; }
+        for (const t of due) {
+          if (cancelled) return;
+          if (granted) {
+            try {
+              await sendNotification({ title: '任务提醒', body: t.title });
+            } catch { /* 忽略发送失败 */ }
+          }
+          await svc.markReminderFired(t.id);
+        }
+      } catch { /* 忽略轮询错误 */ }
+    };
+    // 启动后立即检查一次，再每 30 秒轮询
+    check();
+    const timer = setInterval(check, 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
   // ===== 任务提醒（Task 13）：到达提前提醒窗口触发 Windows 通知 + 可选自动置顶 =====
 
-  /** 收集所有活动任务（含任意层级子任务） */
-  const collectAllTasks = (): TaskWithSubtasks[] => {
-    const out: TaskWithSubtasks[] = [];
-    const walk = (list: TaskWithSubtasks[]) => {
-      for (const t of list) {
-        out.push(t);
-        walk(t.subtasks);
-      }
-    };
-    folderTreeLatest.current.forEach((n) => walk(n.tasks));
-    walk(unclassifiedLatest.current);
-    return out;
-  };
-
-  useEffect(() => {
-    let notified = new Set<string>();
-    let permChecked = false;
-    const ensurePermission = async () => {
-      if (permChecked) return;
-      permChecked = true;
-      try {
-        if (!(await isPermissionGranted())) await requestPermission();
-      } catch { /* 权限不可用时静默降级 */ }
-    };
-    ensurePermission();
-
-    const checkReminders = async () => {
-      try {
-        const s = settingsLatest.current;
-        if (!s) return;
-        if (!s.reminderEnabled) return;
-        const offset = s.reminderOffset ?? 86400;
-        if (offset <= 0) return;
-        // offset 单位为秒，deadline/now 为毫秒，统一转为毫秒比较
-        const offsetMs = offset * 1000;
-        const now = Date.now();
-        const tasks = collectAllTasks();
-        for (const t of tasks) {
-          if (t.completed || t.deadline === null || notified.has(t.id)) continue;
-          const lead = t.deadline - now;
-          // 提醒窗口：截止前 offset 至 截止后 offset（刚过期的任务也提醒一次，久远过期不打扰）
-          if (lead > offsetMs || lead < -offsetMs) continue;
-          notified.add(t.id);
-          const due = lead <= 0;
-          const body = due
-            ? `「${t.title}」已到截止时间（${formatDeadline(t.deadline)}）`
-            : `「${t.title}」将于 ${formatDeadline(t.deadline)} 截止`;
-          // 应用内提示先行（系统通知不可用/失败时仍可见）
-          setToast(body);
-          try {
-            await sendNotification({ title: '任务提醒', body });
-          } catch { /* 系统通知失败不影响应用内提示与自动置顶 */ }
-          // 提醒后自动置顶：标记"重要"使其排到列表前列
-          if (s.autoPin && t.priority !== 'important') {
-            await updateTask(t.id, { priority: 'important' });
-          }
-        }
-      } catch { /* 提醒异常静默忽略，不影响主流程 */ }
-    };
-
-    checkReminders();
-    const timer = setInterval(checkReminders, 15_000);
-    return () => clearInterval(timer);
-  }, [updateTask]);
+  // 任务提醒已改为"按任务设置提醒时刻（reminderAt）"，由下方轮询 effect 统一处理；
+  // 旧的"按默认提醒时间偏移"逻辑已移除（不再有"默认提醒时间"概念）。
 
   const handleCreateTask = async (
     title: string,
     folderId: string | null,
-    options?: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string }
+    options?: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string; reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
   ) => {
     await createTask(title, folderId, options);
     setPrefillDate(null);

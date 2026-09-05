@@ -1,5 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
-import { Task, TaskWithSubtasks, Priority } from '../data/types';
+import { Task, TaskWithSubtasks, Priority, TaskRepeatRule } from '../data/types';
 import { TaskRepository } from '../data/repositories';
 import { generateId, buildTaskTree } from '../data/utils';
 
@@ -35,6 +35,9 @@ export class TaskService {
       startDate?: number | null;
       deadline?: number | null;
       priority?: Priority;
+      reminderAt?: number | null;
+      repeatRule?: TaskRepeatRule | null;
+      repeatIntervalDays?: number | null;
     }
   ): Promise<Task> {
     const id = generateId();
@@ -48,10 +51,13 @@ export class TaskService {
       startDate: options?.startDate || null,
       deadline: options?.deadline || null,
       priority: options?.priority || 'normal',
+      reminderAt: options?.reminderAt ?? null,
+      repeatRule: options?.repeatRule ?? null,
+      repeatIntervalDays: options?.repeatIntervalDays ?? null,
     });
   }
 
-  async updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>): Promise<Task | null> {
+  async updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'reminderFired' | 'repeatRule' | 'repeatIntervalDays'>>): Promise<Task | null> {
     return this.taskRepository.update(id, updates);
   }
 
@@ -89,7 +95,71 @@ export class TaskService {
       await this.updateParentCompletion(updated.parentId);
     }
 
+    // 重复任务：完成上一实例后自动生成下一实例并顺延截止（V2.1.2）
+    if (updated && newCompleted && task.repeatRule && task.deadline) {
+      await this.spawnNextInstance(task);
+    }
+
     return updated;
+  }
+
+  /** 计算下一次截止时间（重复规则） */
+  private static nextDeadline(deadline: number, rule: TaskRepeatRule, intervalDays: number | null): number {
+    const d = new Date(deadline);
+    const addDays = (n: number) => {
+      const x = new Date(deadline); x.setDate(x.getDate() + n); return x.getTime();
+    };
+    const addMonths = (n: number) => {
+      const day = d.getDate();
+      d.setDate(1);
+      d.setMonth(d.getMonth() + n);
+      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      d.setDate(Math.min(day, last));
+      return d.getTime();
+    };
+    const addYears = (n: number) => {
+      const m = d.getMonth(); const day = d.getDate();
+      d.setFullYear(d.getFullYear() + n);
+      const last = new Date(d.getFullYear(), m + 1, 0).getDate();
+      d.setDate(Math.min(day, last));
+      return d.getTime();
+    };
+    switch (rule) {
+      case 'daily': return addDays(1);
+      case 'weekly': return addDays(7);
+      case 'monthly': return addMonths(1);
+      case 'yearly': return addYears(1);
+      case 'custom': return addDays(Math.max(1, intervalDays ?? 1));
+      default: return deadline;
+    }
+  }
+
+  /** 生成重复任务的下一实例（复制标题/备注/优先级/容器，截止顺延，不重复的提醒清空） */
+  private async spawnNextInstance(task: Task): Promise<Task | null> {
+    const next = TaskService.nextDeadline(task.deadline!, task.repeatRule!, task.repeatIntervalDays);
+    return this.taskRepository.create({
+      id: generateId(),
+      title: task.title,
+      remark: task.remark,
+      folderId: task.folderId,
+      parentId: task.parentId,
+      startDate: null,
+      deadline: next,
+      priority: task.priority,
+      reminderAt: null,
+      repeatRule: task.repeatRule,
+      repeatIntervalDays: task.repeatIntervalDays,
+    });
+  }
+
+  /** 读取提醒时间已到且未触发、未完成、未删除的任务 */
+  async getDueReminders(now: number): Promise<Task[]> {
+    return this.taskRepository.getDueReminders(now);
+  }
+
+  /** 标记提醒已触发 */
+  async markReminderFired(id: string): Promise<boolean> {
+    return this.taskRepository.markReminderFired(id);
   }
 
   async getParentTaskCompletion(parentId: string): Promise<{ completed: number; total: number }> {

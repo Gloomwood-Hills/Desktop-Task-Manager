@@ -59,6 +59,10 @@ async function initDatabase(db: Database): Promise<void> {
       completed INTEGER NOT NULL DEFAULT 0,
       completedAt INTEGER,
       deleted INTEGER NOT NULL DEFAULT 0,
+      reminderAt INTEGER,
+      reminderFired INTEGER NOT NULL DEFAULT 0,
+      repeatRule TEXT,
+      repeatIntervalDays INTEGER,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
       FOREIGN KEY (folderId) REFERENCES Folder(id) ON DELETE CASCADE,
@@ -76,6 +80,9 @@ async function initDatabase(db: Database): Promise<void> {
 
   // 旧库迁移：Task 新增 sortOrder 列（手动排序）
   await migrateTaskAddSortOrder(db);
+
+  // 旧库迁移：Task 新增 提醒(repeatRule/reminderAt/reminderFired) + 重复(repeatRule/repeatIntervalDays) 列
+  await migrateTaskAddReminderRepeat(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS Settings (
@@ -195,6 +202,10 @@ async function migrateTaskFolderNullable(db: Database): Promise<void> {
       completed INTEGER NOT NULL DEFAULT 0,
       completedAt INTEGER,
       deleted INTEGER NOT NULL DEFAULT 0,
+      reminderAt INTEGER,
+      reminderFired INTEGER NOT NULL DEFAULT 0,
+      repeatRule TEXT,
+      repeatIntervalDays INTEGER,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
       FOREIGN KEY (folderId) REFERENCES Folder(id) ON DELETE CASCADE,
@@ -221,6 +232,23 @@ async function migrateTaskAddSortOrder(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Task)');
   if (!cols.some((c) => c.name === 'sortOrder')) {
     await db.execute('ALTER TABLE Task ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+/** 旧库迁移：Task 新增 提醒 + 重复 列（V2.1.2） */
+async function migrateTaskAddReminderRepeat(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Task)');
+  if (!cols.some((c) => c.name === 'reminderAt')) {
+    await db.execute('ALTER TABLE Task ADD COLUMN reminderAt INTEGER');
+  }
+  if (!cols.some((c) => c.name === 'reminderFired')) {
+    await db.execute('ALTER TABLE Task ADD COLUMN reminderFired INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.some((c) => c.name === 'repeatRule')) {
+    await db.execute('ALTER TABLE Task ADD COLUMN repeatRule TEXT');
+  }
+  if (!cols.some((c) => c.name === 'repeatIntervalDays')) {
+    await db.execute('ALTER TABLE Task ADD COLUMN repeatIntervalDays INTEGER');
   }
 }
 

@@ -14,6 +14,9 @@ export interface Folder {
 
 export type Priority = 'normal' | 'important';
 
+/** 重复规则：daily 每天 / weekly 每周(按截止日星期) / monthly 每月(按截止日) / yearly 每年 / custom 每N天 */
+export type TaskRepeatRule = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+
 export interface Task {
   id: string;
   title: string;
@@ -29,6 +32,14 @@ export interface Task {
   completed: boolean;
   completedAt: number | null;
   deleted: boolean;
+  /** 提醒时间（毫秒）；null 表示未设提醒 */
+  reminderAt: number | null;
+  /** 是否已触发过提醒（避免重复通知） */
+  reminderFired: boolean;
+  /** 重复规则；null 表示不重复 */
+  repeatRule: TaskRepeatRule | null;
+  /** 自定义重复的间隔天数（repeatRule=custom 时有效） */
+  repeatIntervalDays: number | null;
   createdAt: number;
   updatedAt: number;
 }

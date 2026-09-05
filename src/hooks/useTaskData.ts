@@ -5,7 +5,7 @@ import { TaskService } from '../services/TaskService';
 import { SettingsService } from '../services/SettingsService';
 import { WindowStateService } from '../services/WindowStateService';
 import { buildFolderTree, buildTaskTree, sortTasksByType, sortFolders } from '../data/utils';
-import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings, WindowState } from '../data/types';
+import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings, WindowState, TaskRepeatRule } from '../data/types';
 import { notifyDataChanged } from '../data/sync';
 
 export interface UseTaskData {
@@ -28,12 +28,13 @@ export interface UseTaskData {
   createTask: (title: string, folderId: string | null, options?: {
     remark?: string; parentId?: string | null; startDate?: number | null;
     deadline?: number | null; priority?: Priority;
+    reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null;
   }) => Promise<Task | null>;
   toggleCompleted: (id: string) => Promise<Task | null>;
   /** 编辑任务：更新标题/备注/开始/截止/优先级等字段 */
   updateTask: (
     id: string,
-    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>
+    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays'>>
   ) => Promise<Task | null>;
   deleteTask: (id: string) => Promise<boolean>;
   restoreTask: (id: string) => Promise<boolean>;
@@ -184,6 +185,7 @@ export function useTaskData(): UseTaskData {
     title: string, folderId: string | null, options?: {
       remark?: string; parentId?: string | null; startDate?: number | null;
       deadline?: number | null; priority?: Priority;
+      reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null;
     }
   ): Promise<Task | null> => {
     if (!taskServiceRef.current) return null;

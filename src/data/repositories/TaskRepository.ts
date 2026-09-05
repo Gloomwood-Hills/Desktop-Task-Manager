@@ -2,11 +2,11 @@ import Database from '@tauri-apps/plugin-sql';
 import { Task } from '../types';
 import { mapBooleanFields } from '../utils';
 
-type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority'>>;
+type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays'>>;
 
 const TASK_COLUMNS = `
   id, title, remark, folderId, parentId, startDate, deadline, priority, sortOrder,
-  completed, completedAt, deleted, createdAt, updatedAt
+  completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, createdAt, updatedAt
 `;
 
 export class TaskRepository {
@@ -97,7 +97,7 @@ export class TaskRepository {
     }
   }
 
-  async create(task: Omit<Task, 'sortOrder' | 'completed' | 'completedAt' | 'deleted' | 'createdAt' | 'updatedAt'>): Promise<Task> {
+  async create(task: Omit<Task, 'sortOrder' | 'completed' | 'completedAt' | 'deleted' | 'reminderFired' | 'createdAt' | 'updatedAt'>): Promise<Task> {
     const now = Date.now();
     // 创建时追加到容器末尾（sortOrder = 当前最大 + 1）
     const sortRows = await this.db.select<{ m: number }[]>(
@@ -110,18 +110,20 @@ export class TaskRepository {
       completed: false,
       completedAt: null,
       deleted: false,
+      reminderFired: false,
       createdAt: now,
       updatedAt: now,
     };
 
     await this.db.execute(
       `INSERT INTO Task (id, title, remark, folderId, parentId, startDate, deadline, priority,
-                         sortOrder, completed, completedAt, deleted, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         sortOrder, completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newTask.id, newTask.title, newTask.remark, newTask.folderId, newTask.parentId,
         newTask.startDate, newTask.deadline, newTask.priority, newTask.sortOrder,
         newTask.completed ? 1 : 0, newTask.completedAt, newTask.deleted ? 1 : 0,
+        newTask.reminderAt, newTask.reminderFired ? 1 : 0, newTask.repeatRule, newTask.repeatIntervalDays,
         newTask.createdAt, newTask.updatedAt,
       ]
     );
@@ -155,11 +157,12 @@ export class TaskRepository {
     await this.db.execute(
       `UPDATE Task
        SET title = ?, remark = ?, folderId = ?, parentId = ?, startDate = ?, deadline = ?,
-           priority = ?, updatedAt = ?
+           priority = ?, repeatRule = ?, repeatIntervalDays = ?, reminderAt = ?, updatedAt = ?
        WHERE id = ?`,
       [
         updatedTask.title, updatedTask.remark, updatedTask.folderId, updatedTask.parentId,
         updatedTask.startDate, updatedTask.deadline, updatedTask.priority,
+        updatedTask.repeatRule, updatedTask.repeatIntervalDays, updatedTask.reminderAt,
         updatedTask.updatedAt, updatedTask.id,
       ]
     );
@@ -205,6 +208,26 @@ export class TaskRepository {
     return updatedTask;
   }
 
+  /** 读取 to-do：提醒时间已到且未触发、未完成、未删除的任务 */
+  async getDueReminders(now: number): Promise<Task[]> {
+    const rows = await this.db.select<Task[]>(
+      `SELECT ${TASK_COLUMNS} FROM Task
+       WHERE reminderAt IS NOT NULL AND reminderAt <= ? AND reminderFired = 0 AND completed = 0 AND deleted = 0`,
+      [now]
+    );
+    return rows.map(this.mapRow);
+  }
+
+  /** 标记提醒已触发（避免重复通知） */
+  async markReminderFired(id: string): Promise<boolean> {
+    const now = Date.now();
+    const result = await this.db.execute(
+      `UPDATE Task SET reminderFired = 1, updatedAt = ? WHERE id = ?`,
+      [now, id]
+    );
+    return result.rowsAffected > 0;
+  }
+
   async getSubtaskCount(parentId: string): Promise<number> {
     const rows = await this.db.select<{ count: number }[]>(
       `SELECT COUNT(*) as count FROM Task WHERE parentId = ? AND deleted = 0`,
@@ -212,7 +235,6 @@ export class TaskRepository {
     );
     return rows[0].count;
   }
-
   async getCompletedSubtaskCount(parentId: string): Promise<number> {
     const rows = await this.db.select<{ count: number }[]>(
       `SELECT COUNT(*) as count FROM Task WHERE parentId = ? AND completed = 1 AND deleted = 0`,
@@ -223,6 +245,6 @@ export class TaskRepository {
 
   private mapRow(row: unknown): Task {
     const r = row as Record<string, unknown>;
-    return mapBooleanFields(r, ['completed', 'deleted'] as (keyof Task)[]) as unknown as Task;
+    return mapBooleanFields(r, ['completed', 'deleted', 'reminderFired'] as (keyof Task)[]) as unknown as Task;
   }
 }
