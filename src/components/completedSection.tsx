@@ -71,7 +71,10 @@ function Row({ task, onRestore, showBranch }: { task: Task; onRestore: (id: stri
   );
 }
 
-/** 已完成区域（默认折叠）：无重复系列的任务平铺；重复系列自动聚类且可展开 */
+/** 已完成区域（默认折叠）：无重复系列的任务平铺；重复系列自动聚类且可展开。
+ * 排序：所有项（单任务 + 重复系列聚类）统一按 completedAt 降序混合排列，
+ * 重复系列聚类取该系列中最新一条的 completedAt 作为排序依据，
+ * 使"结束重复"刚完成的任务与其他已完成任务按时间自然穿插，而非统一堆在底部。 */
 export default function CompletedSection({ tasks, expanded, onToggleExpanded, onRestore }: CompletedSectionProps) {
   const [openSeries, setOpenSeries] = useState<Set<string>>(new Set());
 
@@ -86,6 +89,23 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
       singles.push(t);
     }
   }
+
+  // 混合排序项：单任务以自身 completedAt 为准，系列聚类以组内最新 completedAt 为准
+  type SortItem =
+    | { kind: 'single'; task: Task; sortAt: number }
+    | { kind: 'series'; seriesId: string; group: Task[]; sortAt: number };
+
+  const items: SortItem[] = [
+    ...singles.map((t) => ({ kind: 'single' as const, task: t, sortAt: t.completedAt ?? 0 })),
+    ...[...seriesMap.entries()].map(([seriesId, group]) => ({
+      kind: 'series' as const,
+      seriesId,
+      group,
+      sortAt: Math.max(...group.map((t) => t.completedAt ?? 0)),
+    })),
+  ];
+  // 按 completedAt 降序：最新完成的在最上方
+  items.sort((a, b) => b.sortAt - a.sortAt);
 
   const toggleSeries = (id: string) =>
     setOpenSeries((s) => {
@@ -127,20 +147,19 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
         <div className="tree-children" style={{ marginLeft: 20, position: 'relative' }}>
           <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.35 }} />
 
-          {/* 无重复系列：普通平铺 */}
-          {singles.map((task) => (
-            <Row key={task.id} task={task} onRestore={onRestore} />
-          ))}
-
-          {/* 重复系列：聚类 + 点击展开 */}
-          {[...seriesMap.values()].map((group) => {
+          {/* 混合渲染：单任务 + 重复系列聚类，按 completedAt 降序穿插排列 */}
+          {items.map((item) => {
+            if (item.kind === 'single') {
+              return <Row key={item.task.id} task={item.task} onRestore={onRestore} />;
+            }
+            const { seriesId, group } = item;
             const first = group[0];
-            const open = openSeries.has(first.repeatSeriesId!);
+            const open = openSeries.has(seriesId);
             return (
-              <div key={first.repeatSeriesId!}>
+              <div key={seriesId}>
                 {/* 聚类头 */}
                 <div
-                  onClick={() => toggleSeries(first.repeatSeriesId!)}
+                  onClick={() => toggleSeries(seriesId)}
                   style={{
                     position: 'relative',
                     display: 'flex',

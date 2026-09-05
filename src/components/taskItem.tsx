@@ -63,28 +63,28 @@ function isTaskExpired(task: { deadline: number | null; completed: boolean }): b
   return task.deadline !== null && !task.completed && task.deadline < Date.now();
 }
 
-/** 已过期标签（浅紫底白字） */
+/** 已过期标签（浅紫底白字）—— 与截止时间标签对齐：fontSize/padding/lineHeight 一致 */
 function ExpiredBadge() {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', flexShrink: 0,
-      padding: '1px 6px', borderRadius: 7,
+      padding: '2px 8px', borderRadius: 999,
       background: '#c4b5fd', color: '#ffffff',
-      fontSize: 10, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
+      fontSize: 11, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
     }}>
       已过期
     </span>
   );
 }
 
-/** 累计完成次数标签（重复系列：即使已结束重复也保留显示，只是不再更新） */
+/** 累计完成次数标签（重复系列：即使已结束重复也保留显示，只是不再更新）—— 与截止时间标签对齐 */
 function RepeatBadge({ count }: { count: number }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', flexShrink: 0,
-      padding: '1px 6px', borderRadius: 7,
+      padding: '2px 8px', borderRadius: 999,
       background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
-      color: 'var(--primary)', fontSize: 10, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
+      color: 'var(--primary)', fontSize: 11, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
     }}>
       累计完成×{count}
     </span>
@@ -109,7 +109,7 @@ function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task
       {showStart && (
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '2px 8px', borderRadius: 999, fontSize: 11,
+          padding: '2px 8px', borderRadius: 999, fontSize: 11, lineHeight: 1.4,
           background: 'color-mix(in srgb, var(--border) 25%, transparent)',
           border: '0.5px solid color-mix(in srgb, var(--border) 35%, transparent)',
         }}>
@@ -120,7 +120,7 @@ function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task
       {showDeadline && deadlineStyle && (
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+          padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600, lineHeight: 1.4,
           background: deadlineStyle.bg, color: deadlineStyle.color,
         }}>
           <Clock style={{ width: 10, height: 10 }} />

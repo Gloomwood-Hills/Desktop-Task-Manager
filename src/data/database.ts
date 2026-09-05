@@ -86,6 +86,11 @@ async function initDatabase(db: Database): Promise<void> {
   // 旧库迁移：Task 新增 提醒(repeatRule/reminderAt/reminderFired) + 重复(repeatRule/repeatIntervalDays) 列
   await migrateTaskAddReminderRepeat(db);
 
+  // 数据修复：旧版同步快照遗漏 repeatSeriesId 等字段，导致同步后这些字段被清空为 NULL。
+  // 对 repeatRule 非空但 repeatSeriesId 为空的重复任务，将 repeatSeriesId 设为自身 id
+  // （视为该系列首实例），使撤销完成时的系列清理逻辑能正常工作。
+  await migrateTaskRepairRepeatSeriesId(db);
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS Settings (
       id TEXT PRIMARY KEY,
@@ -260,6 +265,21 @@ async function migrateTaskAddReminderRepeat(db: Database): Promise<void> {
   if (!cols.some((c) => c.name === 'repeatNextId')) {
     await db.execute('ALTER TABLE Task ADD COLUMN repeatNextId TEXT');
   }
+}
+
+/**
+ * 数据修复迁移：旧版同步快照（v1/v2）遗漏 repeatSeriesId 字段，
+ * 每次同步都会把重复任务的 repeatSeriesId 清空为 NULL，
+ * 导致撤销完成时无法按系列清理未完成实例（重复任务累积 bug）。
+ * 对 repeatRule 非空但 repeatSeriesId 为空的任务，将 repeatSeriesId 设为自身 id
+ * （视为该系列首实例），使系列清理逻辑恢复正常。
+ */
+async function migrateTaskRepairRepeatSeriesId(db: Database): Promise<void> {
+  await db.execute(
+    `UPDATE Task SET repeatSeriesId = id
+     WHERE repeatRule IS NOT NULL AND repeatRule != ''
+       AND (repeatSeriesId IS NULL OR repeatSeriesId = '')`
+  );
 }
 
 /** 旧库迁移：Settings 新增 importantTop 列（重要任务置顶） */

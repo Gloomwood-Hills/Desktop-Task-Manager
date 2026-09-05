@@ -105,7 +105,7 @@ function App() {
   const {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, windowState, loading, error,
     refresh, setTheme, updateSettings, saveWindowState, createTask, toggleCompleted, updateTask,
-    deleteTask, restoreTask, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
+    deleteTask, restoreTask, stopRepeat, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   } = useTaskData();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -218,12 +218,19 @@ function App() {
       || completedTasks.find((t) => t.id === id);
   };
 
+  /** 切换完成/撤销完成：按当前状态给出正确 toast 与撤销动作（月视图面板也可点已完成任务撤销） */
   const handleToggleCompleted = async (id: string) => {
     const task = findTaskAnywhere(id);
     await toggleCompleted(id);
     if (task) {
-      setLastAction({ kind: 'completed', taskId: id });
-      setToast(`已完成 "${task.title}"`);
+      if (task.completed) {
+        // 原状态已完成 → 本次是撤销完成（恢复）
+        setLastAction({ kind: 'restored', taskId: id });
+        setToast(`已恢复 "${task.title}"`);
+      } else {
+        setLastAction({ kind: 'completed', taskId: id });
+        setToast(`已完成 "${task.title}"`);
+      }
     }
   };
 
@@ -769,13 +776,17 @@ function App() {
             </>
           )}
 
-          {/* 日历视图（V2） */}
+          {/* 日历视图（V3）：月历药丸标签 + 选中态详情面板 */}
           {viewMode === 'calendar' && (
             <CalendarView
               tasks={allActiveTasks}
-              onSelectDay={(ts) => {
-                setCalendarDate(ts);
-                changeViewMode('day');
+              completedTasks={completedTasks as TaskWithSubtasks[]}
+              onToggleTask={(id) => void handleToggleCompleted(id)}
+              onAddTask={(ts) => {
+                // 「+ 添加事项」：预填该日并打开快速新建
+                setPrefillDate(ts);
+                setCaptureFolder(null);
+                setCaptureOpen(true);
               }}
             />
           )}
@@ -808,11 +819,9 @@ function App() {
         onToggleComplete={handleToggleCompleted}
         onDeleteTask={handleDeleteTask}
         onStopRepeat={async (taskId) => {
-          const t = findTaskAnywhere(taskId);
-          if (t) {
-            await updateTask(taskId, { repeatRule: null, repeatIntervalDays: null });
-            setToast('已结束重复');
-          }
+          // 结束重复：清除重复规则 + 标记已完成（移入"已完成"区），原子操作
+          await stopRepeat(taskId);
+          setToast('已结束重复');
         }}
         onCreateFolder={(parentId) => {
           setDialog({ type: 'create-folder', parentId });

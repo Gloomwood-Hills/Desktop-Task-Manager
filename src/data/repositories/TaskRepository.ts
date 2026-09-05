@@ -179,6 +179,22 @@ export class TaskRepository {
     return result.rowsAffected > 0;
   }
 
+  /**
+   * 撤销完成工具：软删同一重复系列下所有未完成、未删除的实例（除 exceptId 本身）。
+   * 以稳定的 repeatSeriesId 为准，不依赖易丢失/陈旧的 repeatNextId 单链，
+   * 能一并清掉历史残留、撤销后再完成二次生成的实例、以及同步可能复活的未完成副本。
+   * 返回删除条数。
+   */
+  async deleteIncompleteSeries(seriesId: string, exceptId: string): Promise<number> {
+    const now = Date.now();
+    const result = await this.db.execute(
+      `UPDATE Task SET deleted = 1, updatedAt = ?
+       WHERE repeatSeriesId = ? AND completed = 0 AND deleted = 0 AND id != ?`,
+      [now, seriesId, exceptId]
+    );
+    return result.rowsAffected ?? 0;
+  }
+
   async restore(id: string): Promise<boolean> {
     const now = Date.now();
     const result = await this.db.execute(

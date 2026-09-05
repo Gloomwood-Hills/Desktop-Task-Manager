@@ -85,15 +85,12 @@ export class TaskService {
 
   async restoreTask(id: string): Promise<boolean> {
     // 撤销完成 / 恢复任务（repo.restore 置 completed=0）。
-    // 若被恢复的是重复任务，需删除其自动生成的下一实例，避免列表出现两项同样的重复任务（数据爆炸）。
+    // 若被恢复的是重复任务，需清理其自动生成的下一实例（整系列未完成实例），
+    // 避免列表/已完成区出现多条同样的重复任务（数据爆炸）。
     const task = await this.taskRepository.getById(id); // getById 仅返回 deleted=0 的任务
     const ok = await this.taskRepository.restore(id);
-    if (ok && task && !task.deleted && task.repeatRule && task.repeatNextId) {
-      const next = await this.taskRepository.getById(task.repeatNextId);
-      if (next && !next.completed && !next.deleted) {
-        await this.taskRepository.softDelete(next.id);
-      }
-      await this.taskRepository.update(task.id, { repeatNextId: null });
+    if (ok && task && !task.deleted) {
+      await this.cleanupUndoSeries(task);
     }
     return ok;
   }
@@ -114,13 +111,9 @@ export class TaskService {
       await this.spawnNextInstance(task);
     }
 
-    // 撤销完成重复任务：删除自动生成的下一实例（避免列表出现两项同样的重复任务 / 数据爆炸）
-    if (updated && !newCompleted && task.repeatRule && task.repeatNextId) {
-      const next = await this.taskRepository.getById(task.repeatNextId);
-      if (next && !next.completed && !next.deleted) {
-        await this.taskRepository.softDelete(next.id);
-      }
-      await this.taskRepository.update(task.id, { repeatNextId: null });
+    // 撤销完成重复任务：清理整系列未完成实例（避免列表出现两条同样的重复任务 / 数据爆炸）
+    if (updated && !newCompleted && task.repeatRule && task.repeatSeriesId) {
+      await this.cleanupUndoSeries(task);
     }
 
     return updated;
@@ -181,14 +174,55 @@ export class TaskService {
     return created;
   }
 
+  /**
+   * 撤销重复任务完成后的系列清理：清空父任务 repeatNextId 关联，并按稳定的
+   * repeatSeriesId 软删该系列下所有未完成实例（不含被恢复任务本身）。
+   * 以 repeatSeriesId（创建时即固定）为准而非易丢失的 repeatNextId 单链，
+   * 从而覆盖：历史残留、撤销后再完成二次生成的实例、同步可能复活的未完成副本。
+   *
+   * 防御性回退：若 repeatSeriesId 因旧版同步遗漏等原因为空，则退化为按 repeatNextId
+   * 单链清理（至少清掉最近一次自动生成的下一实例），避免完全不清理。
+   */
+  private async cleanupUndoSeries(task: Task): Promise<void> {
+    if (!task.repeatRule) return;
+    // 先清空父任务的 repeatNextId 关联（无论走哪条清理路径都需要）
+    await this.taskRepository.update(task.id, { repeatNextId: null });
+
+    if (task.repeatSeriesId) {
+      // 主路径：按稳定的系列 ID 清理整系列未完成实例
+      await this.taskRepository.deleteIncompleteSeries(task.repeatSeriesId, task.id);
+    } else if (task.repeatNextId) {
+      // 回退路径：repeatSeriesId 缺失（如旧版同步清空），按 repeatNextId 单链清理最近一条
+      const next = await this.taskRepository.getById(task.repeatNextId);
+      if (next && !next.completed && !next.deleted) {
+        await this.taskRepository.softDelete(next.id);
+      }
+    }
+  }
+
   /** 统计同一重复系列已完成的实例数（用于"已重复 N 次"） */
   async countRepeatDone(seriesId: string): Promise<number> {
     return this.taskRepository.getCompletedCountBySeries(seriesId);
   }
 
-  /** 结束重复：清除该任务的重复规则（不再生成下一实例） */
+  /**
+   * 结束重复：清除该任务的重复规则（不再生成下一实例），
+   * 并将其标记为已完成（移入"已完成"区）。
+   * 因 repeatRule 已先清空，不会触发 spawnNextInstance。
+   */
   async stopRepeat(id: string): Promise<Task | null> {
-    return this.taskRepository.update(id, { repeatRule: null, repeatIntervalDays: null });
+    // 1. 清除重复规则与单链关联
+    await this.taskRepository.update(id, {
+      repeatRule: null,
+      repeatIntervalDays: null,
+      repeatNextId: null,
+    });
+    // 2. 若尚未完成，标记为已完成（直接走 markCompleted，不经过 toggleTaskCompleted 的 spawn 逻辑）
+    const task = await this.taskRepository.getById(id);
+    if (task && !task.completed) {
+      return this.taskRepository.markCompleted(id, true);
+    }
+    return task;
   }
 
   /** 读取提醒时间已到且未触发、未完成、未删除的任务 */
