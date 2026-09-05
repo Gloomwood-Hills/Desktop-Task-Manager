@@ -84,7 +84,18 @@ export class TaskService {
   }
 
   async restoreTask(id: string): Promise<boolean> {
-    return this.taskRepository.restore(id);
+    // 撤销完成 / 恢复任务（repo.restore 置 completed=0）。
+    // 若被恢复的是重复任务，需删除其自动生成的下一实例，避免列表出现两项同样的重复任务（数据爆炸）。
+    const task = await this.taskRepository.getById(id); // getById 仅返回 deleted=0 的任务
+    const ok = await this.taskRepository.restore(id);
+    if (ok && task && !task.deleted && task.repeatRule && task.repeatNextId) {
+      const next = await this.taskRepository.getById(task.repeatNextId);
+      if (next && !next.completed && !next.deleted) {
+        await this.taskRepository.softDelete(next.id);
+      }
+      await this.taskRepository.update(task.id, { repeatNextId: null });
+    }
+    return ok;
   }
 
   async toggleTaskCompleted(id: string): Promise<Task | null> {
