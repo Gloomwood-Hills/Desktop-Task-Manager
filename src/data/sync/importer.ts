@@ -53,13 +53,16 @@ export async function importSnapshot(snapshot: SyncSnapshot): Promise<void> {
   for (const task of tasks) {
     // SyncTask 的 completed/deleted 是 boolean，SQLite 列是 INTEGER，转 1/0；
     // v3 起重复任务字段（repeatRule/repeatIntervalDays/repeatSeriesId/repeatNextId）与
-    // 提醒字段（reminderAt/reminderFired）一并写入，避免同步把这些字段清空为 NULL。
+    // 单值提醒字段（reminderAt/reminderFired）一并写入，避免同步把这些字段清空为 NULL。
+    // v5 起多提醒字段（reminderOffsets/reminderFiredOffsets/reminderTimes/reminderFiredTimes）一并写入。
     await db.execute(
       `INSERT OR REPLACE INTO Task (id, title, remark, folderId, parentId, startDate, deadline,
                                    priority, sortOrder, completed, completedAt, deleted,
                                    repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId,
-                                   reminderAt, reminderFired, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                   reminderAt, reminderFired, reminderOffsets, reminderFiredOffsets,
+                                   reminderTimes, reminderFiredTimes,
+                                   createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -79,6 +82,10 @@ export async function importSnapshot(snapshot: SyncSnapshot): Promise<void> {
         task.repeatNextId ?? null,
         task.reminderAt ?? null,
         task.reminderFired ? 1 : 0,
+        JSON.stringify(task.reminderOffsets ?? []),
+        JSON.stringify(task.reminderFiredOffsets ?? []),
+        JSON.stringify(task.reminderTimes ?? []),
+        JSON.stringify(task.reminderFiredTimes ?? []),
         task.createdAt,
         task.updatedAt,
       ]
@@ -120,7 +127,7 @@ export async function importMerged(folders: SyncFolder[], tasks: SyncTask[]): Pr
 
   // 任务按层级拓扑排序后逐条写回：Task.parentId 自引用本表，父任务必须先于子任务写入，
   // 否则外键约束（PRAGMA foreign_keys=ON）会拒绝插入子任务。
-  // v3 起重复任务字段与提醒字段一并写入。
+  // v3 起重复任务字段与单值提醒字段一并写入；v5 起多提醒字段一并写入。
   const orderedTasks = orderByParent(
     tasks,
     (t) => t.id,
@@ -131,8 +138,10 @@ export async function importMerged(folders: SyncFolder[], tasks: SyncTask[]): Pr
       `INSERT OR REPLACE INTO Task (id, title, remark, folderId, parentId, startDate, deadline,
                                    priority, sortOrder, completed, completedAt, deleted,
                                    repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId,
-                                   reminderAt, reminderFired, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                   reminderAt, reminderFired, reminderOffsets, reminderFiredOffsets,
+                                   reminderTimes, reminderFiredTimes,
+                                   createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -152,6 +161,10 @@ export async function importMerged(folders: SyncFolder[], tasks: SyncTask[]): Pr
         task.repeatNextId ?? null,
         task.reminderAt ?? null,
         task.reminderFired ? 1 : 0,
+        JSON.stringify(task.reminderOffsets ?? []),
+        JSON.stringify(task.reminderFiredOffsets ?? []),
+        JSON.stringify(task.reminderTimes ?? []),
+        JSON.stringify(task.reminderFiredTimes ?? []),
         task.createdAt,
         task.updatedAt,
       ]

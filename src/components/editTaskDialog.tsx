@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
-import { X, Calendar as CalendarIcon, CalendarClock, Star, Check, ChevronDown, Bell } from 'lucide-react';
+import { motion } from 'motion/react';
+import { X, Calendar as CalendarIcon, Star, Check, ChevronDown, Bell } from 'lucide-react';
 import { Task, TaskRepeatRule } from '../data/types';
-import { parseNaturalDateTime, formatDeadline } from './utils/formatDate';
+import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime } from './utils/formatDate';
+import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
+import { ReminderCalendar } from './quickCapture';
 
 interface EditTaskDialogProps {
   task: Task;
-  onSave: (updates: Partial<Pick<Task, 'title' | 'remark' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays'>>) => Promise<void>;
+  onSave: (updates: Partial<Pick<Task, 'title' | 'remark' | 'deadline' | 'priority' | 'reminderAt' | 'reminderOffsets' | 'repeatRule' | 'repeatIntervalDays'>>) => Promise<void>;
   onClose: () => void;
+  /** 截止时间仅填日期时补上的默认时/分（设置 → 默认截止时刻） */
+  defaultDeadlineHour?: number;
+  defaultDeadlineMinute?: number;
 }
 
-/** 开始时间快捷项（日期语义，归一化为当日 00:00） */
-const DATE_QUICK_START = ['今天', '明天', '后天', '下周一', '月底'];
-/** 截止时间快捷项：一小时后为具体时刻，其余为日期 */
+/** 截止时间快捷项：一小时后为具体时刻，其余为日期（选择时按默认截止时刻补全） */
 const DATE_QUICK_DEADLINE = ['一小时后', '明天', '后天', '下周一', '月底'];
 
 /** 时间戳 → datetime-local 输入值（本地时区） */
@@ -21,17 +25,33 @@ function toLocalInputValue(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 任务编辑弹窗：标题 / 备注 / 开始与截止时间 / 重要（TR-12.1 编辑任务） */
-export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialogProps) {
+/** 面板 q弹进场（Motion spring） */
+const panelSpring = { type: 'spring' as const, stiffness: 420, damping: 20, mass: 0.9 };
+
+/** 偏移配置的展示文案：'提前一天' / '提前一天 · 提前6小时'；自定义时刻单独显示 */
+function reminderLabel(offsets: string[], customAt: number | null): string {
+  if (customAt != null) return `提醒 ${formatDeadline(customAt)}`;
+  if (!offsets.length) return '提醒';
+  return REMINDER_OFFSET_OPTIONS.filter((o) => offsets.includes(o.key)).map((o) => o.label).join(' · ');
+}
+
+/** 任务编辑弹窗：标题 / 备注 / 截止与提醒时间 / 重要（编辑任务，与新建弹窗时间视图保持一致） */
+export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineHour = 18, defaultDeadlineMinute = 0 }: EditTaskDialogProps) {
   const [title, setTitle] = useState(task.title);
   const [remark, setRemark] = useState(task.remark);
   const [important, setImportant] = useState(task.priority === 'important');
-  const [manualStart, setManualStart] = useState<number | null>(task.startDate);
   const [manualDeadline, setManualDeadline] = useState<number | null>(task.deadline);
-  const [startOpen, setStartOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
-  const [reminderAt, setReminderAt] = useState<number | null>(task.reminderAt);
+  /** 提前提醒偏移多选（'1d'/'3d'/'6h'）；空数组表示未设提醒 */
+  const [reminderOffsets, setReminderOffsets] = useState<string[]>(() => sanitizeOffsets(task.reminderOffsets));
   const [reminderOpen, setReminderOpen] = useState(false);
+  /** 自定义提醒时刻（显式时刻，无需截止时间即可设置） */
+  const [reminderAt, setReminderAt] = useState<number | null>(task.reminderAt ?? null);
+  /** 自定义提醒时刻日历弹层 */
+  const [reminderCalOpen, setReminderCalOpen] = useState(false);
+  /** 自定义提醒时刻的时/分 */
+  const [hour, setHour] = useState(() => (task.reminderAt != null ? new Date(task.reminderAt).getHours() : defaultDeadlineHour));
+  const [minute, setMinute] = useState(() => (task.reminderAt != null ? new Date(task.reminderAt).getMinutes() : defaultDeadlineMinute));
   const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(task.repeatRule);
   const [repeatIntervalDays, setRepeatIntervalDays] = useState<number | null>(task.repeatIntervalDays);
 
@@ -58,102 +78,59 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
     dialogTop: compact ? 16 : 48,     // 顶部留白
   };
 
+  // 截止时间补默认时刻（仅日期时按设置补全）
+  const effectiveDeadline = manualDeadline !== null
+    ? applyDefaultDeadlineTime(manualDeadline, defaultDeadlineHour, defaultDeadlineMinute)
+    : null;
+
+  /** 选中偏移：若已有则取消，否则追加；选偏移时清空自定义时刻（互斥） */
+  const toggleOffset = (key: ReminderOffsetKey) => {
+    setReminderOffsets((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+    setReminderAt(null);
+    setReminderCalOpen(false);
+  };
+
   const handleSave = async () => {
     if (!title.trim()) return;
-    await onSave({
+    // 互斥：设了自定义时刻则不携带偏移；未设自定义时刻才由截止+偏移派生
+    const custom = reminderAt != null;
+    const updates: Partial<Pick<Task, 'title' | 'remark' | 'deadline' | 'priority' | 'reminderAt' | 'reminderOffsets' | 'repeatRule' | 'repeatIntervalDays'>> = {
       title: title.trim(),
       remark: remark.trim(),
       priority: important ? 'important' : 'normal',
-      startDate: manualStart,
-      deadline: manualDeadline,
-      reminderAt,
+      deadline: effectiveDeadline,
+      reminderOffsets: custom ? [] : sanitizeOffsets(reminderOffsets),
       repeatRule,
       repeatIntervalDays: repeatRule === 'custom' ? repeatIntervalDays : null,
-    });
+    };
+    if (custom) updates.reminderAt = reminderAt;
+    await onSave(updates);
     onClose();
   };
 
-  const chipStyle = (active: boolean): React.CSSProperties => ({
-    display: 'flex', alignItems: 'center', gap: 5,
-    padding: compact ? '4px 8px' : '5px 10px', borderRadius: 10,
+  const chipStyle = (active: boolean, disabled = false): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: 5, padding: compact ? '4px 8px' : '5px 10px', borderRadius: 10,
     background: active ? 'var(--brand-50)' : 'transparent',
     border: `1px solid ${active ? 'var(--brand-200)' : 'var(--border)'}`,
-    cursor: 'pointer', fontSize: s.chipFont,
-    color: active ? 'var(--primary)' : 'var(--muted-foreground)',
+    cursor: disabled ? 'not-allowed' : 'pointer', fontSize: s.chipFont,
+    color: disabled ? 'var(--muted-foreground)' : active ? 'var(--primary)' : 'var(--muted-foreground)',
+    opacity: disabled ? 0.45 : 1,
   });
 
-  /** 时间选择面板（快捷项 + 自定义 + 清除） */
-  const timePanel = (
-    quickLabel: string,
-    value: number | null,
-    setValue: (v: number | null) => void,
-    close: () => void,
-    normalizeToDayStart: boolean,
-  ) => {
-    const quicks = normalizeToDayStart ? DATE_QUICK_START : DATE_QUICK_DEADLINE;
-    return (
-    <div style={{
-      borderRadius: 14,
-      background: 'rgba(255,255,255,0.78)',
-      backdropFilter: 'blur(40px) saturate(1.8)',
-      WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
-      boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
-      padding: compact ? 4 : 6,
-      display: 'inline-flex',
-      flexDirection: 'column',
-    }}>
-      {quicks.map((label) => {
-        const raw = parseNaturalDateTime(label);
-        const ts = raw !== null && normalizeToDayStart ? new Date(raw).setHours(0, 0, 0, 0) : raw;
-        const active = value === ts;
-        return (
-          <div
-            key={label}
-            onClick={() => { setValue(ts); close(); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: compact ? '5px 10px' : '7px 12px', borderRadius: 10,
-              cursor: 'pointer', fontSize: s.chipFont,
-              color: active ? 'var(--primary)' : 'var(--muted-foreground)',
-              background: active ? 'var(--brand-50)' : 'transparent',
-            }}
-          >
-            <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
-            {ts && <span style={{ fontSize: 11, opacity: 0.8 }}>{formatDeadline(ts)}</span>}
-            {active && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
-          </div>
-        );
-      })}
-      <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
-      <div style={{ padding: compact ? '5px 10px' : '7px 12px' }}>
-        <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
-        <input
-          type="datetime-local"
-          value={value !== null ? toLocalInputValue(value) : ''}
-          onChange={(e) => { if (e.target.value) setValue(new Date(e.target.value).getTime()); }}
-          style={{
-            width: '100%', height: compact ? 26 : 30, padding: '0 8px', boxSizing: 'border-box',
-            border: '1px solid var(--input)', borderRadius: 8,
-            background: 'var(--background)', color: 'inherit',
-            fontSize: s.chipFont, outline: 'none', fontFamily: 'var(--font-sans)',
-          }}
-        />
-      </div>
-      <div
-        onClick={() => { setValue(null); close(); }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: compact ? '5px 10px' : '7px 12px', borderRadius: 10,
-          cursor: 'pointer', fontSize: s.chipFont,
-          color: value === null ? 'var(--primary)' : 'var(--muted-foreground)',
-          background: value === null ? 'var(--brand-50)' : 'transparent',
-        }}
-      >
-        <span style={{ fontWeight: value === null ? 600 : 500 }}>{quickLabel}</span>
-        {value === null && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
-      </div>
-    </div>
-    );
+  /** 面板容器（q弹进场） */
+  const panelWrap = (children: React.ReactNode) => (
+    <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={panelSpring} style={{ padding: `${s.padTop - 2}px ${s.padX}px 0` }}>
+      {children}
+    </motion.div>
+  );
+
+  const panelBox: React.CSSProperties = {
+    borderRadius: 14,
+    background: 'rgba(255,255,255,0.78)',
+    backdropFilter: 'blur(40px) saturate(1.8)',
+    WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+    boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
+    padding: 6,
   };
 
   return (
@@ -229,17 +206,34 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
           />
         </div>
 
-        {/* 重要 */}
-        <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
+        {/* 选项行：截止时间 + 提醒 + 重要 */}
+        <div style={{ padding: `${s.padTop}px ${s.padX}px 0`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div
+            onClick={() => { setDateOpen(!dateOpen); setReminderOpen(false); }}
+            style={chipStyle(effectiveDeadline !== null)}
+          >
+            <CalendarIcon style={{ width: 13, height: 13, flexShrink: 0 }} />
+            <span style={{ fontWeight: 600 }}>{effectiveDeadline ? formatDeadline(effectiveDeadline) : '截止时间'}</span>
+            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
+          </div>
+          <div
+            onClick={() => { setReminderOpen(!reminderOpen); setDateOpen(false); setReminderCalOpen(false); }}
+            style={chipStyle(reminderOffsets.length > 0 || reminderAt != null || reminderOpen)}
+          >
+            <Bell style={{ width: 13, height: 13, flexShrink: 0 }} />
+            <span style={{ fontWeight: 600 }}>{reminderLabel(reminderOffsets, reminderAt)}</span>
+            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
+          </div>
           <div
             onClick={() => setImportant(!important)}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
+              display: 'flex', alignItems: 'center', gap: 5,
               padding: compact ? '4px 8px' : '5px 10px', borderRadius: 10,
               background: important ? 'color-mix(in srgb, var(--chart-3) 8%, transparent)' : 'transparent',
               border: `1px solid ${important ? 'color-mix(in srgb, var(--chart-3) 25%, transparent)' : 'var(--border)'}`,
               cursor: 'pointer', fontSize: s.chipFont,
               color: important ? 'var(--chart-3)' : 'var(--muted-foreground)',
+              marginLeft: 'auto',
             }}
           >
             <Star style={{ width: 13, height: 13, fill: important ? 'var(--chart-3)' : 'none', flexShrink: 0 }} />
@@ -248,27 +242,155 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
           </div>
         </div>
 
-        {/* 时间设置：开始时间 + 截止时间 */}
-        <div style={{ padding: `${s.padTop}px ${s.padX}px 0`, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div
-            onClick={() => { setStartOpen(!startOpen); setDateOpen(false); }}
-            style={chipStyle(manualStart !== null)}
-          >
-            <CalendarClock style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{manualStart !== null ? formatDeadline(manualStart) : '开始时间'}</span>
-            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
-          </div>
-          <div
-            onClick={() => { setDateOpen(!dateOpen); setStartOpen(false); }}
-            style={chipStyle(manualDeadline !== null)}
-          >
-            <CalendarIcon style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{manualDeadline !== null ? formatDeadline(manualDeadline) : '截止时间'}</span>
-            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
-          </div>
-        </div>
+        {/* 展开面板：截止时间 */}
+        {dateOpen && (
+          panelWrap(
+            <div style={panelBox}>
+              {DATE_QUICK_DEADLINE.map((label) => {
+                const ts = applyDefaultDeadlineTime(parseNaturalDateTime(label), defaultDeadlineHour, defaultDeadlineMinute);
+                const active = manualDeadline !== null && applyDefaultDeadlineTime(manualDeadline, defaultDeadlineHour, defaultDeadlineMinute) === ts;
+                return (
+                  <div
+                    key={label}
+                    onClick={() => { setManualDeadline(ts); setDateOpen(false); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: compact ? '5px 10px' : '7px 12px', borderRadius: 10,
+                      cursor: 'pointer', fontSize: s.chipFont,
+                      color: active ? 'var(--primary)' : 'var(--muted-foreground)',
+                      background: active ? 'var(--brand-50)' : 'transparent',
+                    }}
+                  >
+                    <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
+                    {ts && <span style={{ fontSize: 11, opacity: 0.8 }}>{formatDeadline(ts)}</span>}
+                    {active && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+                  </div>
+                );
+              })}
+              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
+              <div style={{ padding: compact ? '5px 10px' : '7px 12px' }}>
+                <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
+                <input
+                  type="datetime-local"
+                  value={manualDeadline !== null ? toLocalInputValue(manualDeadline) : ''}
+                  onChange={(e) => { if (e.target.value) setManualDeadline(new Date(e.target.value).getTime()); }}
+                  style={{
+                    width: '100%', height: compact ? 26 : 30, padding: '0 8px', boxSizing: 'border-box',
+                    border: '1px solid var(--input)', borderRadius: 8,
+                    background: 'var(--background)', color: 'inherit',
+                    fontSize: s.chipFont, outline: 'none', fontFamily: 'var(--font-sans)',
+                  }}
+                />
+              </div>
+              <div
+                onClick={() => { setManualDeadline(null); setDateOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: compact ? '5px 10px' : '7px 12px', borderRadius: 10,
+                  cursor: 'pointer', fontSize: s.chipFont,
+                  color: manualDeadline === null ? 'var(--primary)' : 'var(--muted-foreground)',
+                  background: manualDeadline === null ? 'var(--brand-50)' : 'transparent',
+                }}
+              >
+                <span style={{ fontWeight: manualDeadline === null ? 600 : 500 }}>无截止日期</span>
+                {manualDeadline === null && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+              </div>
+            </div>
+          )
+        )}
 
-        {/* 截止附带：重复规则 */}
+        {/* 展开面板：提醒（提前偏移多选，未设截止则置灰；自定义时刻始终可用） */}
+        {reminderOpen && (
+          panelWrap(
+            <div style={{ ...panelBox, padding: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 600 }}>提前提醒（相对截止，可多选）</span>
+                {effectiveDeadline && (
+                  <span style={{ fontSize: 11.5, color: 'var(--primary)' }}>截止 {formatDeadline(effectiveDeadline)}</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {REMINDER_OFFSET_OPTIONS.map((opt) => {
+                  const disabled = !effectiveDeadline;
+                  const active = reminderOffsets.includes(opt.key);
+                  return (
+                    <div
+                      key={opt.key}
+                      onClick={() => { if (!disabled) toggleOffset(opt.key); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '6px 12px', borderRadius: 999,
+                        border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                        background: active ? 'var(--brand-50)' : 'transparent',
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontSize: s.chipFont, fontWeight: 600,
+                        color: disabled ? 'var(--muted-foreground)' : active ? 'var(--primary)' : 'var(--muted-foreground)',
+                        opacity: disabled ? 0.45 : 1,
+                        transition: 'background-color .15s ease, border-color .15s ease',
+                      }}
+                    >
+                      {opt.label}
+                      {active && <Check style={{ width: 13, height: 13, flexShrink: 0 }} />}
+                    </div>
+                  );
+                })}
+              </div>
+              {!effectiveDeadline && (
+                <div style={{ fontSize: 11.5, color: 'var(--destructive)', marginTop: 8 }}>提前提醒需先设置截止时间；自定义时刻无需截止</div>
+              )}
+              <div style={{ borderTop: '1px solid var(--border)', margin: '12px -12px 10px' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 600 }}>自定义提醒时刻（无需截止）</span>
+                {reminderAt != null && (
+                  <span style={{ fontSize: 11.5, color: 'var(--primary)' }}>{formatDeadline(reminderAt)}</span>
+                )}
+              </div>
+              <div
+                onClick={() => setReminderCalOpen((v) => !v)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 12px', borderRadius: 999, width: '100%', justifyContent: 'center',
+                  border: `1px solid ${reminderAt != null ? 'var(--primary)' : 'var(--border)'}`,
+                  background: reminderAt != null ? 'var(--brand-50)' : 'transparent',
+                  cursor: 'pointer', fontSize: s.chipFont, fontWeight: 600,
+                  color: reminderAt != null ? 'var(--primary)' : 'var(--muted-foreground)',
+                  transition: 'background-color .15s ease, border-color .15s ease', boxSizing: 'border-box',
+                }}
+              >
+                {reminderAt != null ? <Bell style={{ width: 13, height: 13, flexShrink: 0 }} /> : <CalendarIcon style={{ width: 13, height: 13, flexShrink: 0 }} />}
+                <span>{reminderAt != null ? '已选自定义时刻' : '选择自定义时刻（日历）'}</span>
+                {reminderAt != null && <Check style={{ width: 13, height: 13, flexShrink: 0 }} />}
+              </div>
+              {reminderCalOpen && (
+                <div className="qc-scope" style={{ marginTop: 10 }}>
+                  <ReminderCalendar
+                    selectedAt={reminderAt}
+                    hour={hour}
+                    minute={minute}
+                    onHourChange={setHour}
+                    onMinuteChange={setMinute}
+                    onPickDay={(dayTs) => {
+                      const d = new Date(dayTs);
+                      d.setHours(hour, minute, 0, 0);
+                      setReminderAt(d.getTime());
+                      setReminderOffsets([]);
+                    }}
+                  />
+                </div>
+              )}
+              {reminderAt != null && (
+                <div
+                  onClick={() => { setReminderAt(null); setReminderCalOpen(false); }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 8, fontSize: 11.5, color: 'var(--muted-foreground)', cursor: 'pointer' }}
+                >
+                  清除自定义提醒
+                </div>
+              )}
+            </div>
+          )
+        )}
+
+        {/* 重复规则（需先有截止时间） */}
         <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
           <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>重复</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -306,62 +428,10 @@ export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialog
               />
             )}
           </div>
-          {repeatRule && !manualDeadline && (
+          {repeatRule && !effectiveDeadline && (
             <div style={{ fontSize: 11, color: 'var(--destructive)', marginTop: 6 }}>设置重复前请先选择截止时间（重复按截止日顺延）</div>
           )}
         </div>
-
-        {/* 提醒：截止时间附带的按任务提醒（需先有截止时间） */}
-        <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
-          <div onClick={() => setReminderOpen(!reminderOpen)} style={chipStyle(reminderAt !== null)}>
-            <Bell style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{reminderAt !== null ? `提醒 ${formatDeadline(reminderAt)}` : '提醒'}</span>
-            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
-          </div>
-          {!manualDeadline && (
-            <div style={{ fontSize: 11, color: 'var(--destructive)', marginTop: 6 }}>设置提醒前请先选择截止时间</div>
-          )}
-          {manualDeadline && reminderOpen && (
-            <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--primary)', marginBottom: 6 }}>
-                <CalendarIcon style={{ width: 12, height: 12 }} />
-                截止时间：{formatDeadline(manualDeadline)}（提醒默认等同截止）
-              </div>
-              <input
-                type="datetime-local"
-                value={reminderAt !== null ? toLocalInputValue(reminderAt) : toLocalInputValue(manualDeadline)}
-                onChange={(e) => { if (e.target.value) setReminderAt(new Date(e.target.value).getTime()); }}
-                style={{
-                  width: '100%', height: compact ? 26 : 30, padding: '0 8px', boxSizing: 'border-box',
-                  border: '1px solid var(--input)', borderRadius: 8,
-                  background: 'var(--background)', color: 'inherit',
-                  fontSize: s.chipFont, outline: 'none', fontFamily: 'var(--font-sans)',
-                }}
-              />
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                <button
-                  onClick={() => { setReminderAt(manualDeadline); setReminderOpen(false); }}
-                  style={{ height: 26, padding: '0 10px', fontSize: s.chipFont, border: '1px solid var(--border)', borderRadius: 999, background: 'var(--muted)', color: 'var(--foreground)', cursor: 'pointer', fontWeight: 600 }}
-                >提醒=截止时间</button>
-                <button
-                  onClick={() => { setReminderAt(null); setReminderOpen(false); }}
-                  style={{ height: 26, padding: '0 10px', fontSize: s.chipFont, border: '1px solid var(--border)', borderRadius: 999, background: 'transparent', color: 'var(--muted-foreground)', cursor: 'pointer' }}
-                >无提醒</button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {startOpen && (
-          <div style={{ padding: `${s.padTop - 2}px ${s.padX}px 0` }}>
-            {timePanel('无开始日期', manualStart, setManualStart, () => setStartOpen(false), true)}
-          </div>
-        )}
-        {dateOpen && (
-          <div style={{ padding: `${s.padTop - 2}px ${s.padX}px 0` }}>
-            {timePanel('无截止日期', manualDeadline, setManualDeadline, () => setDateOpen(false), false)}
-          </div>
-        )}
 
         {/* 操作按钮 */}
         <div style={{ padding: `${s.padTop + 4}px ${s.padX}px ${s.padTop + 4}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>

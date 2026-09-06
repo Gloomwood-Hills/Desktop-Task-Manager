@@ -34,6 +34,10 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     deleted: false,
     reminderAt: null,
     reminderFired: false,
+    reminderOffsets: [],
+    reminderFiredOffsets: [],
+    reminderTimes: [],
+    reminderFiredTimes: [],
     repeatRule: null,
     repeatIntervalDays: null,
     repeatSeriesId: null,
@@ -68,13 +72,13 @@ function makeV1SnapshotJson(): string {
 }
 
 describe('buildSnapshot', () => {
-  it('输出 folders 含 deleted 字段且 schemaVersion = 3', () => {
+  it('输出 folders 含 deleted 字段且 schemaVersion = 5', () => {
     const folders = [makeFolder({ deleted: true })];
     const tasks = [makeTask()];
 
     const snapshot = buildSnapshot(folders, tasks, 'device-1');
 
-    expect(snapshot.schemaVersion).toBe(3);
+    expect(snapshot.schemaVersion).toBe(5);
     expect(snapshot.deviceId).toBe('device-1');
     expect(typeof snapshot.exportedAt).toBe('number');
     expect(snapshot.folders).toHaveLength(1);
@@ -104,10 +108,10 @@ describe('parseSnapshot', () => {
     expect(parsed.tasks[0].title).toBe('测试任务');
   });
 
-  it('解析 v1 JSON（folders 无 deleted）→ 规范化后 folders 均 deleted=false、schemaVersion=3', () => {
+  it('解析 v1 JSON（folders 无 deleted）→ 规范化后 folders 均 deleted=false、schemaVersion=5', () => {
     const parsed = parseSnapshot(makeV1SnapshotJson());
 
-    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.schemaVersion).toBe(5);
     expect(parsed.folders).toHaveLength(1);
     expect(parsed.folders[0].deleted).toBe(false);
     expect('deleted' in parsed.folders[0]).toBe(true);
@@ -115,10 +119,10 @@ describe('parseSnapshot', () => {
     expect(parsed.tasks[0].deleted).toBe(false);
   });
 
-  it('拒绝其他版本（schemaVersion=4）并抛错', () => {
-    const v4Json = makeV2SnapshotJson().replace('"schemaVersion":2', '"schemaVersion":4');
+  it('拒绝不支持的版本（schemaVersion=6）并抛错', () => {
+    const v6Json = makeV2SnapshotJson().replace('"schemaVersion":2', '"schemaVersion":6');
 
-    expect(() => parseSnapshot(v4Json)).toThrow(/版本不兼容/);
+    expect(() => parseSnapshot(v6Json)).toThrow(/版本不兼容/);
   });
 
   it('拒绝非法 JSON 并抛错', () => {

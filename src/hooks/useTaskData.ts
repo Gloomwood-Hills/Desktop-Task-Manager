@@ -26,15 +26,16 @@ export interface UseTaskData {
   /** 保存窗口状态（位置/大小/折叠文件夹） */
   saveWindowState: (patch: Partial<WindowState>) => Promise<void>;
   createTask: (title: string, folderId: string | null, options?: {
-    remark?: string; parentId?: string | null; startDate?: number | null;
+    remark?: string; parentId?: string | null;
     deadline?: number | null; priority?: Priority;
-    reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null;
+    reminderOffsets?: string[]; reminderAt?: number | null; reminderTimes?: number[];
+    repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null;
   }) => Promise<Task | null>;
   toggleCompleted: (id: string) => Promise<Task | null>;
-  /** 编辑任务：更新标题/备注/开始/截止/优先级等字段 */
+  /** 编辑任务：更新标题/备注/截止/优先级/提醒偏移等字段 */
   updateTask: (
     id: string,
-    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays'>>
+    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'deadline' | 'priority' | 'reminderAt' | 'reminderFired' | 'reminderOffsets' | 'reminderFiredOffsets' | 'reminderTimes' | 'reminderFiredTimes' | 'repeatRule' | 'repeatIntervalDays'>>
   ) => Promise<Task | null>;
   deleteTask: (id: string) => Promise<boolean>;
   restoreTask: (id: string) => Promise<boolean>;
@@ -204,9 +205,10 @@ export function useTaskData(): UseTaskData {
 
   const createTask = useCallback(async (
     title: string, folderId: string | null, options?: {
-      remark?: string; parentId?: string | null; startDate?: number | null;
+      remark?: string; parentId?: string | null;
       deadline?: number | null; priority?: Priority;
-      reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null;
+      reminderOffsets?: string[]; reminderAt?: number | null; reminderTimes?: number[];
+      repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null;
     }
   ): Promise<Task | null> => {
     if (!taskServiceRef.current) return null;
@@ -224,7 +226,7 @@ export function useTaskData(): UseTaskData {
 
   const updateTask = useCallback(async (
     id: string,
-    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority'>>
+    updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'deadline' | 'priority' | 'reminderAt' | 'reminderFired' | 'reminderOffsets' | 'reminderFiredOffsets' | 'reminderTimes' | 'reminderFiredTimes' | 'repeatRule' | 'repeatIntervalDays'>>
   ): Promise<Task | null> => {
     if (!taskServiceRef.current) return null;
     const task = await taskServiceRef.current.updateTask(id, updates);

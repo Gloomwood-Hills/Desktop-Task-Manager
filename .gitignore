@@ -1,3 +1,4 @@
+# 依赖与构建产物
 node_modules/
 dist/
 src-tauri/target/
@@ -18,9 +19,11 @@ src-tauri/gen/schemas/
 .gradle/
 release/*-debug.apk
 
-# 开发/内部文件（不随 V1 发布上传）
+# 开发/内部文件（不随发布上传）
 .trae/
 .design-taskmanager-ui/
+.hvigor/
+harmonyos/
 PRD.txt
 dev.ps1
 性能测试.ps1
@@ -29,3 +32,11 @@ dev.ps1
 src/agents/
 **/CLAUDE.md
 **/claude.md
+
+# 测试/预览/临时文件
+demo.html
+src/demoMain.tsx
+prototypes/
+.tmp/
+.workbuddy/
+交接文档.md

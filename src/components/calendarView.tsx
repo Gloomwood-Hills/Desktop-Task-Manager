@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Check } from 'lucide-react';
 import { Task, TaskWithSubtasks } from '../data/types';
+import { generateRepeatOccurrences } from './utils/repeatUtils';
 
 export interface CalendarViewProps {
   /** 活动（未完成）任务：用于月格药丸与面板的未完成部分 */
@@ -12,6 +13,8 @@ export interface CalendarViewProps {
   onAddTask?: (timestamp: number) => void;
   /** 详情面板勾选/撤销勾选（App 中复用 toggleCompleted 业务逻辑） */
   onToggleTask?: (id: string) => void;
+  /** 任务右键菜单（与列表视图一致），月格药丸 / 详情面板行触发 */
+  onContextMenuTask?: (e: ReactMouseEvent, taskId: string) => void;
 }
 
 /** 周标头：周一起始 */
@@ -39,22 +42,11 @@ function dayKey(ts: number): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-/** 时间戳是否落在 [dayStart, dayStart + 24h) 区间内 */
-function inDayRange(ts: number | null, dayStart: number): boolean {
-  return ts !== null && ts >= dayStart && ts < dayStart + DAY_MS;
-}
-
-/** 任务是否命中该日：开始日期或截止日期落在当天 */
-function hitsDay(t: TaskWithSubtasks | Task, dayStart: number): boolean {
-  return inDayRange(t.startDate, dayStart) || inDayRange(t.deadline, dayStart);
-}
-
 /** 把已完成任务（可能无 subtasks 字段）规范化为 DetailRow 可用的结构 */
 function toDetail(t: TaskWithSubtasks | Task): TaskWithSubtasks {
   const anyT = t as TaskWithSubtasks;
   return { ...anyT, subtasks: anyT.subtasks ?? [] };
 }
-
 
 /** 当日事件药丸视觉层 */
 type PillTone = 'soft' | 'solid';
@@ -79,12 +71,17 @@ interface PillProps {
   maxChars: number;
   title: string;
   tone: PillTone;
+  /** 是否已完成（显示对勾 + 删除线 + 降透明度） */
+  completed?: boolean;
   /** 点击事件回调（详情面板里的勾选 / 列表项也复用） */
   onClick?: (e: React.MouseEvent) => void;
+  /** 右键事件回调（与列表视图一致的任务菜单） */
+  onContextMenu?: (e: ReactMouseEvent) => void;
 }
 
-/** 当日事件药丸：勾号 + 标题（截断），优先级 important 用实心蓝底白字、其他用浅蓝底深蓝字 */
-function Pill({ maxChars, title, tone, onClick }: PillProps) {
+/** 当日事件药丸：勾号 + 标题（截断），优先级 important 用实心蓝底白字、其他用浅蓝底深蓝字；
+ * 已完成实例显示对勾 + 删除线 + 半透明（重复任务历史出现日） */
+function Pill({ maxChars, title, tone, completed, onClick, onContextMenu }: PillProps) {
   const truncated = truncateTitle(title, maxChars);
   const baseStyle: CSSProperties = {
     display: 'flex',
@@ -99,27 +96,22 @@ function Pill({ maxChars, title, tone, onClick }: PillProps) {
     fontWeight: 500,
     whiteSpace: 'nowrap',
     overflow: 'hidden',
+    textDecoration: completed ? 'line-through' : 'none',
     textOverflow: 'ellipsis',
     border: 'none',
     cursor: onClick ? 'pointer' : 'default',
     fontFamily: 'var(--font-sans)',
     textAlign: 'left',
+    opacity: completed ? 0.55 : 1,
   };
   return (
     <div
       role={onClick ? 'button' : undefined}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       style={{ ...baseStyle, ...pillStyleFor(tone) }}
     >
-      <Check
-        style={{
-          width: 9,
-          height: 9,
-          marginRight: 3,
-          flexShrink: 0,
-          strokeWidth: 3,
-        }}
-      />
+      {completed && <Check style={{ width: 9, height: 9, marginRight: 2, flexShrink: 0 }} />}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{truncated}</span>
     </div>
   );
@@ -151,10 +143,12 @@ interface DayCellProps {
   /** 是否处于选中态（详情面板展开目标日） */
   isSelected: boolean;
   onClickCell: (ts: number, e: React.MouseEvent) => void;
+  /** 任务右键菜单（与列表视图一致），药丸触发 */
+  onTaskContextMenu?: (e: ReactMouseEvent, taskId: string) => void;
 }
 
 /** 单个日期格：悬停反馈 + 今天品牌色高亮 + 选中蓝填充 + 三条药丸任务标签 */
-function DayCell({ ts, inMonth, isToday, dayTasks, isSelected, onClickCell }: DayCellProps) {
+function DayCell({ ts, inMonth, isToday, dayTasks, isSelected, onClickCell, onTaskContextMenu }: DayCellProps) {
   const [hovered, setHovered] = useState(false);
   const day = new Date(ts).getDate();
   const muted = !inMonth;
@@ -233,6 +227,8 @@ function DayCell({ ts, inMonth, isToday, dayTasks, isSelected, onClickCell }: Da
             title={t.title}
             maxChars={8}
             tone={t.priority === 'important' ? 'solid' : 'soft'}
+            completed={t.completed}
+            onContextMenu={onTaskContextMenu ? (e) => onTaskContextMenu(e, t.id) : undefined}
           />
         ))}
         {overflow > 0 && (
@@ -271,7 +267,11 @@ const NAV_BUTTON: CSSProperties = {
 };
 
 /** 详情面板里的一行：勾号 + 标题 + 「日程」小标 + 右侧时间戳；已完成任务显示灰色删除线样式 */
-function DetailRow({ task, onToggle }: { task: TaskWithSubtasks; onToggle: (id: string) => void }) {
+function DetailRow({ task, onToggle, onContextMenu }: {
+  task: TaskWithSubtasks;
+  onToggle: (id: string) => void;
+  onContextMenu?: (e: ReactMouseEvent) => void;
+}) {
   // 时间戳显示：取任务截止/开始中更接近当天的时间点
   const deadline = task.deadline;
   const dayStart = startOfDay(task.deadline ?? task.startDate ?? Date.now());
@@ -279,6 +279,7 @@ function DetailRow({ task, onToggle }: { task: TaskWithSubtasks; onToggle: (id: 
   const hasSubtasks = task.subtasks.length > 0;
   return (
     <div
+      onContextMenu={onContextMenu}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -311,16 +312,16 @@ function DetailRow({ task, onToggle }: { task: TaskWithSubtasks; onToggle: (id: 
           width: 18,
           height: 18,
           borderRadius: '50%',
-          // 与列表视图（TaskItem 勾选圈）一致：完成=绿色实心；未完成=描边圆（重要任务橙色、普通灰）
+          // 与列表视图（TaskItem 勾选圈）一致：完成=深蓝实心、无描边；未完成=描边圆（重要任务橙色、普通灰）
           border: task.completed
-            ? '1.5px solid var(--state-success)'
+            ? 'none'
             : `1.5px solid ${task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)'}`,
           background: task.completed
-            ? 'var(--state-success)'
+            ? 'var(--primary)'
             : task.priority === 'important'
               ? 'color-mix(in srgb, #ff6b3d 10%, transparent)'
               : 'transparent',
-          color: 'var(--state-success-foreground)',
+          color: '#ffffff',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -377,7 +378,7 @@ function formatDayRowTime(ts: number | null, dayStart: number): string {
 }
 
 /** 月历视图（V3）：月历网格 + 每格药丸标签 + 选中详情面板 */
-export default function CalendarView({ tasks, completedTasks, onAddTask, onToggleTask }: CalendarViewProps) {
+export default function CalendarView({ tasks, completedTasks, onAddTask, onToggleTask, onContextMenuTask }: CalendarViewProps) {
   const now = new Date();
   // 查看中的月（0-11）：翻页只改变查看月，不自动跳回今天
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -386,26 +387,53 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
   const [selectedTs, setSelectedTs] = useState<number | null>(null);
 
   /**
-   * 每个日期 key → 命中任务列表。
-   * 一个任务若 startDate 或 deadline 命中该日即计入；同一任务同一天只计一次
-   * （避免 startDate 与 deadline 都落在同一天时重复计数）。
+   * 每个日期 key → 命中任务列表（含活动任务 + 已完成实例）。
+   * - 普通任务：startDate 或 deadline 命中该日即计入。
+   * - 重复任务：在可见月历区间内的所有出现日都计入（虚拟出现，不创建 DB 记录）。
+   * - 已完成实例：按 deadline 命中日计入（药丸显示对勾 + 删除线）。
+   * 同一任务同一天只计一次。
    * 排序：有截止时间在前 / 标题字典序。
    */
   const tasksByDay = useMemo(() => {
     const map = new Map<string, TaskWithSubtasks[]>();
+    // 可见区间：6×7 网格覆盖的起止日（含跨月补齐）
+    const first = new Date(viewYear, viewMonth, 1);
+    const lead = first.getDay() === 0 ? 6 : first.getDay() - 1;
+    const gridStart = new Date(viewYear, viewMonth, 1 - lead);
+    const rangeStart = gridStart.getTime();
+    const rangeEnd = rangeStart + GRID_CELLS * DAY_MS - 1;
+
+    const addTask = (task: TaskWithSubtasks, key: string) => {
+      const list = map.get(key) ?? [];
+      if (!list.some((t) => t.id === task.id)) list.push(task);
+      map.set(key, list);
+    };
+
+    // 活动任务
     for (const task of tasks) {
       const keys = new Set<string>();
       if (task.startDate !== null) keys.add(dayKey(task.startDate));
       if (task.deadline !== null) keys.add(dayKey(task.deadline));
-      for (const key of keys) {
-        const list = map.get(key) ?? [];
-        list.push(task);
-        map.set(key, list);
+      // 重复任务：补全可见区间内所有出现日
+      if (task.repeatRule && task.deadline) {
+        for (const occ of generateRepeatOccurrences(task, rangeStart, rangeEnd)) {
+          keys.add(dayKey(occ));
+        }
       }
+      for (const key of keys) addTask(task, key);
     }
-    // 排序：priority 重要优先 / 截止早者在前 / 标题字典序
+
+    // 已完成实例（含重复系列的历史完成记录）—— 按 deadline 命中日计入
+    for (const t of completedTasks ?? []) {
+      if (t.deleted) continue;
+      const key = t.deadline !== null ? dayKey(t.deadline) : null;
+      if (key) addTask(toDetail(t), key);
+    }
+
+    // 排序：未完成在前 / priority 重要优先 / 截止早者在前 / 标题字典序
     for (const list of map.values()) {
       list.sort((a, b) => {
+        if (a.completed !== b.completed) return a.completed ? 1 : -1;
         const ai = a.priority === 'important' ? 0 : 1;
         const bi = b.priority === 'important' ? 0 : 1;
         if (ai !== bi) return ai - bi;
@@ -416,7 +444,7 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
       });
     }
     return map;
-  }, [tasks]);
+  }, [tasks, completedTasks, viewYear, viewMonth]);
 
   /** 生成 6×7 网格：当月 1 号对齐到所在周的周一，首尾自动补齐相邻月日期（均取当天 00:00） */
   const cells = useMemo(() => {
@@ -453,20 +481,15 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
   const selectedKey = selectedTs !== null ? dayKey(selectedTs) : null;
 
   /** 选中日的任务列表（供详情面板用）：未完成在前（截止早者先），已完成在后（按完成时间新→旧）。
-   * 已完成任务来自 prop completedTasks（仅命中当天的根级已完成任务，含已完成父任务不再单独展开其子任务）。 */
+   * 活动任务与已完成实例均已在 tasksByDay 中按日归集，此处直接取用并按完成态分组排序。 */
   const selectedDayTasks = useMemo<TaskWithSubtasks[]>(() => {
     if (selectedTs === null) return [];
-    const dayStart = startOfDay(selectedTs);
     const key = dayKey(selectedTs);
-    // 未完成（活动任务）——tasksByDay 已按 priority/deadline/title 排好
-    const active = tasksByDay.get(key) ?? [];
-    // 已完成任务：命中当天即收入；sortOrder/priority 可能为空默认值，按完成时间倒序
-    const done = (completedTasks ?? [])
-      .filter((t) => !t.deleted && hitsDay(t, dayStart))
-      .map((t) => toDetail(t))
-      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+    const all = tasksByDay.get(key) ?? [];
+    const active = all.filter((t) => !t.completed);
+    const done = all.filter((t) => t.completed).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
     return [...active, ...done];
-  }, [selectedTs, tasksByDay, completedTasks]);
+  }, [selectedTs, tasksByDay]);
 
   /** 平移查看月：用 Date 的月份溢出自动处理跨年（如 12月-1 → 去年11月）；翻月后收起选中面板 */
   const shiftMonth = (delta: number) => {
@@ -645,7 +668,12 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
                     </div>
                   ) : (
                     selectedDayTasks.map((t) => (
-                      <DetailRow key={t.id} task={t} onToggle={handleToggleFromDetail} />
+                      <DetailRow
+                        key={t.id}
+                        task={t}
+                        onToggle={handleToggleFromDetail}
+                        onContextMenu={onContextMenuTask ? (e) => onContextMenuTask(e, t.id) : undefined}
+                      />
                     ))
                   )}
 

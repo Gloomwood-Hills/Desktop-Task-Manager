@@ -41,13 +41,13 @@ function Row({ task, onRestore, showBranch }: { task: Task; onRestore: (id: stri
       )}
       <div style={{
         width: 18, height: 18, borderRadius: '50%',
-        background: 'var(--state-success)',
-        border: '1.5px solid var(--state-success)',
+        background: 'var(--primary)',
+        border: 'none',
         flexShrink: 0,
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: 'var(--state-success-foreground)',
+        color: '#ffffff',
       }}>
         <Check style={{ width: 11, height: 11 }} />
       </div>
@@ -177,9 +177,9 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
                   <div style={{ position: 'absolute', left: -14, top: 15, width: 14, height: 1, background: 'var(--border)', opacity: 0.35 }} />
                   <div style={{
                     width: 18, height: 18, borderRadius: '50%',
-                    background: 'var(--state-success)', border: '1.5px solid var(--state-success)',
+                    background: 'var(--primary)', border: 'none',
                     flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'var(--state-success-foreground)',
+                    color: '#ffffff',
                   }}>
                     <Check style={{ width: 11, height: 11 }} />
                   </div>

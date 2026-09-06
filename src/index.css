@@ -112,6 +112,8 @@ html.mobile #root { border-radius: 0; }
   --ring: var(--brand-500);
   --icon: var(--icon-900);
   --icon-muted: var(--icon-500);
+  /* 日视图时间轴连线：浅色模式为黑 */
+  --day-timeline-line: #000000;
 
   /* chart */
   --chart-1: var(--state-success);
@@ -160,6 +162,8 @@ html.mobile #root { border-radius: 0; }
   --ring: var(--brand-400);
   --icon: var(--icon-50);
   --icon-muted: var(--icon-500);
+  /* 日视图时间轴连线：深色模式为白 */
+  --day-timeline-line: #ffffff;
 }
 
 body {
@@ -195,4 +199,252 @@ body {
 @keyframes dtm-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ===== QuickCapture（对齐设计稿 quick-capture / modeTime） ===== */
+.qc-scope .qc-body { padding: 18px 22px 22px; }
+.qc-scope .opt-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.qc-scope .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  transition: all .15s ease;
+  user-select: none;
+}
+.qc-scope .chip svg { width: 13px; height: 13px; flex-shrink: 0; }
+.qc-scope .chip.active {
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+  color: var(--primary);
+}
+.qc-scope .chip .ml-auto { margin-left: auto; }
+
+.qc-scope .two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+.qc-scope .field-card {
+  background: rgba(255,255,255,.85);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.05);
+}
+.qc-scope .field-card .card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+.qc-scope .field-card .card-head svg { width: 13px; height: 13px; color: var(--primary); }
+.qc-scope .field-card .card-head .t { font-size: 12px; font-weight: 700; color: var(--text-700); }
+.qc-scope .field-card .card-head .badge {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.qc-scope .badge.ok { background: var(--brand-50); color: var(--primary); }
+.qc-scope .badge.info { background: var(--muted); color: var(--muted-foreground); }
+.qc-scope .badge.warn { background: #ffeceb; color: var(--state-error); }
+
+.qc-scope .mini-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.qc-scope .mini-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-600);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all .14s ease;
+  user-select: none;
+}
+.qc-scope .mini-chip:hover { border-color: var(--brand-200); color: var(--primary); }
+.qc-scope .mini-chip.active { background: var(--brand-50); border-color: var(--brand-200); color: var(--primary); }
+.qc-scope .mini-chip:disabled { opacity: .42; cursor: not-allowed; background: var(--muted); color: var(--muted-foreground); border-color: var(--border); }
+.qc-scope .mini-chip .off-hint { font-weight: 500; font-size: 10px; color: var(--text-300); }
+
+.qc-scope .custom-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.qc-scope .custom-time input[type="datetime-local"] {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font-size: 11.5px;
+  outline: none;
+  font-family: var(--font-sans);
+  width: 100%;
+}
+
+.qc-scope .preview-box {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+.qc-scope .preview-box .pv-title { font-size: 11.5px; font-weight: 700; color: var(--text-500); margin-bottom: 6px; }
+.qc-scope .pv-list { display: flex; flex-direction: column; gap: 6px; }
+.qc-scope .pv-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-600);
+  background: var(--brand-50);
+  border: 1px solid var(--brand-200);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+.qc-scope .pv-item svg { width: 12px; height: 12px; color: var(--primary); }
+.qc-scope .pv-item .remove {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-300);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.qc-scope .pv-item .remove:hover { color: var(--state-error); }
+.qc-scope .pv-item .tag { margin-left: 6px; font-size: 10.5px; color: var(--text-400); font-weight: 500; }
+.qc-scope .empty-hint { font-size: 11.5px; color: var(--text-300); }
+
+.qc-scope .task-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 50px;
+  padding: 0 14px;
+  border: 1px solid var(--input);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.04);
+  margin-top: 16px;
+}
+.qc-scope .task-input svg { width: 15px; height: 15px; color: var(--icon-muted); flex-shrink: 0; }
+.qc-scope .task-input input {
+  border: none; outline: none; background: transparent; flex: 1;
+  font-size: 13.5px; color: var(--foreground); font-family: var(--font-sans);
+}
+.qc-scope .task-input input::placeholder { color: var(--text-300); }
+
+/* 新建任务 · 截止/提醒 分栏（气泡分栏标明：左截止 | 右提醒） */
+.qc-scope .dy-cols { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.qc-scope .dy-col { flex: 1 1 200px; min-width: 200px; }
+.qc-scope .dy-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 700; color: var(--text-500);
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.qc-scope .mini-chips.verse { display: grid; grid-template-columns: repeat(2, auto); gap: 6px; margin-top: 8px; }
+.qc-scope .mini-chips.verse .mini-chip { justify-content: flex-start; }
+.qc-scope .rem-indicator { margin-top: 8px; font-size: 10.5px; color: var(--text-400); white-space: nowrap; }
+/* 多选提醒时刻列表 */
+.qc-scope .rm-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.qc-scope .rm-chip {
+  display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px;
+  background: var(--brand-50); border: 1px solid var(--brand-200);
+  font-size: 11px; color: var(--primary); cursor: pointer;
+}
+.qc-scope .rm-chip:hover { border-color: var(--brand-400); }
+.qc-scope .rm-chip .rm-time { font-weight: 600; white-space: nowrap; }
+.qc-scope .rm-chip button { border: none; background: transparent; color: var(--text-300); cursor: pointer; display: flex; padding: 0; border-radius: 4px; }
+.qc-scope .rm-chip button:hover { color: var(--state-error); }
+.qc-scope .rm-chip button svg { width: 12px; height: 12px; }
+
+.qc-scope .create-btn {
+  width: 100%;
+  margin-top: 10px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: filter .15s ease;
+}
+.qc-scope .create-btn:hover { filter: brightness(.94); }
+.qc-scope .create-btn:disabled { opacity: .42; cursor: not-allowed; }
+
+/* 新建任务 · 双目标日历：截止（深蓝）/ 提醒（浅蓝）标记 */
+.qc-scope .cal-day.dl { background: var(--brand-700); color: #fff; font-weight: 700; }
+.qc-scope .cal-day.rm { background: var(--brand-400); color: #fff; font-weight: 700; }
+.qc-scope .cal-day.dl.rm {
+  background: linear-gradient(135deg, var(--brand-700) 50%, var(--brand-400) 50%);
+  color: #fff; font-weight: 700;
+}
+
+/* 时刻气泡（左键截止 / 右键提醒）：固定布局，窄窗口不收缩错乱 */
+.qc-scope .time-bubble {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; padding: 6px 10px; border-radius: 10px;
+  background: var(--background-100); border: 1px solid var(--border);
+  flex-wrap: nowrap; box-sizing: border-box;
+}
+.qc-scope .time-bubble .tb-label { font-size: 11.5px; font-weight: 700; color: var(--text-500); white-space: nowrap; flex-shrink: 0; }
+.qc-scope .time-bubble input[type="time"] {
+  height: 26px; padding: 0 8px; border: 1px solid var(--input); border-radius: 8px;
+  background: #fff; color: inherit; font-size: 11.5px; outline: none; font-family: var(--font-sans);
+  flex: 1; min-width: 72px; width: 100%; box-sizing: border-box;
+}
+.qc-scope .time-bubble button {
+  border: none; background: transparent; color: var(--text-400); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 2px; border-radius: 6px;
+  flex-shrink: 0;
+}
+.qc-scope .time-bubble button:hover { background: var(--background-200); color: var(--text-600); }
+.qc-scope .time-bubble button svg { width: 13px; height: 13px; }
+.qc-scope .dl-dot, .qc-scope .rm-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.qc-scope .dl-dot { background: var(--brand-700); }
+.qc-scope .rm-dot { background: var(--brand-400); }
+
+/* 提醒自定义时刻 · 日历弹层 */
+.qc-scope .reminder-cal {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.qc-scope .cal-label { font-size: 11.5px; font-weight: 700; color: var(--text-500); margin-bottom: 6px; }
+.qc-scope .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.qc-scope .cal-dow { font-size: 9.5px; font-weight: 600; color: var(--text-400); text-align: center; padding: 2px 0; }
+.qc-scope .cal-day {
+  display: flex; align-items: center; justify-content: center;
+  height: 26px; font-size: 11px; font-weight: 600;
+  color: var(--text-600); border-radius: 7px; cursor: pointer; user-select: none;
+}
+.qc-scope .cal-day:hover { background: var(--brand-50); color: var(--primary); }
+.qc-scope .cal-day.empty { cursor: default; }
+.qc-scope .cal-day.sel { background: var(--brand-500); color: #fff; }
+.qc-scope .cal-time-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.qc-scope .cal-time-row input[type="time"] {
+  height: 28px; padding: 0 8px; border: 1px solid var(--input); border-radius: 8px;
+  background: #fff; color: inherit; font-size: 11.5px; outline: none; font-family: var(--font-sans); flex: 1;
 }

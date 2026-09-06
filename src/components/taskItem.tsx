@@ -78,15 +78,24 @@ function ExpiredBadge() {
 }
 
 /** 累计完成次数标签（重复系列：即使已结束重复也保留显示，只是不再更新）—— 与截止时间标签对齐 */
-function RepeatBadge({ count }: { count: number }) {
+/** 重复规则中文标签 */
+const REPEAT_RULE_LABEL: Record<string, string> = {
+  daily: '每天', weekly: '每周', monthly: '每月', yearly: '每年',
+};
+
+/** 重复系列聚类徽章：显示重复规则（如"每天"）+ 累计完成次数，使列表视图中重复任务一目了然 */
+function RepeatBadge({ rule, intervalDays, count }: { rule: string | null; intervalDays: number | null; count: number }) {
+  const label = rule === 'custom' ? `每${intervalDays ?? 1}天` : (rule ? REPEAT_RULE_LABEL[rule] : '');
+  if (!label) return null;
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+      display: 'inline-flex', alignItems: 'center', flexShrink: 0, gap: 4,
       padding: '2px 8px', borderRadius: 999,
       background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
       color: 'var(--primary)', fontSize: 11, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
     }}>
-      累计完成×{count}
+      {label}
+      {count > 0 && <span style={{ opacity: 0.7 }}>·{count}次</span>}
     </span>
   );
 }
@@ -130,7 +139,7 @@ function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task
       )}
       {/* 已过期 / 累计完成次数：与截止时间同一行（任务描述下方） */}
       {isTaskExpired(task) && <ExpiredBadge />}
-      {task.repeatSeriesId !== null && <RepeatBadge count={task.repeatCount ?? 0} />}
+      {task.repeatSeriesId !== null && <RepeatBadge rule={task.repeatRule} intervalDays={task.repeatIntervalDays} count={task.repeatCount ?? 0} />}
     </div>
   );
 }
@@ -177,14 +186,14 @@ function SubtaskRow({
           onClick={() => onToggleCompleted(task.id)}
           style={{
             width: 15, height: 15, borderRadius: '50%',
-            background: task.completed ? 'var(--state-success)' : 'transparent',
-            border: `1.5px solid ${task.completed ? 'var(--state-success)' : 'var(--muted-foreground)'}`,
+            background: task.completed ? 'var(--primary)' : 'transparent',
+            border: task.completed ? 'none' : '1.5px solid var(--muted-foreground)',
             flexShrink: 0,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
-            color: 'var(--state-success-foreground)',
+            color: '#ffffff',
           }}
         >
           {task.completed && <Check style={{ width: 9, height: 9 }} />}
@@ -204,7 +213,7 @@ function SubtaskRow({
           <Highlight text={task.title} query={searchQuery} />
         </span>
         {isTaskExpired(task) && <ExpiredBadge />}
-        {task.repeatRule && <RepeatBadge count={task.repeatCount ?? 0} />}
+        {task.repeatSeriesId !== null && <RepeatBadge rule={task.repeatRule} intervalDays={task.repeatIntervalDays} count={task.repeatCount ?? 0} />}
         {/* 子任务展开/折叠 + 进度 */}
         {hasChildren && (
           <>
@@ -321,10 +330,10 @@ export default function TaskItem({
           style={{
             width: 18, height: 18, borderRadius: '50%',
             border: task.completed
-              ? `1.5px solid var(--state-success)`
+              ? 'none'
               : `1.5px solid ${task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)'}`,
             background: task.completed
-              ? 'var(--state-success)'
+              ? 'var(--primary)'
               : task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent',
             flexShrink: 0,
             display: 'inline-flex',
@@ -332,7 +341,7 @@ export default function TaskItem({
             justifyContent: 'center',
             cursor: 'pointer',
             marginTop: 2,
-            color: 'var(--state-success-foreground)',
+            color: '#ffffff',
           }}
         >
           {task.completed && <Check style={{ width: 11, height: 11 }} />}

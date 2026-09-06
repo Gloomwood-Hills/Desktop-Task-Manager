@@ -61,6 +61,10 @@ async function initDatabase(db: Database): Promise<void> {
       deleted INTEGER NOT NULL DEFAULT 0,
       reminderAt INTEGER,
       reminderFired INTEGER NOT NULL DEFAULT 0,
+      reminderOffsets TEXT DEFAULT '[]',
+      reminderFiredOffsets TEXT DEFAULT '[]',
+      reminderTimes TEXT DEFAULT '[]',
+      reminderFiredTimes TEXT DEFAULT '[]',
       repeatRule TEXT,
       repeatIntervalDays INTEGER,
       repeatSeriesId TEXT,
@@ -86,10 +90,17 @@ async function initDatabase(db: Database): Promise<void> {
   // 旧库迁移：Task 新增 提醒(repeatRule/reminderAt/reminderFired) + 重复(repeatRule/repeatIntervalDays) 列
   await migrateTaskAddReminderRepeat(db);
 
+  // 旧库迁移：Task 新增 提前提醒偏移列（reminderOffsets/reminderFiredOffsets，JSON 数组）
+  await migrateTaskAddReminderOffsets(db);
+
   // 数据修复：旧版同步快照遗漏 repeatSeriesId 等字段，导致同步后这些字段被清空为 NULL。
   // 对 repeatRule 非空但 repeatSeriesId 为空的重复任务，将 repeatSeriesId 设为自身 id
   // （视为该系列首实例），使撤销完成时的系列清理逻辑能正常工作。
   await migrateTaskRepairRepeatSeriesId(db);
+
+  // 旧库迁移：Task 新增 多选提醒时刻列（reminderTimes/reminderFiredTimes，JSON 数字数组，
+  // 绝对毫秒时间戳；日历右键可设置任意多个绝对提醒点）
+  await migrateTaskAddReminderTimes(db);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS Settings (
@@ -104,6 +115,8 @@ async function initDatabase(db: Database): Promise<void> {
       autoPin INTEGER NOT NULL DEFAULT 1,
       autoStart INTEGER NOT NULL DEFAULT 1,
       deadlineGradient INTEGER NOT NULL DEFAULT 1,
+      defaultDeadlineHour INTEGER NOT NULL DEFAULT 18,
+      defaultDeadlineMinute INTEGER NOT NULL DEFAULT 0,
       viewMode TEXT NOT NULL DEFAULT 'list',
       autoSync INTEGER NOT NULL DEFAULT 1,
       syncPolicy TEXT NOT NULL DEFAULT 'twoWay',
@@ -128,6 +141,9 @@ async function initDatabase(db: Database): Promise<void> {
 
   // 旧库迁移：Settings 新增 deadlineGradient 列（截止时间按日期渐变）
   await migrateSettingsAddDeadlineGradient(db);
+
+  // 旧库迁移：Settings 新增 默认截止时刻列（仅填日期时补的时/分，默认 18:00）
+  await migrateSettingsAddDefaultDeadline(db);
 
   // 旧库迁移：Settings 新增 viewMode 列（当前视图模式）
   await migrateSettingsAddViewMode(db);
@@ -172,9 +188,9 @@ async function insertDefaultData(db: Database): Promise<void> {
   const existingSettings = await db.select<{ count: number }[]>('SELECT COUNT(*) as count FROM Settings', []);
   if (existingSettings[0].count === 0) {
     await db.execute(
-      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, viewMode, autoSync, syncPolicy, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 'list', 1, 'twoWay', DEFAULT_WEBDAV_URL, '', '', null, null, now, now]
+      `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, defaultDeadlineHour, defaultDeadlineMinute, viewMode, autoSync, syncPolicy, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 18, 0, 'list', 1, 'twoWay', DEFAULT_WEBDAV_URL, '', '', null, null, now, now]
     );
   }
 
@@ -267,6 +283,28 @@ async function migrateTaskAddReminderRepeat(db: Database): Promise<void> {
   }
 }
 
+/** 旧库迁移：Task 新增 提前提醒偏移列（reminderOffsets/reminderFiredOffsets，JSON 数组，默认空数组） */
+async function migrateTaskAddReminderOffsets(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Task)');
+  if (!cols.some((c) => c.name === 'reminderOffsets')) {
+    await db.execute("ALTER TABLE Task ADD COLUMN reminderOffsets TEXT DEFAULT '[]'");
+  }
+  if (!cols.some((c) => c.name === 'reminderFiredOffsets')) {
+    await db.execute("ALTER TABLE Task ADD COLUMN reminderFiredOffsets TEXT DEFAULT '[]'");
+  }
+}
+
+/** 旧库迁移：Task 新增 多选提醒时刻列（reminderTimes/reminderFiredTimes，JSON 数字数组，默认空数组） */
+async function migrateTaskAddReminderTimes(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Task)');
+  if (!cols.some((c) => c.name === 'reminderTimes')) {
+    await db.execute("ALTER TABLE Task ADD COLUMN reminderTimes TEXT DEFAULT '[]'");
+  }
+  if (!cols.some((c) => c.name === 'reminderFiredTimes')) {
+    await db.execute("ALTER TABLE Task ADD COLUMN reminderFiredTimes TEXT DEFAULT '[]'");
+  }
+}
+
 /**
  * 数据修复迁移：旧版同步快照（v1/v2）遗漏 repeatSeriesId 字段，
  * 每次同步都会把重复任务的 repeatSeriesId 清空为 NULL，
@@ -311,6 +349,17 @@ async function migrateSettingsAddDeadlineGradient(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
   if (!cols.some((c) => c.name === 'deadlineGradient')) {
     await db.execute('ALTER TABLE Settings ADD COLUMN deadlineGradient INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
+/** 旧库迁移：Settings 新增 默认截止时刻列（仅填日期时补的时/分，默认 18:00） */
+async function migrateSettingsAddDefaultDeadline(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'defaultDeadlineHour')) {
+    await db.execute('ALTER TABLE Settings ADD COLUMN defaultDeadlineHour INTEGER NOT NULL DEFAULT 18');
+  }
+  if (!cols.some((c) => c.name === 'defaultDeadlineMinute')) {
+    await db.execute('ALTER TABLE Settings ADD COLUMN defaultDeadlineMinute INTEGER NOT NULL DEFAULT 0');
   }
 }
 

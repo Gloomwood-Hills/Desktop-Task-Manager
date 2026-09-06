@@ -2,11 +2,12 @@ import Database from '@tauri-apps/plugin-sql';
 import { Task } from '../types';
 import { mapBooleanFields } from '../utils';
 
-type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'repeatRule' | 'repeatIntervalDays' | 'repeatNextId'>>;
+type TaskUpdateFields = Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'parentId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'reminderFired' | 'reminderOffsets' | 'reminderFiredOffsets' | 'reminderTimes' | 'reminderFiredTimes' | 'repeatRule' | 'repeatIntervalDays' | 'repeatSeriesId' | 'repeatNextId'>>;
 
 const TASK_COLUMNS = `
   id, title, remark, folderId, parentId, startDate, deadline, priority, sortOrder,
-  completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId, createdAt, updatedAt
+  completed, completedAt, deleted, reminderAt, reminderFired, reminderOffsets, reminderFiredOffsets,
+  reminderTimes, reminderFiredTimes, repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId, createdAt, updatedAt
 `;
 
 export class TaskRepository {
@@ -110,20 +111,28 @@ export class TaskRepository {
       completed: false,
       completedAt: null,
       deleted: false,
-      reminderFired: false,
+      reminderFired: task.reminderFired ?? false,
+      reminderOffsets: task.reminderOffsets ?? [],
+      reminderFiredOffsets: task.reminderFiredOffsets ?? [],
+      reminderTimes: task.reminderTimes ?? [],
+      reminderFiredTimes: task.reminderFiredTimes ?? [],
       createdAt: now,
       updatedAt: now,
     };
 
     await this.db.execute(
       `INSERT INTO Task (id, title, remark, folderId, parentId, startDate, deadline, priority,
-                         sortOrder, completed, completedAt, deleted, reminderAt, reminderFired, repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         sortOrder, completed, completedAt, deleted, reminderAt, reminderFired, reminderOffsets, reminderFiredOffsets,
+                         reminderTimes, reminderFiredTimes, repeatRule, repeatIntervalDays, repeatSeriesId, repeatNextId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newTask.id, newTask.title, newTask.remark, newTask.folderId, newTask.parentId,
         newTask.startDate, newTask.deadline, newTask.priority, newTask.sortOrder,
         newTask.completed ? 1 : 0, newTask.completedAt, newTask.deleted ? 1 : 0,
-        newTask.reminderAt, newTask.reminderFired ? 1 : 0, newTask.repeatRule, newTask.repeatIntervalDays, newTask.repeatSeriesId, newTask.repeatNextId,
+        newTask.reminderAt, newTask.reminderFired ? 1 : 0,
+        JSON.stringify(newTask.reminderOffsets ?? []), JSON.stringify(newTask.reminderFiredOffsets ?? []),
+        JSON.stringify(newTask.reminderTimes ?? []), JSON.stringify(newTask.reminderFiredTimes ?? []),
+        newTask.repeatRule, newTask.repeatIntervalDays, newTask.repeatSeriesId, newTask.repeatNextId,
         newTask.createdAt, newTask.updatedAt,
       ]
     );
@@ -157,12 +166,17 @@ export class TaskRepository {
     await this.db.execute(
       `UPDATE Task
        SET title = ?, remark = ?, folderId = ?, parentId = ?, startDate = ?, deadline = ?,
-           priority = ?, repeatRule = ?, repeatIntervalDays = ?, reminderAt = ?, repeatNextId = ?, updatedAt = ?
+           priority = ?, repeatRule = ?, repeatIntervalDays = ?, repeatSeriesId = ?, reminderAt = ?, reminderFired = ?,
+           reminderOffsets = ?, reminderFiredOffsets = ?, reminderTimes = ?, reminderFiredTimes = ?, repeatNextId = ?, updatedAt = ?
        WHERE id = ?`,
       [
         updatedTask.title, updatedTask.remark, updatedTask.folderId, updatedTask.parentId,
         updatedTask.startDate, updatedTask.deadline, updatedTask.priority,
-        updatedTask.repeatRule, updatedTask.repeatIntervalDays, updatedTask.reminderAt, updatedTask.repeatNextId,
+        updatedTask.repeatRule, updatedTask.repeatIntervalDays, updatedTask.repeatSeriesId, updatedTask.reminderAt,
+        updatedTask.reminderFired ? 1 : 0,
+        JSON.stringify(updatedTask.reminderOffsets ?? []), JSON.stringify(updatedTask.reminderFiredOffsets ?? []),
+        JSON.stringify(updatedTask.reminderTimes ?? []), JSON.stringify(updatedTask.reminderFiredTimes ?? []),
+        updatedTask.repeatNextId,
         updatedTask.updatedAt, updatedTask.id,
       ]
     );
@@ -233,17 +247,20 @@ export class TaskRepository {
     return rows[0]?.count ?? 0;
   }
 
-  /** 读取 to-do：提醒时间已到且未触发、未完成、未删除的任务 */
-  async getDueReminders(now: number): Promise<Task[]> {
+  /** 读取提醒候选：未触发、未完成、未删除且具备提醒条件（手填/多选 reminderAt·reminderTimes 或 截止+偏移）的任务。
+   * 是否真正到点由服务层按各来源计算（支持同一任务多偏移/多时刻逐个触发） */
+  async getReminderCandidates(): Promise<Task[]> {
     const rows = await this.db.select<Task[]>(
       `SELECT ${TASK_COLUMNS} FROM Task
-       WHERE reminderAt IS NOT NULL AND reminderAt <= ? AND reminderFired = 0 AND completed = 0 AND deleted = 0`,
-      [now]
+       WHERE reminderFired = 0 AND completed = 0 AND deleted = 0
+         AND (reminderAt IS NOT NULL
+              OR (reminderTimes IS NOT NULL AND reminderTimes != '[]' AND reminderTimes != '')
+              OR (deadline IS NOT NULL AND reminderOffsets IS NOT NULL AND reminderOffsets != '[]' AND reminderOffsets != ''))`
     );
     return rows.map(this.mapRow);
   }
 
-  /** 标记提醒已触发（避免重复通知） */
+  /** 标记单次提醒已触发（旧版手填 reminderAt，或任务所有偏移均已触发后的整体完成标记） */
   async markReminderFired(id: string): Promise<boolean> {
     const now = Date.now();
     const result = await this.db.execute(
@@ -270,6 +287,35 @@ export class TaskRepository {
 
   private mapRow(row: unknown): Task {
     const r = row as Record<string, unknown>;
-    return mapBooleanFields(r, ['completed', 'deleted', 'reminderFired'] as (keyof Task)[]) as unknown as Task;
+    const parsed = mapBooleanFields(r, ['completed', 'deleted', 'reminderFired'] as (keyof Task)[]) as unknown as Task;
+    parsed.reminderOffsets = parseJsonArray(parsed.reminderOffsets);
+    parsed.reminderFiredOffsets = parseJsonArray(parsed.reminderFiredOffsets);
+    parsed.reminderTimes = parseJsonNumberArray(parsed.reminderTimes);
+    parsed.reminderFiredTimes = parseJsonNumberArray(parsed.reminderFiredTimes);
+    return parsed;
+  }
+}
+
+/** 解析 SQLite 存储的 JSON 数组字符串；非法或空值回退为空数组 */
+function parseJsonArray(value: unknown): string[] {
+  if (value === null || value === undefined || value === '') return [];
+  if (Array.isArray(value)) return value as string[];
+  try {
+    const arr = JSON.parse(String(value));
+    return Array.isArray(arr) ? arr.filter((v) => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 解析 SQLite 存储的 JSON 数字数组（绝对提醒时刻，毫秒）；非法或空值回退为空数组 */
+function parseJsonNumberArray(value: unknown): number[] {
+  if (value === null || value === undefined || value === '') return [];
+  if (Array.isArray(value)) return value.filter((v) => typeof v === 'number' && Number.isFinite(v));
+  try {
+    const arr = JSON.parse(String(value));
+    return Array.isArray(arr) ? arr.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)) : [];
+  } catch {
+    return [];
   }
 }

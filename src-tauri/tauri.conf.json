@@ -16,6 +16,8 @@
         "title": "Desktop Task Manager",
         "width": 400,
         "height": 600,
+        "minWidth": 380,
+        "minHeight": 420,
         "x": 100,
         "y": 100,
         "resizable": true,

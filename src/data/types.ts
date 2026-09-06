@@ -32,10 +32,18 @@ export interface Task {
   completed: boolean;
   completedAt: number | null;
   deleted: boolean;
-  /** 提醒时间（毫秒）；null 表示未设提醒 */
+  /** 提醒时间（毫秒）；null 表示未设提醒。偏移提醒派生为最早的一个偏移时刻，兼容旧数据 */
   reminderAt: number | null;
   /** 是否已触发过提醒（避免重复通知） */
   reminderFired: boolean;
+  /** 提前提醒偏移配置（'1d' 提前一天 / '3d' 提前三天 / '6h' 提前6小时）；空数组表示未设提醒 */
+  reminderOffsets: string[];
+  /** 已触发通知的偏移 key（支持同一任务多个提前提醒逐个触发） */
+  reminderFiredOffsets: string[];
+  /** 多选提醒时刻（绝对毫秒时间戳）：日历右键/气泡可设置任意多个绝对提醒点，无需截止时间即可设置 */
+  reminderTimes: number[];
+  /** 已触发通知的提醒时刻值（对应 reminderTimes 多选，保证每个绝对时刻只通知一次） */
+  reminderFiredTimes: number[];
   /** 重复规则；null 表示不重复 */
   repeatRule: TaskRepeatRule | null;
   /** 自定义重复的间隔天数（repeatRule=custom 时有效） */
@@ -74,6 +82,10 @@ export interface Settings {
   autoStart: boolean;
   /** 截止时间按日期渐变：开启时纯白→#FF3333 渐变，关闭时直接显示红色 */
   deadlineGradient: boolean;
+  /** 截止时间仅填日期未填具体时刻时，默认补上的"时"（0-23，默认 18） */
+  defaultDeadlineHour: number;
+  /** 截止时间仅填日期未填具体时刻时，默认补上的"分"（0-59，默认 0） */
+  defaultDeadlineMinute: number;
   /** 当前视图模式，默认 list */
   viewMode: ViewMode;
   /** 自动同步开关：开启时启动/变更防抖/定时自动同步，默认 true */

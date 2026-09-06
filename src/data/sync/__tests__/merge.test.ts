@@ -39,6 +39,10 @@ function makeTask(overrides: Partial<SyncTask> = {}): SyncTask {
     repeatNextId: null,
     reminderAt: null,
     reminderFired: false,
+    reminderOffsets: [],
+    reminderFiredOffsets: [],
+    reminderTimes: [],
+    reminderFiredTimes: [],
     ...overrides,
   };
 }

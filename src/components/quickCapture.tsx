@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import {
-  Folder as FolderIcon, ChevronDown, Calendar as CalendarIcon, CalendarClock, Bell, Check, Star,
-  Plus, Sparkles,
+  Folder as FolderIcon, ChevronDown, Check, Star,
+  Plus, CalendarDays, X,
 } from 'lucide-react';
 import { FolderNode, Priority, TaskRepeatRule } from '../data/types';
-import { parseNaturalDateTime, formatDeadline, formatDeadlineYMD } from './utils/formatDate';
+import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime, formatCompletedAt } from './utils/formatDate';
+import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
@@ -12,43 +14,282 @@ interface QuickCaptureProps {
   onCreate: (
     title: string,
     folderId: string | null,
-    options: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string; reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
+    options: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
   ) => void;
   /** 预填的默认截止日期（归一化为当天 00:00）；不传时保持原有行为 */
   initialDate?: number;
   /** 预选的默认文件夹（如右键文件夹 → 新建任务）；null/不传时默认未分类 */
   initialFolderId?: string | null;
+  /** 截止时间仅填日期时默认补上的时/分（设置 → 默认截止时刻） */
+  defaultDeadlineHour?: number;
+  defaultDeadlineMinute?: number;
 }
 
-/** 开始时间快捷项（日期语义，归一化为当日 00:00） */
-const DATE_QUICK_START = ['今天', '明天', '后天', '下周一', '月底'];
-/** 截止时间快捷项：一小时后为具体时刻，其余为日期 */
+/** 截止时间快捷项：一小时后为具体时刻，其余为日期（选择时按默认截止时刻补全） */
 const DATE_QUICK_DEADLINE = ['一小时后', '明天', '后天', '下周一', '月底'];
 
-/** 时间戳 → datetime-local 输入值（本地时区） */
-function toLocalInputValue(ts: number): string {
-  const d = new Date(ts);
+/** 时:分 → time 输入值 */
+function toTimeValue(h: number, m: number): string {
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(h)}:${pad(m)}`;
 }
 
-/** 新建任务弹窗（Quick Capture，对齐设计稿 quick-capture） */
-export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null }: QuickCaptureProps) {
+/** 提醒自定义时刻 · 月份日历网格（选择某一天），日期决定日，时刻由外层 hour/minute 决定 */
+export function ReminderCalendar({
+  selectedAt,
+  hour,
+  minute,
+  onHourChange,
+  onMinuteChange,
+  onPickDay,
+}: {
+  selectedAt: number | null;
+  hour: number;
+  minute: number;
+  onHourChange: (h: number) => void;
+  onMinuteChange: (m: number) => void;
+  onPickDay: (dayTs: number) => void;
+}) {
+  const base = selectedAt ?? Date.now();
+  const [view, setView] = useState(() => {
+    const d = new Date(base);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+  const dows = ['日', '一', '二', '三', '四', '五', '六'];
+  const startDow = new Date(view.y, view.m, 1).getDay();
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array.from({ length: startDow }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  const selDay = selectedAt ? new Date(selectedAt).getDate() : null;
+  const selMonth = selectedAt ? new Date(selectedAt).getMonth() : null;
+  const selYear = selectedAt ? new Date(selectedAt).getFullYear() : null;
+  const monthLabel = `${view.y}年${view.m + 1}月`;
+
+  return (
+    <div className="reminder-cal">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span className="cal-label">{monthLabel}</span>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }))}
+            style={calNavStyle}
+            aria-label="上个月"
+          >‹</button>
+          <button
+            type="button"
+            onClick={() => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }))}
+            style={calNavStyle}
+            aria-label="下个月"
+          >›</button>
+        </div>
+      </div>
+      <div className="cal-days">
+        {dows.map((d) => <div key={d} className="cal-dow">{d}</div>)}
+        {cells.map((day, idx) => {
+          if (day == null) return <div key={`e-${idx}`} className="cal-day empty" />;
+          const isSel = selDay === day && selMonth === view.m && selYear === view.y;
+          return (
+            <div
+              key={day}
+              className={`cal-day ${isSel ? 'sel' : ''}`}
+              onClick={() => onPickDay(new Date(view.y, view.m, day).getTime())}
+            >
+              {day}
+            </div>
+          );
+        })}
+      </div>
+      <div className="cal-time-row">
+        <input
+          type="time"
+          value={toTimeValue(hour, minute)}
+          onChange={(e) => {
+            const [h, m] = e.target.value.split(':').map((n) => Number(n));
+            if (!Number.isNaN(h)) onHourChange(h);
+            if (!Number.isNaN(m)) onMinuteChange(m);
+          }}
+          aria-label="自定义提醒时刻"
+        />
+      </div>
+    </div>
+  );
+}
+
+const calNavStyle: React.CSSProperties = {
+  width: 20, height: 20, border: 'none', background: 'transparent', color: 'var(--text-400)',
+  cursor: 'pointer', borderRadius: 6, fontSize: 14, lineHeight: 1, padding: 0,
+};
+
+/** 由标题片段提取纯任务名：去除日期/时间段/时辰等自然语言修饰，仅保留命名主体（如"九月九日登山"→"登山"） */
+function cleanPlusTitle(s: string): string {
+  let t = s;
+  // 具体日期：x月x日/x月x号（中文数字或阿拉伯数字）
+  t = t.replace(/[0-9一二两三四五六七八九十]{1,2}\s*月\s*[0-9一二两三四五六七八九十]{1,2}\s*(?:日|号|天)?/g, '');
+  t = t.replace(/\d{4}\s*年/g, '');
+  // 相对日期
+  t = t.replace(/今天|今日|明天|明日|后天|大后天|月底/g, '');
+  t = t.replace(/(?:下个?周|周|星期|礼拜)\s*[一二三四五六日天]/g, '');
+  // 时间段 / 时辰
+  t = t.replace(/早晨|清晨|早上|上午|下午|晚上|傍晚|凌晨|中午|晚间|夜晚/g, '');
+  t = t.replace(/[点时:：]/g, '');
+  t = t.replace(/的/g, '');
+  return t.trim();
+}
+
+/** 解析"任务+属性"串联输入（+ 分隔）：提取重复规则、提前提醒偏移，并净化出任务标题。
+ * 无 "+" 时返回 null（保持原有输入即标题的行为）。 */
+function parsePlusProperties(text: string): {
+  cleanTitle: string; repeatRule: TaskRepeatRule | null; repeatIntervalDays: number | null; reminderOffsets: string[];
+} | null {
+  if (!text.includes('+')) return null;
+  const segs = text.split('+').map((s) => s.trim()).filter(Boolean);
+  if (segs.length === 0) return null;
+  let repeatRule: TaskRepeatRule | null = null;
+  let repeatIntervalDays: number | null = null;
+  let reminderOffsets: string[] = [];
+  const kept: string[] = [];
+  for (const seg of segs) {
+    // 重复规则
+    if (/每天|每日|天天/.test(seg)) { repeatRule = 'daily'; continue; }
+    if (/每周|每星期|每礼拜/.test(seg)) { repeatRule = 'weekly'; continue; }
+    if (/每月|每个月/.test(seg)) { repeatRule = 'monthly'; continue; }
+    if (/每年|每一年/.test(seg)) { repeatRule = 'yearly'; continue; }
+    const cm = seg.match(/每(?:隔)?\s*(\d+)\s*天/);
+    if (cm) { repeatRule = 'custom'; repeatIntervalDays = Math.max(1, parseInt(cm[1], 10)); continue; }
+    // 提前提醒偏移
+    if (/提前|提醒|当天/.test(seg) && /(?:天|小时|当天)/.test(seg)) {
+      const o: string[] = [];
+      if (/提前\s*1\s*天|提前一天|提前1日|当天提醒/.test(seg)) o.push('1d');
+      if (/提前\s*3\s*天|提前三天|提前3日/.test(seg)) o.push('3d');
+      if (/提前\s*6\s*小时|提前6小时/.test(seg)) o.push('6h');
+      if (o.length > 0) { reminderOffsets = o; continue; }
+    }
+    kept.push(seg);
+  }
+  const cleanTitle = cleanPlusTitle(kept.join(' '));
+  return { cleanTitle: cleanTitle || text.trim(), repeatRule, repeatIntervalDays, reminderOffsets };
+}
+
+function startOfDay(ts: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** 新建任务 · 双目标日历：左键=截止（深蓝）/ 右键=提醒（浅蓝，支持多选）。
+ * 移动端无右键，因此提供「截止 / 提醒」模式切换：点击模式决定单击作用。桌面端右键仍可直接设提醒。 */
+function DualCalendar({
+  deadline,
+  reminderTimes,
+  onPickDeadline,
+  onPickReminder,
+}: {
+  deadline: number | null;
+  reminderTimes: number[];
+  onPickDeadline: (dayTs: number) => void;
+  onPickReminder: (dayTs: number) => void;
+}) {
+  const base = deadline ?? reminderTimes[0] ?? Date.now();
+  const [view, setView] = useState(() => {
+    const d = new Date(base);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+  // 选择模式：'deadline' 单击=截止；'reminder' 单击=提醒（移动端无右键，必须显式切换）
+  const [pickMode, setPickMode] = useState<'deadline' | 'reminder'>('deadline');
+  const dows = ['日', '一', '二', '三', '四', '五', '六'];
+  const startDow = new Date(view.y, view.m, 1).getDay();
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array.from({ length: startDow }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  const monthLabel = `${view.y}年${view.m + 1}月`;
+
+  return (
+    <div className="reminder-cal">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+        <span className="cal-label">{monthLabel}</span>
+        {/* 截止/提醒 模式切换（移动端核心交互：单击即设置对应目标） */}
+        <div style={{ display: 'flex', gap: 2, padding: 2, background: 'var(--background-100)', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <button
+            type="button"
+            onClick={() => setPickMode('deadline')}
+            style={{
+              border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+              padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-sans)',
+              background: pickMode === 'deadline' ? 'var(--brand-700)' : 'transparent',
+              color: pickMode === 'deadline' ? '#fff' : 'var(--text-500)',
+            }}
+          >截止</button>
+          <button
+            type="button"
+            onClick={() => setPickMode('reminder')}
+            style={{
+              border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+              padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-sans)',
+              background: pickMode === 'reminder' ? 'var(--brand-400)' : 'transparent',
+              color: pickMode === 'reminder' ? '#fff' : 'var(--text-500)',
+            }}
+          >提醒</button>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }))}
+            style={calNavStyle}
+            aria-label="上个月"
+          >‹</button>
+          <button
+            type="button"
+            onClick={() => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }))}
+            style={calNavStyle}
+            aria-label="下个月"
+          >›</button>
+        </div>
+      </div>
+      <div className="cal-days">
+        {dows.map((d) => <div key={d} className="cal-dow">{d}</div>)}
+        {cells.map((dayNum, idx) => {
+          if (dayNum == null) return <div key={`e-${idx}`} className="cal-day empty" />;
+          const ts = new Date(view.y, view.m, dayNum).getTime();
+          const isDl = deadline != null && startOfDay(deadline) === startOfDay(ts);
+          const isRm = reminderTimes.some((rt) => startOfDay(rt) === startOfDay(ts));
+          return (
+            <div
+              key={dayNum}
+              className={`cal-day ${isDl ? 'dl' : ''} ${isRm ? 'rm' : ''}`}
+              onClick={() => (pickMode === 'deadline' ? onPickDeadline(ts) : onPickReminder(ts))}
+              onContextMenu={(e) => { e.preventDefault(); onPickReminder(ts); }}
+              title={isDl && isRm ? '截止+提醒(再点取消)' : isDl ? '截止(再点取消)' : isRm ? '提醒(再点取消)' : pickMode === 'deadline' ? '单击=截止' : '单击=提醒'}
+            >
+              {dayNum}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** 新建任务弹窗（Quick Capture，对齐设计稿 side-0 quick-capture / modeTime 三列布局） */
+export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0 }: QuickCaptureProps) {
   const [title, setTitle] = useState('');
   const [remark, setRemark] = useState('');
   const [folderId, setFolderId] = useState<string | null>(initialFolderId);
   const [folderOpen, setFolderOpen] = useState(false);
-  const [dateOpen, setDateOpen] = useState(false);
   /** 手动选择的截止时间；null 时回退到标题自然语言解析。提供 initialDate 时预填（归一化为当天 00:00） */
   const [manualDeadline, setManualDeadline] = useState<number | null>(() =>
     initialDate !== undefined ? new Date(initialDate).setHours(0, 0, 0, 0) : null
   );
-  /** 手动选择的开始时间面板 */
-  const [startOpen, setStartOpen] = useState(false);
-  /** 手动选择的开始时间；null 表示无开始日期 */
-  const [manualStart, setManualStart] = useState<number | null>(null);
-  const [reminderAt, setReminderAt] = useState<number | null>(null);
-  const [reminderOpen, setReminderOpen] = useState(false);
+  /** 提前提醒偏移多选（'1d'/'3d'/'6h'），依赖截止时间 */
+  const [reminderOffsets, setReminderOffsets] = useState<string[]>([]);
+  /** 多选提醒时刻（绝对毫秒时间戳）：日历右键可设置任意多个，每个时刻对应一个独立气泡分别设置 */
+  const [reminderTimes, setReminderTimes] = useState<number[]>([]);
+  /** 时刻气泡：左键设置截止后浮现，供填写具体截止时刻 */
+  const [deadlineEditOpen, setDeadlineEditOpen] = useState(false);
   const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(null);
   const [repeatIntervalDays, setRepeatIntervalDays] = useState<number | null>(null);
   const [important, setImportant] = useState(false);
@@ -67,23 +308,125 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
 
   const selectedFolder = flatFolders.find((f) => f.id === folderId);
 
-  // 自然语言日期解析（实时，标题变化即更新）
-  const parsedDeadline = useMemo(() => parseNaturalDateTime(title), [title]);
-  // 手动选择优先，其次标题解析
-  const effectiveDeadline = manualDeadline ?? parsedDeadline;
+  // 自然语言日期解析（实时，标题变化即更新），仅日期时按默认截止时刻补全
+  const parsedDeadline = useMemo(
+    () => applyDefaultDeadlineTime(parseNaturalDateTime(title), defaultDeadlineHour, defaultDeadlineMinute),
+    [title, defaultDeadlineHour, defaultDeadlineMinute]
+  );
+  // 手动选择优先，其次标题解析；手动选择日期快捷项时同样补默认时刻
+  const effectiveDeadline = manualDeadline !== null
+    ? applyDefaultDeadlineTime(manualDeadline, defaultDeadlineHour, defaultDeadlineMinute)
+    : parsedDeadline;
+  const hasDeadline = effectiveDeadline !== null;
+
+  // "+"串联属性解析（如 "九月九日登山+每月重复+提前3天提醒"）：自动填充重复/提醒，并净化任务标题
+  const plusProps = useMemo(() => parsePlusProperties(title), [title]);
+  useEffect(() => {
+    if (!plusProps) return;
+    if (plusProps.repeatRule) {
+      setRepeatRule(plusProps.repeatRule);
+      setRepeatIntervalDays(plusProps.repeatIntervalDays);
+    }
+    if (plusProps.reminderOffsets.length > 0) {
+      setReminderOffsets(plusProps.reminderOffsets);
+      setReminderTimes([]);
+    }
+  }, [plusProps]);
+
+  const offsetList = useMemo(() => sanitizeOffsets(hasDeadline ? reminderOffsets : []), [reminderOffsets, hasDeadline]);
+
+  /** 选中偏移：若已有则取消，否则追加；选偏移时清空多选绝对提醒（互斥） */
+  const toggleOffset = (key: ReminderOffsetKey) => {
+    setReminderOffsets((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+    setReminderTimes([]);
+  };
+
+  /** 日历左键：设置截止时间（该天默认时刻）并浮现时刻气泡；再次点击同一截止日则取消设置 */
+  const handlePickDeadlineDay = (dayTs: number) => {
+    // 已选中的截止日 → 取消截止设置
+    if (effectiveDeadline != null && startOfDay(effectiveDeadline) === startOfDay(dayTs)) {
+      setManualDeadline(null);
+      setDeadlineEditOpen(false);
+      if (reminderTimes.length === 0) setReminderOffsets([]);
+      return;
+    }
+    const d = new Date(dayTs);
+    d.setHours(defaultDeadlineHour, defaultDeadlineMinute, 0, 0);
+    setManualDeadline(d.getTime());
+    setDeadlineEditOpen(true);
+  };
+
+  /** 日历右键：把一个提醒时刻加入多选（该天默认时刻），每个提醒对应一个独立气泡；再次点击同一天则移除该天提醒 */
+  const handlePickReminderDay = (dayTs: number) => {
+    const d = new Date(dayTs);
+    d.setHours(defaultDeadlineHour, defaultDeadlineMinute, 0, 0);
+    const ts = d.getTime();
+    // 该天已有提醒 → 取消该天所有提醒时刻
+    const hitIdx = reminderTimes
+      .map((rt, i) => (startOfDay(rt) === startOfDay(dayTs) ? i : -1))
+      .filter((i) => i >= 0);
+    if (hitIdx.length) {
+      setReminderTimes((prev) => prev.filter((_, i) => !hitIdx.includes(i)));
+      return;
+    }
+    setReminderTimes((prev) => [...prev, ts]);
+  };
+
+  /** 截止时刻气泡变更（仅改时分，日期保留） */
+  const handleDeadlineTimeChange = (v: string) => {
+    const [h, m] = v.split(':').map((n) => Number(n));
+    if (manualDeadline == null || Number.isNaN(h) || Number.isNaN(m)) return;
+    const d = new Date(manualDeadline);
+    d.setHours(h, m, 0, 0);
+    setManualDeadline(d.getTime());
+  };
+
+  /** 指定提醒时刻的时分变更（仅改时分，日期保留），其余带选择提醒不动 */
+  const handleReminderTimeChange = (idx: number, v: string) => {
+    const [h, m] = v.split(':').map((n) => Number(n));
+    if (Number.isNaN(h) || Number.isNaN(m)) return;
+    setReminderTimes((prev) => prev.map((rt, i) => {
+      if (i !== idx) return rt;
+      const d = new Date(rt);
+      d.setHours(h, m, 0, 0);
+      return d.getTime();
+    }));
+  };
+
+  /** 删除一个提醒时刻（独立气泡内 X） */
+  const removeReminderAt = (idx: number) => {
+    setReminderTimes((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  /** 由时间戳提取 HH:mm（用于时刻气泡） */
+  const timeOf = (ts: number | null): string => {
+    if (ts == null) return '';
+    const d = new Date(ts);
+    return toTimeValue(d.getHours(), d.getMinutes());
+  };
 
   const handleCreate = () => {
     if (!title.trim()) return;
-    onCreate(title.trim(), folderId, {
+    // 互斥：设了多选提醒时刻则不携带偏移（单任务只需一种提醒配置）；无截止时间不保留偏移
+    const customTimes = reminderTimes.length > 0;
+    // "+"串联输入时使用净化后的纯标题（如 "九月九日登山+每月重复+提前3天提醒" → "登山"）
+    const finalTitle = plusProps ? (plusProps.cleanTitle || title.trim()) : title.trim();
+    onCreate(finalTitle, folderId, {
       priority: important ? 'important' : 'normal',
-      startDate: manualStart,
       deadline: effectiveDeadline,
       remark: remark.trim(),
-      reminderAt: effectiveDeadline && reminderAt !== null ? reminderAt : null,
+      reminderOffsets: customTimes ? [] : (hasDeadline ? offsetList : []),
+      reminderTimes: customTimes ? reminderTimes : [],
       repeatRule: effectiveDeadline ? repeatRule : null,
       repeatIntervalDays: effectiveDeadline && repeatRule === 'custom' ? repeatIntervalDays : null,
     });
   };
+
+  const reminderCount = offsetList.length + reminderTimes.length;
+
+  const chipActive = (active: boolean) => ({
+    className: active ? 'chip active' : 'chip',
+  });
 
   return (
     <div style={{
@@ -101,7 +444,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       {/* Popup */}
       <div style={{
         position: 'relative',
-        width: 560,
+        width: 620,
         maxWidth: 'calc(100% - 32px)',
         borderRadius: 'calc(var(--radius)*1.2)',
         background: 'rgba(255,255,255,0.82)',
@@ -112,426 +455,234 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
         overflowY: 'auto',
         color: 'var(--foreground)',
       }}>
-        {/* Option buttons row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 24px 0', flexWrap: 'nowrap' }}>
-          {/* 文件夹选择 */}
-          <div
-            onClick={() => { setFolderOpen(!folderOpen); setReminderOpen(false); setStartOpen(false); setDateOpen(false); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-              background: 'var(--brand-50)', border: '1px solid var(--brand-200)', cursor: 'pointer', fontSize: 12.5, color: 'var(--primary)',
-            }}
-          >
-            <FolderIcon style={{ width: 13, height: 13, color: 'var(--primary)', flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{selectedFolder?.name ?? '选择文件夹'}</span>
-            <ChevronDown style={{ width: 11, height: 11, color: 'var(--primary)', flexShrink: 0 }} />
-          </div>
-
-          {/* 提醒（需先有截止时间，选择 x月x日x时x分） */}
-          <div
-            onClick={() => setReminderOpen(!reminderOpen)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-              background: (reminderAt !== null || reminderOpen) ? 'var(--brand-50)' : 'transparent',
-              border: `1px solid ${(reminderAt !== null || reminderOpen) ? 'var(--brand-200)' : 'var(--border)'}`,
-              cursor: 'pointer', fontSize: 12.5,
-              color: (reminderAt !== null || reminderOpen) ? 'var(--primary)' : 'var(--muted-foreground)',
-            }}
-          >
-            <Bell style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{reminderAt !== null ? formatDeadline(reminderAt) : '提醒'}</span>
-            {(reminderAt !== null || reminderOpen) && <Check style={{ width: 12, height: 12, flexShrink: 0 }} />}
-          </div>
-
-          {/* 重要 */}
-          <div
-            onClick={() => setImportant(!important)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-              background: important ? 'color-mix(in srgb, var(--chart-3) 8%, transparent)' : 'transparent',
-              border: `1px solid ${important ? 'color-mix(in srgb, var(--chart-3) 25%, transparent)' : 'var(--border)'}`,
-              cursor: 'pointer', fontSize: 12.5,
-              color: important ? 'var(--chart-3)' : 'var(--muted-foreground)',
-              marginLeft: 'auto',
-            }}
-          >
-            <Star style={{ width: 13, height: 13, fill: important ? 'var(--chart-3)' : 'none', flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>重要</span>
-            {important && <Check style={{ width: 12, height: 12, flexShrink: 0 }} />}
-          </div>
-        </div>
-
-        {/* 展开面板：文件夹选择 */}
-        {folderOpen && (
-          <div style={{ padding: '10px 24px 0' }}>
-            <div style={{
-              borderRadius: 14,
-              background: 'rgba(255,255,255,0.78)',
-              backdropFilter: 'blur(40px) saturate(1.8)',
-              WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
-              boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
-              padding: 6,
-              display: 'inline-flex',
-              flexDirection: 'column',
-            }}>
-              {flatFolders.map((f) => (
-                <div
-                  key={f.id ?? 'unclassified'}
-                  onClick={() => { setFolderId(f.id); setFolderOpen(false); }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-                    cursor: 'pointer', fontSize: 12.5, paddingLeft: 12 + f.depth * 14,
-                    color: f.id === folderId ? 'var(--primary)' : 'var(--muted-foreground)',
-                    background: f.id === folderId ? 'var(--brand-50)' : 'transparent',
-                  }}
-                >
-                  <FolderIcon style={{ width: 14, height: 14, flexShrink: 0 }} />
-                  <span style={{ fontWeight: f.id === folderId ? 600 : 500 }}>{f.name}</span>
-                  {f.id === folderId && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 展开面板：提醒（按截止时间选具体时刻，未设截止则提示） */}
-        {reminderOpen && (
-          <div style={{ padding: '10px 24px 0' }}>
-            <div style={{
-              borderRadius: 14,
-              background: 'rgba(255,255,255,0.78)',
-              backdropFilter: 'blur(40px) saturate(1.8)',
-              WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
-              boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
-              padding: 6,
-              display: 'inline-flex',
-              flexDirection: 'column',
-            }}>
-              <div style={{ padding: '7px 12px', fontSize: 12, color: effectiveDeadline ? 'var(--primary)' : 'var(--destructive)', fontWeight: 600 }}>
-                {effectiveDeadline ? `截止时间：${formatDeadline(effectiveDeadline)}（提醒默认等同截止）` : '请先设置截止时间，才能设置提醒'}
-              </div>
-              <div style={{ padding: '4px 12px 8px' }}>
-                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>提醒时刻（x月x日x时x分）</div>
-                <input
-                  type="datetime-local"
-                  disabled={!effectiveDeadline}
-                  value={reminderAt !== null ? toLocalInputValue(reminderAt) : (effectiveDeadline ? toLocalInputValue(effectiveDeadline) : '')}
-                  onChange={(e) => { if (e.target.value) setReminderAt(new Date(e.target.value).getTime()); }}
-                  style={{
-                    width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
-                    border: '1px solid var(--input)', borderRadius: 8,
-                    background: 'var(--background)', color: 'inherit',
-                    fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)', opacity: effectiveDeadline ? 1 : 0.5,
-                  }}
-                />
-                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                  <button
-                    onClick={() => { if (effectiveDeadline) { setReminderAt(effectiveDeadline); setReminderOpen(false); } }}
-                    style={{ height: 26, padding: '0 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 999, background: 'var(--muted)', color: 'var(--foreground)', cursor: 'pointer', fontWeight: 600 }}
-                  >提醒=截止</button>
-                  <button
-                    onClick={() => { setReminderAt(null); setReminderOpen(false); }}
-                    style={{ height: 26, padding: '0 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 999, background: 'transparent', color: 'var(--muted-foreground)', cursor: 'pointer' }}
-                  >无提醒</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 输入区域 */}
-        <div style={{ padding: '14px 24px 0' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            width: '100%', height: 52, padding: '0 16px',
-            border: '1px solid var(--input)', borderRadius: 'var(--radius)',
-            background: 'var(--background)', color: 'var(--foreground)',
-            boxShadow: 'var(--shadow-xs)',
-          }}>
-            <Plus style={{ width: 16, height: 16, color: 'var(--icon-muted)', flexShrink: 0 }} />
-            <input
-              type="text"
-              name="task-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
-              placeholder="输入任务，自动解析日期..."
-              autoFocus
-              style={{
-                flex: 1, border: 0, outline: 0, background: 'transparent',
-                color: 'inherit', font: 'inherit', fontSize: 15, fontWeight: 500,
-              }}
-            />
-          </div>
-        </div>
-
-        {/* 备注输入 */}
-        <div style={{ padding: '10px 24px 0' }}>
-          <textarea
-            value={remark}
-            onChange={(e) => setRemark(e.target.value)}
-            placeholder="备注（可选）"
-            rows={2}
-            style={{
-              width: '100%', padding: '10px 12px', boxSizing: 'border-box', resize: 'none',
-              border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
-              background: 'var(--background)', color: 'inherit',
-              fontSize: 13, outline: 'none', fontFamily: 'var(--font-sans)', lineHeight: 1.5,
-            }}
-          />
-        </div>
-
-        {/* 解析日期预览 */}
-        {parsedDeadline && (
-          <div style={{ padding: '8px 24px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Sparkles style={{ width: 13, height: 13, color: 'var(--primary)', flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              识别到: {formatDeadlineYMD(parsedDeadline)}
-            </span>
-          </div>
-        )}
-
-        {/* 时间设置：开始时间 + 截止时间（置于输入框下方，弹窗可完整显示） */}
-        <div style={{ padding: '14px 24px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* 开始时间 */}
-          <div
-            onClick={() => { setStartOpen(!startOpen); setDateOpen(false); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-              background: manualStart ? 'var(--brand-50)' : 'transparent',
-              border: `1px solid ${manualStart ? 'var(--brand-200)' : 'var(--border)'}`,
-              cursor: 'pointer', fontSize: 12.5,
-              color: manualStart ? 'var(--primary)' : 'var(--muted-foreground)',
-            }}
-          >
-            <CalendarClock style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{manualStart ? formatDeadline(manualStart) : '开始时间'}</span>
-            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
-          </div>
-
-          {/* 截止时间（手动选择或显示解析日期） */}
-          <div
-            onClick={() => { setDateOpen(!dateOpen); setStartOpen(false); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 10,
-              background: effectiveDeadline ? 'var(--brand-50)' : 'transparent',
-              border: `1px solid ${effectiveDeadline ? 'var(--brand-200)' : 'var(--border)'}`,
-              cursor: 'pointer', fontSize: 12.5,
-              color: effectiveDeadline ? 'var(--primary)' : 'var(--muted-foreground)',
-            }}
-          >
-            <CalendarIcon style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span style={{ fontWeight: 600 }}>{effectiveDeadline ? formatDeadline(effectiveDeadline) : '截止时间'}</span>
-            <ChevronDown style={{ width: 11, height: 11, flexShrink: 0 }} />
-          </div>
-        </div>
-
-        {/* 重复规则（需先有截止时间） */}
-        <div style={{ padding: '10px 24px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>重复</span>
-          <select
-            value={repeatRule ?? ''}
-            onChange={(e) => setRepeatRule((e.target.value || null) as TaskRepeatRule | null)}
-            style={{
-              height: 32, padding: '0 10px', boxSizing: 'border-box',
-              border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
-              background: 'var(--background)', color: 'inherit',
-              fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
-            }}
-            aria-label="重复规则"
-          >
-            <option value="">无（不重复）</option>
-            <option value="daily">每天</option>
-            <option value="weekly">每周（按截止日星期）</option>
-            <option value="monthly">每月（按截止日）</option>
-            <option value="yearly">每年（按截止日）</option>
-            <option value="custom">自定义（每 N 天）</option>
-          </select>
-          {repeatRule === 'custom' && (
-            <input
-              type="number" min={1}
-              value={repeatIntervalDays ?? ''}
-              onChange={(e) => setRepeatIntervalDays(e.target.value ? Number(e.target.value) : null)}
-              placeholder="天数"
-              style={{
-                width: 70, height: 32, padding: '0 8px', boxSizing: 'border-box',
-                border: '1px solid var(--input)', borderRadius: 'calc(var(--radius) * 0.8)',
-                background: 'var(--background)', color: 'inherit',
-                fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
-              }}
-              aria-label="重复间隔天数"
-            />
-          )}
-          {repeatRule && !effectiveDeadline && (
-            <span style={{ fontSize: 11, color: 'var(--destructive)' }}>先设截止时间</span>
-          )}
-        </div>
-
-        {/* 展开面板：开始时间选择 */}
-        {startOpen && (
-          <div style={{ padding: '10px 24px 0' }}>
-            <div style={{
-              borderRadius: 14,
-              background: 'rgba(255,255,255,0.78)',
-              backdropFilter: 'blur(40px) saturate(1.8)',
-              WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
-              boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
-              padding: 6,
-              display: 'inline-flex',
-              flexDirection: 'column',
-            }}>
-              {DATE_QUICK_START.map((label) => {
-                const raw = parseNaturalDateTime(label);
-                // 开始时间快捷项归一化为当日 00:00（开始日期语义）
-                const ts = raw !== null ? new Date(raw).setHours(0, 0, 0, 0) : null;
-                const active = manualStart === ts;
-                return (
-                  <div
-                    key={label}
-                    onClick={() => { setManualStart(ts); setStartOpen(false); }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-                      cursor: 'pointer', fontSize: 12.5,
-                      color: active ? 'var(--primary)' : 'var(--muted-foreground)',
-                      background: active ? 'var(--brand-50)' : 'transparent',
-                    }}
-                  >
-                    <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
-                    {ts && (
-                      <span style={{ fontSize: 11, opacity: 0.8 }}>{formatDeadline(ts)}</span>
-                    )}
-                    {active && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
-                  </div>
-                );
-              })}
-              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
-              {/* 自定义时间 */}
-              <div style={{ padding: '7px 12px' }}>
-                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
-                <input
-                  type="datetime-local"
-                  value={manualStart !== null ? toLocalInputValue(manualStart) : ''}
-                  onChange={(e) => {
-                    if (e.target.value) setManualStart(new Date(e.target.value).getTime());
-                  }}
-                  style={{
-                    width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
-                    border: '1px solid var(--input)', borderRadius: 8,
-                    background: 'var(--background)', color: 'inherit',
-                    fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
-                  }}
-                />
-              </div>
-              {/* 清除开始日期 */}
+        <div className="qc-scope">
+          <div className="qc-body">
+            {/* 顶部选项行：文件夹 / 重要（提醒设置位于下方时间卡片，分类旁不再放提醒气泡） */}
+            <div className="opt-row">
               <div
-                onClick={() => { setManualStart(null); setStartOpen(false); }}
+                onClick={() => { setFolderOpen(!folderOpen); }}
+                {...chipActive(!!selectedFolder?.name || folderOpen)}
+              >
+                <FolderIcon />
+                <span style={{ fontWeight: 600 }}>{selectedFolder?.name ?? '未分类'}</span>
+                <ChevronDown />
+              </div>
+              <div
+                onClick={() => setImportant(!important)}
+                className="chip"
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-                  cursor: 'pointer', fontSize: 12.5,
-                  color: manualStart === null ? 'var(--primary)' : 'var(--muted-foreground)',
-                  background: manualStart === null ? 'var(--brand-50)' : 'transparent',
+                  marginLeft: 'auto',
+                  background: important ? 'color-mix(in srgb, var(--chart-3) 8%, transparent)' : 'transparent',
+                  border: `1px solid ${important ? 'color-mix(in srgb, var(--chart-3) 25%, transparent)' : 'var(--border)'}`,
+                  color: important ? 'var(--chart-3)' : 'var(--muted-foreground)',
                 }}
               >
-                <span style={{ fontWeight: manualStart === null ? 600 : 500 }}>无开始日期</span>
-                {manualStart === null && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+                <Star style={{ fill: important ? 'var(--chart-3)' : 'none' }} />
+                <span style={{ fontWeight: 600 }}>重要</span>
+                {important && <Check style={{ width: 12, height: 12 }} />}
               </div>
             </div>
-          </div>
-        )}
 
-        {/* 展开面板：截止时间选择 */}
-        {dateOpen && (
-          <div style={{ padding: '10px 24px 0' }}>
-            <div style={{
-              borderRadius: 14,
-              background: 'rgba(255,255,255,0.78)',
-              backdropFilter: 'blur(40px) saturate(1.8)',
-              WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
-              boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
-              padding: 6,
-              display: 'inline-flex',
-              flexDirection: 'column',
-            }}>
-              {DATE_QUICK_DEADLINE.map((label) => {
-                const ts = parseNaturalDateTime(label);
-                const active = manualDeadline === ts;
-                return (
-                  <div
-                    key={label}
-                    onClick={() => { setManualDeadline(ts); setDateOpen(false); }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-                      cursor: 'pointer', fontSize: 12.5,
-                      color: active ? 'var(--primary)' : 'var(--muted-foreground)',
-                      background: active ? 'var(--brand-50)' : 'transparent',
-                    }}
-                  >
-                    <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
-                    {ts && (
-                      <span style={{ fontSize: 11, opacity: 0.8 }}>{formatDeadline(ts)}</span>
-                    )}
-                    {active && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+            {/* 展开面板：文件夹选择 */}
+            {folderOpen && (
+              <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 420, damping: 20, mass: 0.9 }} style={{ paddingTop: 10 }}>
+                <div style={{
+                  borderRadius: 14, background: 'rgba(255,255,255,0.78)', backdropFilter: 'blur(40px) saturate(1.8)',
+                  WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+                  boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
+                  padding: 6, display: 'inline-flex', flexDirection: 'column',
+                }}>
+                  {flatFolders.map((f) => (
+                    <div
+                      key={f.id ?? 'unclassified'}
+                      onClick={() => { setFolderId(f.id); setFolderOpen(false); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
+                        cursor: 'pointer', fontSize: 12.5, paddingLeft: 12 + f.depth * 14,
+                        color: f.id === folderId ? 'var(--primary)' : 'var(--muted-foreground)',
+                        background: f.id === folderId ? 'var(--brand-50)' : 'transparent',
+                      }}
+                    >
+                      <FolderIcon style={{ width: 14, height: 14, flexShrink: 0 }} />
+                      <span style={{ fontWeight: f.id === folderId ? 600 : 500 }}>{f.name}</span>
+                      {f.id === folderId && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* 任务输入（置于时间区域上方） */}
+            <div className="task-input">
+              <Plus />
+              <input
+                type="text"
+                name="task-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+                placeholder="输入任务，自动解析日期..."
+                autoFocus
+              />
+            </div>
+
+            {/* 截止时间 & 提醒：共用以太历（左键=截止 / 右键=提醒），气泡分栏标明 */}
+            <div className="field-card">
+              <div className="card-head">
+                <CalendarDays />
+                <span className="t">截止时间 & 提醒</span>
+                <span className={`badge ${hasDeadline || reminderCount > 0 ? 'ok' : 'warn'}`}>{hasDeadline || reminderCount > 0 ? '已设置' : '未设置'}</span>
+              </div>
+
+              {/* 分栏：截止时间（左） | 提醒时间（右） */}
+              <div className="dy-cols">
+                {/* 截止时间栏 */}
+                <div className="dy-col">
+                  <div className="dy-head"><span className="dl-dot" />截止时间</div>
+                  <div className="mini-chips verse">
+                    {DATE_QUICK_DEADLINE.map((label) => {
+                      const ts = applyDefaultDeadlineTime(parseNaturalDateTime(label), defaultDeadlineHour, defaultDeadlineMinute);
+                      const active = manualDeadline !== null && applyDefaultDeadlineTime(manualDeadline, defaultDeadlineHour, defaultDeadlineMinute) === ts;
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          className={`mini-chip ${active ? 'active' : ''}`}
+                          onClick={() => { setManualDeadline(ts); setDeadlineEditOpen(true); }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })}
-              <div style={{ borderTop: '1px solid var(--border)', margin: '4px 8px' }} />
-              {/* 自定义时间 */}
-              <div style={{ padding: '7px 12px' }}>
-                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
-                <input
-                  type="datetime-local"
-                  value={manualDeadline !== null ? toLocalInputValue(manualDeadline) : ''}
-                  onChange={(e) => {
-                    if (e.target.value) setManualDeadline(new Date(e.target.value).getTime());
-                  }}
-                  style={{
-                    width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
-                    border: '1px solid var(--input)', borderRadius: 8,
-                    background: 'var(--background)', color: 'inherit',
-                    fontSize: 12.5, outline: 'none', fontFamily: 'var(--font-sans)',
-                  }}
-                />
+                  {deadlineEditOpen && (
+                    <div className="time-bubble" onClick={() => setDeadlineEditOpen(true)}>
+                      <span className="dl-dot" />
+                      <span className="tb-label">截止时刻</span>
+                      <input
+                        type="time"
+                        value={timeOf(manualDeadline)}
+                        onChange={(e) => handleDeadlineTimeChange(e.target.value)}
+                        aria-label="截止具体时刻"
+                      />
+                      <button type="button" onClick={() => { setManualDeadline(null); setDeadlineEditOpen(false); }} aria-label="取消截止时刻"><X /></button>
+                    </div>
+                  )}
+                </div>
+                {/* 提醒时间栏 */}
+                <div className="dy-col">
+                  <div className="dy-head"><span className="rm-dot" />提醒时间</div>
+                  <div className="mini-chips verse">
+                    {REMINDER_OFFSET_OPTIONS.map((opt) => {
+                      const active = offsetList.includes(opt.key);
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          className={`mini-chip ${active ? 'active' : ''}`}
+                          disabled={!hasDeadline}
+                          onClick={() => toggleOffset(opt.key)}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="rem-indicator">{reminderTimes.length ? `${reminderTimes.length} 个提醒，可分别设置时分` : '未设提醒（右键日历添加）'}</div>
+                  {/* 每个提醒时刻一个独立气泡：标签显示日期，可分别设置时分、单独删除 */}
+                  {reminderTimes.map((rt, i) => (
+                    <div key={`${rt}-${i}`} className="time-bubble" style={{ marginTop: 6 }}>
+                      <span className="rm-dot" />
+                      <span className="tb-label">{formatCompletedAt(rt)}</span>
+                      <input
+                        type="time"
+                        value={timeOf(rt)}
+                        onChange={(e) => handleReminderTimeChange(i, e.target.value)}
+                        aria-label={`第${i + 1}个提醒具体时刻`}
+                      />
+                      <button type="button" onClick={() => removeReminderAt(i)} aria-label={`删除第${i + 1}个提醒`}><X /></button>
+                    </div>
+                  ))}
+                </div>
               </div>
-              {/* 清除日期 */}
-              <div
-                onClick={() => { setManualDeadline(null); setDateOpen(false); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10,
-                  cursor: 'pointer', fontSize: 12.5,
-                  color: manualDeadline === null ? 'var(--primary)' : 'var(--muted-foreground)',
-                  background: manualDeadline === null ? 'var(--brand-50)' : 'transparent',
-                }}
-              >
-                <span style={{ fontWeight: manualDeadline === null ? 600 : 500 }}>无截止日期</span>
-                {manualDeadline === null && <Check style={{ width: 14, height: 14, marginLeft: 'auto', flexShrink: 0 }} />}
+
+              <DualCalendar
+                deadline={effectiveDeadline}
+                reminderTimes={reminderTimes}
+                onPickDeadline={handlePickDeadlineDay}
+                onPickReminder={handlePickReminderDay}
+              />
+
+              <div style={{ fontSize: 10.5, color: 'var(--text-400)', marginTop: 8, lineHeight: 1.5 }}>
+                切换「截止/提醒」模式后单击日期（桌面端也可右键直接设提醒）· 再点已选日期可取消
+                {!hasDeadline && <span> · 提前提醒需先设截止时间</span>}
               </div>
             </div>
-          </div>
-        )}
 
-        {/* 操作按钮 */}
-        <div style={{ padding: '16px 24px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <button
-            onClick={onClose}
-            style={{
-              height: 36, fontSize: 13, color: 'var(--muted-foreground)', padding: '0 4px',
-              border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-sans)',
-            }}
-          >
-            取消
-          </button>
-          <button
-            onClick={handleCreate}
-            disabled={!title.trim()}
-            style={{
-              height: 40, padding: '0 24px', fontSize: 14, fontWeight: 600,
-              borderRadius: 999, background: 'var(--primary)', color: 'var(--primary-foreground)',
-              border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)',
-              opacity: title.trim() ? 1 : 0.42,
-            }}
-          >
-            创建任务
-          </button>
+            {/* 备注 */}
+            <textarea
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              placeholder="备注（可选）"
+              rows={1}
+              aria-label="备注"
+              style={{
+                width: '100%', marginTop: 10, padding: '8px 12px', boxSizing: 'border-box', resize: 'none',
+                border: '1px solid var(--input)', borderRadius: 10, background: '#fff', color: 'inherit',
+                fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)', lineHeight: 1.4,
+              }}
+            />
+
+            {/* 重复规则（需先有截止时间） */}
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>重复</span>
+              <select
+                value={repeatRule ?? ''}
+                onChange={(e) => setRepeatRule((e.target.value || null) as TaskRepeatRule | null)}
+                style={{
+                  height: 30, padding: '0 8px', boxSizing: 'border-box',
+                  border: '1px solid var(--input)', borderRadius: 8, background: '#fff', color: 'inherit',
+                  fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)', flex: 1,
+                }}
+                aria-label="重复规则"
+              >
+                <option value="">无（不重复）</option>
+                <option value="daily">每天</option>
+                <option value="weekly">每周（按截止日星期）</option>
+                <option value="monthly">每月（按截止日）</option>
+                <option value="yearly">每年（按截止日）</option>
+                <option value="custom">自定义（每 N 天）</option>
+              </select>
+              {repeatRule === 'custom' && (
+                <input
+                  type="number" min={1}
+                  value={repeatIntervalDays ?? ''}
+                  onChange={(e) => setRepeatIntervalDays(e.target.value ? Number(e.target.value) : null)}
+                  placeholder="天数"
+                  style={{
+                    width: 64, height: 30, padding: '0 8px', boxSizing: 'border-box',
+                    border: '1px solid var(--input)', borderRadius: 8, background: '#fff', color: 'inherit',
+                    fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)',
+                  }}
+                  aria-label="重复间隔天数"
+                />
+              )}
+            </div>
+
+            {/* 解析日期预览（标题自然语言识别） */}
+            {hasDeadline && !manualDeadline && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  识别到: {formatDeadline(effectiveDeadline)}
+                </span>
+              </div>
+            )}
+
+            {/* 创建按钮 */}
+            <button className="create-btn" disabled={!title.trim()} onClick={handleCreate}>
+              创建任务
+            </button>
+          </div>
         </div>
       </div>
     </div>

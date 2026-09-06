@@ -32,13 +32,19 @@ export function buildSnapshot(folders: Folder[], tasks: Task[], deviceId: string
     deleted: task.deleted,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
-    // v3 补全：重复任务字段 + 提醒字段（此前同步会清空这些字段，导致重复撤销失效、提醒丢失）
+    // v3 补全：重复任务字段 + 单值提醒字段（此前同步会清空这些字段，导致重复撤销失效、提醒丢失）
     repeatRule: task.repeatRule ?? null,
     repeatIntervalDays: task.repeatIntervalDays ?? null,
     repeatSeriesId: task.repeatSeriesId ?? null,
     repeatNextId: task.repeatNextId ?? null,
     reminderAt: task.reminderAt ?? null,
     reminderFired: task.reminderFired ?? false,
+    // v4 补全：多提醒偏移字段（之前漏导，导致偏移/已触发状态跨端丢失，提醒重复）
+    reminderOffsets: task.reminderOffsets ?? [],
+    reminderFiredOffsets: task.reminderFiredOffsets ?? [],
+    // v5 补全：多选绝对提醒时刻字段
+    reminderTimes: task.reminderTimes ?? [],
+    reminderFiredTimes: task.reminderFiredTimes ?? [],
   }));
 
   return {
@@ -51,11 +57,12 @@ export function buildSnapshot(folders: Folder[], tasks: Task[], deviceId: string
 }
 
 /** 解析快照 JSON 并做基础校验；校验失败时抛出带明确信息的 Error。
- * 兼容 v1/v2/v3：
+ * 兼容 v1 ~ v5：
  * - v1 文件夹无 deleted 字段，解析时统一补 deleted=false；
  * - v1/v2 任务无重复任务/提醒字段（repeatRule/repeatSeriesId/repeatNextId/reminderAt/reminderFired 等），
  *   统一补 null/false；
- * 规范化后统一按 v3 结构返回。其他版本结构可能不兼容，直接拒绝。 */
+ * - v1/v2/v3/v4 任务无多提醒字段（reminderOffsets/reminderFiredOffsets/reminderTimes/reminderFiredTimes），统一补 []；
+ * 规范化后统一按 v5 结构返回。其他版本结构可能不兼容，直接拒绝。 */
 export function parseSnapshot(json: string): SyncSnapshot {
   let parsed: unknown;
   try {
@@ -67,11 +74,13 @@ export function parseSnapshot(json: string): SyncSnapshot {
 
   const snapshot = parsed as Partial<SyncSnapshot>;
 
-  // 版本兼容范围：v1（Folder 无 deleted）/v2（Folder 含 deleted）/v3（Task 含重复+提醒字段）均可接受，
-  // 统一规范化为 v3 结构；其他版本结构可能不兼容，静默接受会导致数据错乱。
-  if (snapshot.schemaVersion !== 1 && snapshot.schemaVersion !== 2 && snapshot.schemaVersion !== 3) {
+  // 版本兼容范围：v1（Folder 无 deleted）/v2（Folder 含 deleted）/v3（Task 含重复+单值提醒字段）
+  // /v4（Task 含多提醒偏移字段）/v5（Task 含多选提醒字段）均可接受，统一规范化为 v5 结构；
+  // 其他版本结构可能不兼容，静默接受会导致数据错乱。
+  const supported = [1, 2, 3, 4, 5];
+  if (!supported.includes(snapshot.schemaVersion ?? 0)) {
     throw new Error(
-      `同步快照版本不兼容：文件版本为 ${String(snapshot.schemaVersion)}，当前应用仅支持版本 1/2/3`
+      `同步快照版本不兼容：文件版本为 ${String(snapshot.schemaVersion)}，当前应用仅支持版本 1/2/3/4/5`
     );
   }
 
@@ -89,6 +98,7 @@ export function parseSnapshot(json: string): SyncSnapshot {
 
   // v1/v2 → v3 规范化：旧快照任务无重复任务/提醒字段，统一补默认值
   // （repeatRule/repeatIntervalDays/repeatSeriesId/repeatNextId/reminderAt → null；reminderFired → false）
+  // v1/v2/v3/v4 → v5 规范化：旧快照任务无多提醒字段，统一补 []
   snapshot.tasks.forEach((task) => {
     const t = task as unknown as Record<string, unknown>;
     if (t.repeatRule === undefined) t.repeatRule = null;
@@ -97,9 +107,13 @@ export function parseSnapshot(json: string): SyncSnapshot {
     if (t.repeatNextId === undefined) t.repeatNextId = null;
     if (t.reminderAt === undefined) t.reminderAt = null;
     if (t.reminderFired === undefined) t.reminderFired = false;
+    if (t.reminderOffsets === undefined) t.reminderOffsets = [];
+    if (t.reminderFiredOffsets === undefined) t.reminderFiredOffsets = [];
+    if (t.reminderTimes === undefined) t.reminderTimes = [];
+    if (t.reminderFiredTimes === undefined) t.reminderFiredTimes = [];
   });
 
-  // 统一按 v3 结构返回：schemaVersion 一并提升，避免下游出现"旧版本号 + v3 结构"的混合态
+  // 统一按 v5 结构返回：schemaVersion 一并提升，避免下游出现"旧版本号 + v5 结构"的混合态
   return { ...snapshot, schemaVersion: SYNC_SCHEMA_VERSION } as SyncSnapshot;
 }
 

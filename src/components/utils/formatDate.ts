@@ -15,12 +15,21 @@ function pad(n: number): string {
 }
 
 /** 是否包含具体时间：00:00:00（开始仅日期）与 23:59:00（截止仅日期）视为"仅日期"；带秒的边界时刻（如"一小时后"恰为 23:59:01）视为具体时刻 */
-function hasExplicitTime(ts: number): boolean {
+export function hasExplicitTime(ts: number): boolean {
   const d = new Date(ts);
   const h = d.getHours();
   const m = d.getMinutes();
   const s = d.getSeconds();
   return !(s === 0 && ((h === 0 && m === 0) || (h === 23 && m === 59)));
+}
+
+/** 截止时间仅填日期（未含具体时刻）时，补上默认的"时/分"。已含具体时刻则原样返回。 */
+export function applyDefaultDeadlineTime(ts: number | null, hour: number, minute: number): number | null {
+  if (ts == null) return null;
+  if (hasExplicitTime(ts)) return ts;
+  const d = new Date(ts);
+  d.setHours(hour, minute, 0, 0);
+  return d.getTime();
 }
 
 /** 相对标签：明天/后天/本周x/下周x（x=一/二/三/四/五/六/日）；超出范围返回空串（仅年月日） */

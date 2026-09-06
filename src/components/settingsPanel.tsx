@@ -478,6 +478,29 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <span style={{ ...switchThumb, transform: autoPin ? 'translateX(20px)' : 'none' }} />
                 </div>
               </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={labelStyle}>默认截止时刻</label>
+                <p style={descStyle}>新建/编辑任务时，若只选择日期而未填写具体时刻，自动补为下面的时分</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <input
+                    type="number" min={0} max={23}
+                    value={settings?.defaultDeadlineHour ?? 18}
+                    onChange={(e) => onChange({ defaultDeadlineHour: Math.max(0, Math.min(23, Number(e.target.value) || 0)) })}
+                    style={{ ...inputStyle, width: 64, textAlign: 'center' }}
+                    aria-label="默认截止小时"
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted-foreground)' }}>:</span>
+                  <input
+                    type="number" min={0} max={59}
+                    value={settings?.defaultDeadlineMinute ?? 0}
+                    onChange={(e) => onChange({ defaultDeadlineMinute: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })}
+                    style={{ ...inputStyle, width: 64, textAlign: 'center' }}
+                    aria-label="默认截止分钟"
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>时 : 分</span>
+                </div>
+              </div>
             </section>
           )}
 

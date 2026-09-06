@@ -15,76 +15,13 @@ import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
+import { parseCommand, fuzzyScore } from './components/utils/commandParser';
+import { applyDefaultDeadlineTime, formatDeadline } from './components/utils/formatDate';
 import { getDatabase } from './data';
 import { TaskService } from './services';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy, TaskRepeatRule } from './data/types';
 import { isMobile } from './data/platform';
 import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync, logSync } from './data/sync';
-
-/** 视图切换入口：桌面为顶部胶囊按钮组；移动端（Android）为顶栏下方的分段控件
- * （不再做底部固定导航——回到顶部区域、靠近顶栏操作）。isMobile 为模块级常量，
- * 两套样式互不影响，桌面视觉零回归。 */
-function ViewTabs({ mode, onChange, mobile }: {
-  mode: ViewMode;
-  onChange: (m: ViewMode) => void;
-  mobile: boolean;
-}) {
-  return (
-    <div style={mobile ? {
-      display: 'flex',
-      gap: 4,
-      flexShrink: 0,
-      padding: '6px 12px 8px',
-    } : {
-      display: 'flex', gap: 2, padding: '8px 20px 0', flexShrink: 0,
-    }}>
-      {(['list', 'calendar', 'day'] as ViewMode[]).map((m) => {
-        const active = mode === m;
-        const label = m === 'list' ? '列表' : m === 'calendar' ? '月' : '日';
-        return (
-          <button
-            key={m}
-            onClick={() => onChange(m)}
-            aria-pressed={active}
-            style={mobile ? {
-              flex: 1,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: 32,
-              border: 'none',
-              borderRadius: 9,
-              cursor: 'pointer',
-              fontFamily: 'var(--font-sans)',
-              fontSize: 13,
-              fontWeight: active ? 600 : 500,
-              color: active ? 'var(--brand-400)' : 'var(--muted-foreground)',
-              background: active ? 'color-mix(in srgb, var(--brand-400) 12%, transparent)' : 'transparent',
-              transition: 'color 0.15s ease, background-color 0.15s ease',
-            } : {
-              display: 'inline-flex',
-              alignItems: 'center',
-              height: 26,
-              padding: '0 12px',
-              borderRadius: 999,
-              border: 'none',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-sans)',
-              fontSize: 12.5,
-              fontWeight: 600,
-              color: active ? 'var(--brand-400)' : 'var(--muted-foreground)',
-              background: active ? 'color-mix(in srgb, var(--brand-400) 12%, transparent)' : 'transparent',
-              transition: 'color 0.15s ease, background-color 0.15s ease',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 /** 对话框状态机 */
 type DialogState =
@@ -132,6 +69,8 @@ function App() {
   const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
   /** 是否已展开全部（顶栏同名功能键） */
   const [allExpanded, setAllExpanded] = useState(false);
+  /** 自然语言命令：编辑任务前的确认（仅编辑操作弹确认框） */
+  const [commandEdit, setCommandEdit] = useState<{ task: Task; newDeadline: number | null } | null>(null);
 
   // ===== 视图切换（V2：列表 / 日历 / 日） =====
   /** 当前视图模式：从持久化 Settings 初始化，切换后回写 */
@@ -446,14 +385,14 @@ function App() {
             granted = p === 'granted' || p === true;
           }
         } catch { granted = true; }
-        for (const t of due) {
+        for (const item of due) {
           if (cancelled) return;
           if (granted) {
             try {
-              await sendNotification({ title: '任务提醒', body: t.title });
+              await sendNotification({ title: '任务提醒', body: item.task.title });
             } catch { /* 忽略发送失败 */ }
           }
-          await svc.markReminderFired(t.id);
+          await svc.markReminderFired(item.task.id, item.offsetKey, item.reminderTime);
         }
       } catch { /* 忽略轮询错误 */ }
     };
@@ -471,12 +410,115 @@ function App() {
   const handleCreateTask = async (
     title: string,
     folderId: string | null,
-    options?: { priority?: Priority; startDate?: number | null; deadline?: number | null; remark?: string; reminderAt?: number | null; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
+    options?: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderAt?: number | null; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
   ) => {
     await createTask(title, folderId, options);
     setPrefillDate(null);
     setCaptureFolder(null);
     setCaptureOpen(false);
+  };
+
+  // ===== 自然语言命令（视图切换条旁的命令气泡） =====
+
+  /** 在活动任务中按标题模糊匹配最佳任务 */
+  const fuzzyFindTask = (query: string): Task | undefined => {
+    const q = query.trim().toLowerCase();
+    if (!q) return undefined;
+    let best: Task | undefined;
+    let bestScore = 0;
+    for (const t of allActiveTasks) {
+      const score = fuzzyScore(t.title, q);
+      if (score > bestScore) { best = t; bestScore = score; }
+    }
+    return best;
+  };
+
+  /** 解析并执行自然语言命令 */
+  const handleCommand = async (raw: string) => {
+    const cmd = parseCommand(raw);
+    const defaultHour = settings?.defaultDeadlineHour ?? 18;
+    const defaultMinute = settings?.defaultDeadlineMinute ?? 0;
+
+    if (cmd.kind === 'create-folder') {
+      const folder = await createFolder(cmd.folderName);
+      setToast(folder ? `已创建文件夹「${cmd.folderName}」` : '创建文件夹失败');
+      return;
+    }
+
+    if (cmd.kind === 'create-task') {
+      const deadline = applyDefaultDeadlineTime(cmd.deadline, defaultHour, defaultMinute);
+      // 有截止时间才允许重复规则与提前偏移（与快速新建弹窗逻辑一致）
+      const hasDeadline = deadline != null;
+      const task = await createTask(cmd.title, null, {
+        deadline,
+        repeatRule: hasDeadline ? cmd.repeatRule : null,
+        repeatIntervalDays: hasDeadline && cmd.repeatRule === 'custom' ? cmd.repeatIntervalDays : null,
+        reminderOffsets: hasDeadline ? cmd.reminderOffsets : [],
+        reminderAt: cmd.reminderAt,
+      });
+      setToast(task ? `已创建任务「${cmd.title}」` : '创建任务失败');
+      return;
+    }
+
+    if (cmd.kind === 'edit-task') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) {
+        setToast('未找到匹配的任务，请尝试更精确的任务名');
+        return;
+      }
+      const newDeadline = applyDefaultDeadlineTime(cmd.newDeadline, defaultHour, defaultMinute);
+      setCommandEdit({ task: matched, newDeadline });
+      return;
+    }
+
+    if (cmd.kind === 'set-repeat') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) { setToast('未找到匹配的任务'); return; }
+      await updateTask(matched.id, {
+        repeatRule: cmd.repeatRule,
+        repeatIntervalDays: cmd.repeatRule === 'custom' ? cmd.repeatIntervalDays : null,
+      });
+      setToast(`已将「${matched.title}」设为${cmd.repeatRule === 'custom' ? `每${cmd.repeatIntervalDays}天` : { daily: '每天', weekly: '每周', monthly: '每月', yearly: '每年' }[cmd.repeatRule]}重复`);
+      return;
+    }
+
+    if (cmd.kind === 'set-reminder-offset') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) { setToast('未找到匹配的任务'); return; }
+      await updateTask(matched.id, { reminderOffsets: cmd.offsets, reminderAt: null });
+      const label = cmd.offsets.map((o) => ({ '1d': '1天', '3d': '3天', '6h': '6小时' }[o])).join('、');
+      setToast(`已为「${matched.title}」设置提前${label}提醒`);
+      return;
+    }
+
+    if (cmd.kind === 'set-reminder-at') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) { setToast('未找到匹配的任务'); return; }
+      await updateTask(matched.id, { reminderAt: cmd.reminderAt, reminderOffsets: [] });
+      const d = new Date(cmd.reminderAt);
+      setToast(`已为「${matched.title}」设置提醒：${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      return;
+    }
+
+    if (cmd.kind === 'set-priority') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) { setToast('未找到匹配的任务'); return; }
+      await updateTask(matched.id, { priority: cmd.priority });
+      setToast(`已将「${matched.title}」${cmd.priority === 'important' ? '设为重要' : '取消重要'}`);
+      return;
+    }
+
+    if (cmd.kind === 'move-to-folder') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) { setToast('未找到匹配的任务'); return; }
+      const folder = allFolders.find((f) => f.name === cmd.folderName && !f.deleted);
+      if (!folder) { setToast(`未找到文件夹「${cmd.folderName}」`); return; }
+      await updateTask(matched.id, { folderId: folder.id });
+      setToast(`已将「${matched.title}」移入「${cmd.folderName}」`);
+      return;
+    }
+
+    setToast('未能识别指令，试试：新建XX分类 / 明天下午去游泳 / 把XX设为每天重复 / 把XX提前1天提醒');
   };
 
   // ===== 一键更新（合并式同步，无需选择上传/下载方向） =====
@@ -681,6 +723,9 @@ function App() {
           : '0.5px solid color-mix(in srgb, var(--border) 30%, transparent)',
       }}>
         <TopBar
+          viewMode={viewMode}
+          onChangeViewMode={changeViewMode}
+          onCommand={handleCommand}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -707,11 +752,8 @@ function App() {
         {/* 分隔线 */}
         <div style={{ height: 0.5, background: 'var(--border)', margin: '0 20px', flexShrink: 0, opacity: 0.6 }} />
 
-        {/* 视图切换（V2：列表 / 日历 / 日）；桌面顶部胶囊组，移动端同步键下方的分段控件 */}
-        <ViewTabs mode={viewMode} onChange={changeViewMode} mobile={isMobile} />
-
-        {/* 搜索提示 */}
-        {searchQuery.trim() && (
+        {/* 搜索提示（仅列表视图） */}
+        {viewMode === 'list' && searchQuery.trim() && (
           <div style={{ padding: '8px 20px 2px', flexShrink: 0 }}>
             <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>找到 {matchCount} 个匹配结果</span>
           </div>
@@ -788,6 +830,12 @@ function App() {
                 setCaptureFolder(null);
                 setCaptureOpen(true);
               }}
+              onContextMenuTask={(e, taskId) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const t = findTaskAnywhere(taskId);
+                setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
+              }}
             />
           )}
 
@@ -795,8 +843,17 @@ function App() {
           {viewMode === 'day' && (
             <DayView
               tasks={allActiveTasks}
+              completedTasks={completedTasks as TaskWithSubtasks[]}
               date={calendarDate}
+              folderMap={new Map(allFolders.map((f) => [f.id, f.name]))}
               onDateChange={setCalendarDate}
+              onToggleComplete={handleToggleCompleted}
+              onContextMenuTask={(e, taskId) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const t = findTaskAnywhere(taskId);
+                setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
+              }}
             />
           )}
         </main>
@@ -859,6 +916,8 @@ function App() {
           onCreate={handleCreateTask}
           initialDate={prefillDate ?? undefined}
           initialFolderId={captureFolder}
+          defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
+          defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
         />
       )}
 
@@ -868,6 +927,23 @@ function App() {
           task={editingTask}
           onSave={async (updates) => { await updateTask(editingTask.id, updates); }}
           onClose={() => setEditingTask(null)}
+          defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
+          defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
+        />
+      )}
+
+      {/* 自然语言命令：编辑任务确认框（仅编辑操作弹确认框） */}
+      {commandEdit && (
+        <ConfirmDialog
+          title="修改任务截止时间"
+          message={`将「${commandEdit.task.title}」的截止时间改为 ${commandEdit.newDeadline != null ? formatDeadline(commandEdit.newDeadline) : '（清除截止时间）'}？`}
+          confirmText="修改"
+          onConfirm={async () => {
+            await updateTask(commandEdit.task.id, { deadline: commandEdit.newDeadline });
+            setToast(`已将「${commandEdit.task.title}」的截止时间改为 ${commandEdit.newDeadline != null ? formatDeadline(commandEdit.newDeadline) : '（清除截止时间）'}`);
+            setCommandEdit(null);
+          }}
+          onCancel={() => setCommandEdit(null)}
         />
       )}
 

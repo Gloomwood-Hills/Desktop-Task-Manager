@@ -2,6 +2,16 @@ import Database from '@tauri-apps/plugin-sql';
 import { Task, TaskWithSubtasks, Priority, TaskRepeatRule } from '../data/types';
 import { TaskRepository } from '../data/repositories';
 import { generateId, buildTaskTree } from '../data/utils';
+import { deriveReminderAt, offsetReminderTimes, isReminderOffsetKey, sanitizeOffsets, sanitizeTimes } from '../data/reminderOffsets';
+
+/** 提醒到期项：task + 触发来源。offsetKey 非空=对应偏移提醒；reminderTime 非空=多选绝对提醒时刻；
+ * 两者皆空=旧版单次 reminderAt */
+export interface DueReminder {
+  task: Task;
+  offsetKey: string | null;
+  /** 多选绝对提醒时刻（reminderTimes 来源）触发的具体时刻 */
+  reminderTime: number | null;
+}
 
 export class TaskService {
   private taskRepository: TaskRepository;
@@ -32,15 +42,23 @@ export class TaskService {
     options?: {
       remark?: string;
       parentId?: string | null;
-      startDate?: number | null;
       deadline?: number | null;
       priority?: Priority;
+      reminderOffsets?: string[];
       reminderAt?: number | null;
+      reminderTimes?: number[];
       repeatRule?: TaskRepeatRule | null;
       repeatIntervalDays?: number | null;
     }
   ): Promise<Task> {
     const id = generateId();
+    const deadline = options?.deadline ?? null;
+    // 多选绝对提醒时刻（无需截止时间即可设置）：一旦设置则互斥清空单值 reminderAt 与提前偏移
+    const reminderTimes = sanitizeTimes(options?.reminderTimes);
+    const useMulti = reminderTimes.length > 0;
+    const reminderOffsets = useMulti ? [] : sanitizeOffsets(options?.reminderOffsets);
+    // 显式提醒时刻（无需截止时间即可设置）优先于相对偏移派生；两者互斥，由调用方保证
+    const explicitReminderAt = useMulti ? null : (options?.reminderAt ?? null);
 
     return this.taskRepository.create({
       id,
@@ -48,10 +66,14 @@ export class TaskService {
       remark: options?.remark || '',
       folderId,
       parentId: options?.parentId || null,
-      startDate: options?.startDate || null,
-      deadline: options?.deadline || null,
+      startDate: null,
+      deadline,
       priority: options?.priority || 'normal',
-      reminderAt: options?.reminderAt ?? null,
+      reminderAt: explicitReminderAt ?? deriveReminderAt(deadline, reminderOffsets),
+      reminderOffsets,
+      reminderFiredOffsets: [],
+      reminderTimes,
+      reminderFiredTimes: [],
       repeatRule: options?.repeatRule ?? null,
       repeatIntervalDays: options?.repeatIntervalDays ?? null,
       // 带重复规则的任务：首实例以自身 id 作为系列标识（模板也计入"累计完成x次"）
@@ -60,8 +82,52 @@ export class TaskService {
     });
   }
 
-  async updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'startDate' | 'deadline' | 'priority' | 'reminderAt' | 'reminderFired' | 'repeatRule' | 'repeatIntervalDays'>>): Promise<Task | null> {
-    return this.taskRepository.update(id, updates);
+  async updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'remark' | 'folderId' | 'deadline' | 'priority' | 'reminderAt' | 'reminderFired' | 'reminderOffsets' | 'reminderFiredOffsets' | 'reminderTimes' | 'reminderFiredTimes' | 'repeatRule' | 'repeatIntervalDays'>>): Promise<Task | null> {
+    const patch = { ...updates } as Partial<Task>;
+    // 设置重复规则时，若无系列标识则创建（列表/日/月视图立即显示重复标签并开始计数）
+    if ('repeatRule' in patch) {
+      const current = await this.taskRepository.getById(id);
+      if (current && patch.repeatRule && !current.repeatSeriesId) {
+        patch.repeatSeriesId = id;
+      }
+    }
+    // 截止时间 / 偏移 / 单值 / 多选提醒变化时，重置已触发标记并处理各提醒来源的互斥（提醒配置变更，旧通知作废、重新武装）
+    const deadlineChanged = 'deadline' in patch;
+    const offsetsChanged = 'reminderOffsets' in patch;
+    const reminderAtChanged = 'reminderAt' in patch;
+    const timesChanged = 'reminderTimes' in patch;
+    if (deadlineChanged || offsetsChanged || reminderAtChanged || timesChanged) {
+      const current = await this.taskRepository.getById(id);
+      if (current) {
+        const deadline = patch.deadline !== undefined ? patch.deadline : current.deadline;
+        const offsets = offsetsChanged ? sanitizeOffsets(patch.reminderOffsets) : (current.reminderOffsets ?? []);
+        if (timesChanged) {
+          // 多选绝对提醒时刻显式设置：互斥清空单值 reminderAt 与提前偏移
+          const times = sanitizeTimes(patch.reminderTimes);
+          patch.reminderTimes = times;
+          patch.reminderAt = times.length ? null : (patch.reminderAt ?? null);
+          if (times.length) patch.reminderOffsets = [];
+        } else if (reminderAtChanged) {
+          // 单值绝对提醒时刻显式设置：互斥清空多选与提前偏移
+          patch.reminderAt = patch.reminderAt ?? null;
+          if (patch.reminderAt != null) { patch.reminderOffsets = []; patch.reminderTimes = []; }
+        } else {
+          // 未显式设置任何绝对提醒：任务若未用多选提醒，则按「截止 + 提前偏移」派生单值兜底
+          const currentTimes = current.reminderTimes ?? [];
+          if (currentTimes.length === 0) {
+            patch.reminderAt = deriveReminderAt(deadline, offsets);
+          }
+        }
+        patch.reminderFired = false;
+        patch.reminderFiredOffsets = [];
+        patch.reminderFiredTimes = [];
+        if (offsetsChanged) {
+          const usesMulti = Array.isArray(patch.reminderTimes) && patch.reminderTimes.length > 0;
+          patch.reminderOffsets = (patch.reminderAt != null || usesMulti) ? [] : sanitizeOffsets(patch.reminderOffsets);
+        }
+      }
+    }
+    return this.taskRepository.update(id, patch);
   }
 
   /** 手动排序：按给定顺序持久化任务顺序 */
@@ -154,6 +220,12 @@ export class TaskService {
   private async spawnNextInstance(task: Task): Promise<Task | null> {
     const next = TaskService.nextDeadline(task.deadline!, task.repeatRule!, task.repeatIntervalDays);
     const nextId = generateId();
+    // 重复任务的下一实例自动继承提醒设置：
+    // - 相对截止的提前偏移（reminderOffsets）原样继承，随新截止日期自动顺延（如 9/9 提前1天 → 9/8；下月 10/9 提前1天 → 10/8）
+    // - 多选绝对提醒时刻（reminderTimes）原样继承，保持一致提醒习惯
+    // - reminderAt 重派生：多选优先置 null，否则由「新截止 + 偏移」派生；已触发标记全部重置（新实例重新武装）
+    const offsets = task.reminderOffsets ?? [];
+    const times = task.reminderTimes ?? [];
     const created = await this.taskRepository.create({
       id: nextId,
       title: task.title,
@@ -163,7 +235,11 @@ export class TaskService {
       startDate: null,
       deadline: next,
       priority: task.priority,
-      reminderAt: null,
+      reminderAt: times.length ? null : deriveReminderAt(next, offsets),
+      reminderOffsets: offsets,
+      reminderFiredOffsets: [],
+      reminderTimes: times,
+      reminderFiredTimes: [],
       repeatRule: task.repeatRule,
       repeatIntervalDays: task.repeatIntervalDays,
       repeatSeriesId: task.repeatSeriesId ?? task.id,
@@ -225,14 +301,71 @@ export class TaskService {
     return task;
   }
 
-  /** 读取提醒时间已到且未触发、未完成、未删除的任务 */
-  async getDueReminders(now: number): Promise<Task[]> {
-    return this.taskRepository.getDueReminders(now);
+  /** 读取提醒时间已到且未触发、未完成、未删除的提醒项。偏移逐个触发，多选绝对时刻逐个触发，旧版单次 reminderAt 一次触发 */
+  async getDueReminders(now: number): Promise<DueReminder[]> {
+    const candidates = await this.taskRepository.getReminderCandidates();
+    const due: DueReminder[] = [];
+    for (const t of candidates) {
+      const hasOffsets = Array.isArray(t.reminderOffsets) && t.reminderOffsets.length > 0;
+      const hasTimes = Array.isArray(t.reminderTimes) && t.reminderTimes.length > 0;
+      if (hasOffsets && t.deadline != null) {
+        const fired = new Set(t.reminderFiredOffsets ?? []);
+        for (const item of offsetReminderTimes(t.deadline, t.reminderOffsets)) {
+          if (item.time <= now && !fired.has(item.key)) {
+            due.push({ task: t, offsetKey: item.key, reminderTime: null });
+          }
+        }
+      } else if (hasTimes) {
+        const fired = new Set(t.reminderFiredTimes ?? []);
+        for (const tm of t.reminderTimes) {
+          if (tm <= now && !fired.has(tm)) {
+            due.push({ task: t, offsetKey: null, reminderTime: tm });
+          }
+        }
+      } else if (t.reminderAt != null && t.reminderAt <= now) {
+        due.push({ task: t, offsetKey: null, reminderTime: null });
+      }
+    }
+    return due;
   }
 
-  /** 标记提醒已触发 */
-  async markReminderFired(id: string): Promise<boolean> {
+  /** 标记提醒已触发。offsetKey 非空标记单偏移；reminderTime 非空标记多选绝对时刻；两者皆空标记旧版单次提醒。全部触发后整体标记 */
+  async markReminderFired(id: string, offsetKey: string | null = null, reminderTime: number | null = null): Promise<boolean> {
+    if (offsetKey != null) {
+      return this._markOffsetFired(id, offsetKey);
+    }
+    if (reminderTime != null) {
+      return this._markTimeFired(id, reminderTime);
+    }
     return this.taskRepository.markReminderFired(id);
+  }
+
+  /** 标记单个提前偏移已触发；所有偏移均触发后整体标记 */
+  private async _markOffsetFired(id: string, offsetKey: string): Promise<boolean> {
+    const task = await this.taskRepository.getById(id);
+    if (!task) return false;
+    const offsets = task.reminderOffsets ?? [];
+    const fired = new Set(task.reminderFiredOffsets ?? []);
+    fired.add(offsetKey);
+    const allFired = offsets.filter(isReminderOffsetKey).every((k) => fired.has(k));
+    const patch: Partial<Task> = { reminderFiredOffsets: [...fired] };
+    if (allFired) patch.reminderFired = true;
+    await this.taskRepository.update(id, patch);
+    return true;
+  }
+
+  /** 标记单个多选绝对提醒时刻已触发；所有时刻均触发后整体标记 */
+  private async _markTimeFired(id: string, reminderTime: number): Promise<boolean> {
+    const task = await this.taskRepository.getById(id);
+    if (!task) return false;
+    const times = [...(task.reminderTimes ?? [])];
+    const fired = new Set(task.reminderFiredTimes ?? []);
+    fired.add(reminderTime);
+    const allFired = times.every((tm) => fired.has(tm));
+    const patch: Partial<Task> = { reminderFiredTimes: [...fired] };
+    if (allFired) patch.reminderFired = true;
+    await this.taskRepository.update(id, patch);
+    return true;
   }
 
   async getParentTaskCompletion(parentId: string): Promise<{ completed: number; total: number }> {
