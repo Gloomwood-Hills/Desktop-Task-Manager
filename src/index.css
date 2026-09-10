@@ -136,6 +136,19 @@ html.mobile #root { border-radius: 0; }
   --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 8px 24px -8px rgba(0, 0, 0, 0.08), 0 4px 8px -4px rgba(0, 0, 0, 0.05);
   --shadow-xl: 0 16px 40px -10px rgba(0, 0, 0, 0.10), 0 8px 16px -8px rgba(0, 0, 0, 0.06);
+
+  /* ===== 运动设计令牌（Material 3） ===== */
+  /* 缓动曲线 */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  /* 时长 */
+  --dur-short: 150ms;
+  --dur-medium: 300ms;
+  --dur-long: 500ms;
 }
 
 .dark {
@@ -235,7 +248,7 @@ body {
   margin-top: 16px;
 }
 .qc-scope .field-card {
-  background: rgba(255,255,255,.85);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 12px;
@@ -268,7 +281,7 @@ body {
   padding: 5px 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--background);
   font-size: 11.5px;
   font-weight: 600;
   color: var(--text-600);
@@ -293,7 +306,7 @@ body {
   padding: 0 8px;
   border: 1px solid var(--input);
   border-radius: 8px;
-  background: #fff;
+  background: var(--background);
   color: inherit;
   font-size: 11.5px;
   outline: none;
@@ -342,7 +355,7 @@ body {
   padding: 0 14px;
   border: 1px solid var(--input);
   border-radius: 10px;
-  background: #fff;
+  background: var(--background);
   box-shadow: 0 2px 10px rgba(0,0,0,.04);
   margin-top: 16px;
 }
@@ -352,6 +365,12 @@ body {
   font-size: 13.5px; color: var(--foreground); font-family: var(--font-sans);
 }
 .qc-scope .task-input input::placeholder { color: var(--text-300); }
+
+/* 设置面板的密码/密钥类输入框：用 text 类型规避 Android WebView 对 password 字段禁用粘贴，
+   再用 -webkit-text-security 将明文显示为圆点，保持密码观感。 */
+input.pw-mask {
+  -webkit-text-security: disc;
+}
 
 /* 新建任务 · 截止/提醒 分栏（气泡分栏标明：左截止 | 右提醒） */
 .qc-scope .dy-cols { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
@@ -412,7 +431,7 @@ body {
 .qc-scope .time-bubble .tb-label { font-size: 11.5px; font-weight: 700; color: var(--text-500); white-space: nowrap; flex-shrink: 0; }
 .qc-scope .time-bubble input[type="time"] {
   height: 26px; padding: 0 8px; border: 1px solid var(--input); border-radius: 8px;
-  background: #fff; color: inherit; font-size: 11.5px; outline: none; font-family: var(--font-sans);
+  background: var(--background); color: inherit; font-size: 11.5px; outline: none; font-family: var(--font-sans);
   flex: 1; min-width: 72px; width: 100%; box-sizing: border-box;
 }
 .qc-scope .time-bubble button {
@@ -446,5 +465,30 @@ body {
 .qc-scope .cal-time-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .qc-scope .cal-time-row input[type="time"] {
   height: 28px; padding: 0 8px; border: 1px solid var(--input); border-radius: 8px;
-  background: #fff; color: inherit; font-size: 11.5px; outline: none; font-family: var(--font-sans); flex: 1;
+  background: var(--background); color: inherit; font-size: 11.5px; outline: none; font-family: var(--font-sans); flex: 1;
+}
+
+/* ===== 按压反馈（Material 3 pressed state） ===== */
+/* 可交互 chip / 按钮按下时轻微缩放，释放回弹，提供即时触觉式反馈 */
+.qc-scope .chip,
+.qc-scope .mini-chip,
+.qc-scope .create-btn {
+  transition: transform var(--dur-short) var(--ease-standard), filter .15s ease, border-color .15s ease, background-color .15s ease, color .15s ease;
+}
+.qc-scope .chip:active,
+.qc-scope .mini-chip:active,
+.qc-scope .create-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* ===== 减少动态偏好：关闭/缩短位移动画，仅保留透明度反馈 ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

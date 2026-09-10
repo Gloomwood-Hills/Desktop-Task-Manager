@@ -3,6 +3,9 @@ import { Folder, FolderWithTasks } from '../data/types';
 import { FolderRepository, TaskRepository } from '../data/repositories';
 import { generateId, buildTaskTree } from '../data/utils';
 
+/** 文件夹名称最大字数 */
+export const FOLDER_NAME_MAX = 20;
+
 export class FolderService {
   private folderRepository: FolderRepository;
   private taskRepository: TaskRepository;
@@ -25,13 +28,16 @@ export class FolderService {
   }
 
   async createFolder(name: string, parentId: string | null = null): Promise<Folder> {
+    if (name.trim().length > FOLDER_NAME_MAX) {
+      throw new Error(`文件夹名称不能超过 ${FOLDER_NAME_MAX} 字`);
+    }
     const id = generateId();
     const folders = await this.folderRepository.getByParentId(parentId);
     const sortOrder = folders.length;
 
     return this.folderRepository.create({
       id,
-      name,
+      name: name.trim(),
       parentId,
       sortOrder,
       deleted: false,
@@ -39,7 +45,10 @@ export class FolderService {
   }
 
   async updateFolder(id: string, name: string): Promise<Folder | null> {
-    return this.folderRepository.update({ id, name });
+    if (name.trim().length > FOLDER_NAME_MAX) {
+      throw new Error(`文件夹名称不能超过 ${FOLDER_NAME_MAX} 字`);
+    }
+    return this.folderRepository.update({ id, name: name.trim() });
   }
 
   async deleteFolder(id: string): Promise<boolean> {

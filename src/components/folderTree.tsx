@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, GripVertical } from 'lucide-react';
 import { FolderNode, TaskWithSubtasks, SortType } from '../data/types';
 import { compareByName } from '../data/utils';
 import TaskItem, { Highlight } from './taskItem';
+import { listItem } from './utils/motion';
 
 interface FolderTreeProps {
   folders: FolderNode[];
@@ -19,6 +21,8 @@ interface FolderTreeProps {
   manualSort?: boolean;
   onReorderTasks?: (orderedIds: string[]) => void;
   onReorderFolders?: (orderedIds: string[]) => void;
+  /** 拖任务到文件夹 header → 移入该文件夹（任意排序模式均可用） */
+  onMoveTaskToFolder?: (taskId: string, folderId: string) => void;
   onToggleFolder: (id: string) => void;
   onToggleTaskExpanded: (id: string) => void;
   onToggleCompleted: (id: string) => void;
@@ -61,10 +65,12 @@ interface DragState {
   moved: boolean;
 }
 
-/** 落点指示：目标行 id（'' = 容器末尾）+ 插入位置 */
+/** 落点指示：目标行 id（'' = 容器末尾）+ 插入位置；folderMove 表示"拖任务进文件夹" */
 interface DropTarget {
   id: string;
   position: 'before' | 'after';
+  folderMove?: boolean;
+  folderId?: string;
 }
 
 /** 拖动位移阈值：超过才视为拖动（区分单击与拖拽） */
@@ -78,7 +84,7 @@ const DRAG_THRESHOLD = 6;
  */
 export default function FolderTree({
   folders, rootTasks = [], expandedFolders, expandedTasks, searchQuery,
-  sortType, importantTop = false, manualSort = false, onReorderTasks, onReorderFolders,
+  sortType, importantTop = false, manualSort = false, onReorderTasks, onReorderFolders, onMoveTaskToFolder,
   onToggleFolder, onToggleTaskExpanded, onToggleCompleted, onContextMenuTask, onContextMenuFolder,
   deadlineGradient = true, dark = false,
 }: FolderTreeProps) {
@@ -147,6 +153,10 @@ export default function FolderTree({
       const kind = row.dataset.dragKind;
       const containerKey = row.dataset.containerKey;
       const id = row.dataset.dragId;
+      // 拖任务悬停文件夹 header → 目标为"移入该文件夹"
+      if (state.kind === 'task' && kind === 'folder' && id) {
+        return { id: '', position: 'after', folderMove: true, folderId: id };
+      }
       if (kind !== state.kind || containerKey !== state.containerKey || !id) return null;
       if (id === state.id) return null;
       const rect = row.getBoundingClientRect();
@@ -180,21 +190,26 @@ export default function FolderTree({
     dragRef.current = null;
     const target = dropRef.current;
     if (state.moved && target) {
-      const next = state.containerIds.filter((x) => x !== state.id);
-      if (target.id) {
-        const idx = next.indexOf(target.id);
-        if (idx >= 0) {
-          next.splice(idx + (target.position === 'after' ? 1 : 0), 0, state.id);
+      // 拖任务到文件夹 header：移入该文件夹（子任务随迁由上层处理）
+      if (target.folderMove && target.folderId) {
+        if (state.kind === 'task') onMoveTaskToFolder?.(state.id, target.folderId);
+      } else {
+        const next = state.containerIds.filter((x) => x !== state.id);
+        if (target.id) {
+          const idx = next.indexOf(target.id);
+          if (idx >= 0) {
+            next.splice(idx + (target.position === 'after' ? 1 : 0), 0, state.id);
+          } else {
+            next.push(state.id);
+          }
         } else {
           next.push(state.id);
         }
-      } else {
-        next.push(state.id);
-      }
-      // 顺序未变化则不触发刷新
-      if (next.join('|') !== state.containerIds.join('|')) {
-        if (state.kind === 'task') onReorderTasks?.(next);
-        else onReorderFolders?.(next);
+        // 顺序未变化则不触发刷新
+        if (next.join('|') !== state.containerIds.join('|')) {
+          if (state.kind === 'task') onReorderTasks?.(next);
+          else onReorderFolders?.(next);
+        }
       }
     }
     setDrag(null);
@@ -203,7 +218,7 @@ export default function FolderTree({
     dropRef.current = null;
   };
 
-  /** 开始拖动（仅鼠标左键 + 手动排序模式）。
+  /** 开始拖动（仅鼠标左键）。任务始终可拖（用于移动到文件夹）；文件夹重排仅手动排序模式。
    * 触屏（pointerType ≠ mouse）不启动拖动：让出触摸手势给列表原生滚动，
    * 否则 touch-action:none + preventDefault 会让 Android 上手指拖不动列表。 */
   const startDrag = (
@@ -214,9 +229,9 @@ export default function FolderTree({
     containerIds: string[],
     label: string,
   ) => {
-    if (!manualSort) return;
     if (e.pointerType !== 'mouse') return;
     if (e.button !== 0) return;
+    if (kind === 'folder' && !manualSort) return;
     e.preventDefault();
     const state: DragState = {
       kind, id, containerKey, containerIds, label,
@@ -247,8 +262,13 @@ export default function FolderTree({
     const isDragging = drag?.kind === 'task' && drag.id === task.id;
     const isTarget = drop?.id === task.id && drag?.kind === 'task';
     return (
-      <div
+      <motion.div
         key={task.id}
+        layout
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        variants={listItem}
         data-drag-row
         data-drag-kind="task"
         data-drag-id={task.id}
@@ -277,7 +297,7 @@ export default function FolderTree({
           deadlineGradient={deadlineGradient}
           dark={dark}
         />
-      </div>
+      </motion.div>
     );
   };
 
@@ -293,7 +313,9 @@ export default function FolderTree({
         {showEndIndicator && (
           <div style={{ ...insertLineStyle, left: 0, right: 0, bottom: -1, top: undefined }} />
         )}
-        {tasks.map((task) => renderTask(task, containerKey, ids))}
+        <AnimatePresence initial={false}>
+          {tasks.map((task) => renderTask(task, containerKey, ids))}
+        </AnimatePresence>
       </div>
     );
   };
@@ -305,6 +327,8 @@ export default function FolderTree({
     const taskIds = folder.tasks.map((t) => t.id);
     const isDragging = drag?.kind === 'folder' && drag.id === folder.id;
     const isTarget = drop?.id === folder.id && drag?.kind === 'folder';
+    // 拖任务悬停本文件夹 header → 移入高亮
+    const isMoveTarget = !!drop?.folderMove && drop.folderId === folder.id && drag?.kind === 'task';
 
     return (
       <div key={folder.id} className="tree-folder" style={{ position: 'relative' }}>
@@ -329,11 +353,14 @@ export default function FolderTree({
             opacity: isDragging && drag?.moved ? 0.35 : undefined,
             transition: 'background-color 0.15s ease',
             userSelect: 'none',
+            background: isMoveTarget ? 'color-mix(in srgb, var(--primary) 16%, transparent)' : undefined,
+            boxShadow: isMoveTarget ? '0 0 0 1px var(--primary)' : undefined,
           }}
           onMouseOver={(e) => {
-            if (!dragRef.current) e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 80%, transparent)';
+            // 仅在拖文件夹（重排）时给普通悬浮底色，拖任务时留给移入高亮
+            if (dragRef.current?.kind === 'folder') e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 80%, transparent)';
           }}
-          onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          onMouseOut={(e) => { if (!isMoveTarget) e.currentTarget.style.background = 'transparent'; }}
         >
           {isTarget && (
             <div style={{
@@ -447,11 +474,13 @@ export default function FolderTree({
   if (mergedOuter) {
     return (
       <>
-        {mergedOuter.map((item) => (
-          item.kind === 'task'
-            ? renderTask(item.task, 'task:root', rootIds)
-            : renderFolder(item.folder, 'folder:root', rootFolderIds)
-        ))}
+        <AnimatePresence initial={false}>
+          {mergedOuter.map((item) => (
+            item.kind === 'task'
+              ? renderTask(item.task, 'task:root', rootIds)
+              : renderFolder(item.folder, 'folder:root', rootFolderIds)
+          ))}
+        </AnimatePresence>
         {renderGhost()}
       </>
     );

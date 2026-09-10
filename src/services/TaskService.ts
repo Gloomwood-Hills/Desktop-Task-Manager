@@ -136,7 +136,7 @@ export class TaskService {
   }
 
   async deleteTask(id: string): Promise<boolean> {
-    return this.taskRepository.softDelete(id);
+    return this.taskRepository.softDeleteWithDescendants(id);
   }
 
   /** 读取已删除任务（30 天保留期内） */

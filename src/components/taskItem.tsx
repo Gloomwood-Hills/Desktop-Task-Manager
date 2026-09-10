@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { motion } from 'motion/react';
 import { Check, ChevronDown, ChevronRight, Clock, Calendar, AlignLeft, History } from 'lucide-react';
 import { Task, TaskWithSubtasks } from '../data/types';
 import { formatDeadline, formatDeadlineRel, formatDeadlineYMD, formatStartDate } from './utils/formatDate';
+import { panelSpring } from './utils/motion';
 
 interface TaskItemProps {
   task: TaskWithSubtasks;
@@ -196,7 +198,16 @@ function SubtaskRow({
             color: '#ffffff',
           }}
         >
-          {task.completed && <Check style={{ width: 9, height: 9 }} />}
+          {task.completed && (
+            <motion.span
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={panelSpring}
+              style={{ display: 'inline-flex' }}
+            >
+              <Check style={{ width: 9, height: 9 }} />
+            </motion.span>
+          )}
         </div>
         <span
           style={{
@@ -212,6 +223,15 @@ function SubtaskRow({
         >
           <Highlight text={task.title} query={searchQuery} />
         </span>
+        {task.deadline !== null && (
+          <span
+            title={formatDeadline(task.deadline)}
+            style={{ fontSize: 11, color: 'var(--muted-foreground)', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 3 }}
+          >
+            <Clock style={{ width: 11, height: 11, color: 'var(--icon-muted)' }} />
+            {formatDeadline(task.deadline)}
+          </span>
+        )}
         {isTaskExpired(task) && <ExpiredBadge />}
         {task.repeatSeriesId !== null && <RepeatBadge rule={task.repeatRule} intervalDays={task.repeatIntervalDays} count={task.repeatCount ?? 0} />}
         {/* 子任务展开/折叠 + 进度 */}
@@ -231,6 +251,11 @@ function SubtaskRow({
           </>
         )}
       </div>
+      {task.remark.trim().length > 0 && (
+        <div style={{ marginLeft: 25, padding: '1px 8px 6px', fontSize: 11.5, color: 'var(--muted-foreground)', lineHeight: 1.4, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+          {task.remark}
+        </div>
+      )}
       {hasChildren && expanded && (
         <div style={{ marginLeft: 18, position: 'relative' }}>
           <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.4 }} />
@@ -344,7 +369,16 @@ export default function TaskItem({
             color: '#ffffff',
           }}
         >
-          {task.completed && <Check style={{ width: 11, height: 11 }} />}
+          {task.completed && (
+            <motion.span
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={panelSpring}
+              style={{ display: 'inline-flex' }}
+            >
+              <Check style={{ width: 11, height: 11 }} />
+            </motion.span>
+          )}
         </div>
 
         {/* 任务内容 */}

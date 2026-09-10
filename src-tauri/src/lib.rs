@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    PhysicalPosition, PhysicalSize,
 };
 #[cfg(not(target_os = "android"))]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -143,18 +144,21 @@ pub fn run() {
                 let _ = app.global_shortcut().register(shortcut);
 
                 // System tray
-                let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
-                let hide_item = MenuItemBuilder::with_id("hide", "Hide").build(app)?;
-                let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+                let show_item = MenuItemBuilder::with_id("show", "显示").build(app)?;
+                let hide_item = MenuItemBuilder::with_id("hide", "隐藏").build(app)?;
+                let reset_item = MenuItemBuilder::with_id("reset", "复位").build(app)?;
+                let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
                 let menu = MenuBuilder::new(app)
                     .item(&show_item)
                     .item(&hide_item)
+                    .item(&reset_item)
                     .item(&quit_item)
                     .build()?;
 
                 let quit_handle = app.handle().clone();
                 let show_handle = app.handle().clone();
                 let hide_handle = app.handle().clone();
+                let reset_handle = app.handle().clone();
 
                 let _tray = TrayIconBuilder::new()
                     .icon(app.default_window_icon().unwrap().clone())
@@ -171,6 +175,24 @@ pub fn run() {
                             "hide" => {
                                 if let Some(window) = hide_handle.get_webview_window("main") {
                                     let _ = window.hide();
+                                }
+                            }
+                            "reset" => {
+                                // 复位：窗口回到桌面中心的初始位置（400×600）
+                                if let Some(window) = reset_handle.get_webview_window("main") {
+                                    let default_w: u32 = 400;
+                                    let default_h: u32 = 600;
+                                    let _ = window.set_size(PhysicalSize::new(default_w, default_h));
+                                    if let Ok(Some(monitor)) = window.current_monitor() {
+                                        let size = monitor.size();
+                                        let scale = monitor.scale_factor();
+                                        // 将物理像素换算为逻辑像素后再计算居中（set_position 接收逻辑像素）
+                                        let x = ((size.width as f64 / scale) - default_w as f64) / 2.0;
+                                        let y = ((size.height as f64 / scale) - default_h as f64) / 2.0;
+                                        let _ = window.set_position(PhysicalPosition::new(x as i32, y as i32));
+                                    }
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
                                 }
                             }
                             "quit" => {

@@ -98,10 +98,16 @@ export interface Settings {
   webdavUsername: string;
   /** WebDAV 密码，仅保存在本机数据库，默认 '' */
   webdavPassword: string;
-  /** 上次成功同步时间戳（毫秒），null 表示尚未同步过 */
+  /** 上次同步时间戳（毫秒），null 表示尚未同步过 */
   lastSyncedAt: number | null;
   /** 上次成功同步操作：upload=上传（首次同步）/ download=下载 / merged=双向合并，null 表示尚未同步过 */
   lastSyncAction: 'upload' | 'download' | 'merged' | null;
+  /** AI 助手 BaseURL（OpenAI 兼容，如 https://api.deepseek.com/v1）；空串表示未配置 */
+  aiBaseUrl: string;
+  /** AI API Key，仅保存在本机数据库 */
+  aiApiKey: string;
+  /** AI 模型名（如 deepseek-chat）；空串表示未配置 */
+  aiModel: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -113,6 +119,8 @@ export interface WindowState {
   width: number;
   height: number;
   collapsedFolders: string[];
+  /** 文件夹侧栏是否展开（跨视图文件夹导航），默认开 */
+  sidebarOpen: boolean;
   createdAt: number;
   updatedAt: number;
 }

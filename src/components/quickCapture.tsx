@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Folder as FolderIcon, ChevronDown, Check, Star,
-  Plus, CalendarDays, X,
+  Plus, CalendarDays, X, Sparkles,
 } from 'lucide-react';
 import { FolderNode, Priority, TaskRepeatRule } from '../data/types';
+import { GeneratedSubtask } from '../services/aiClient';
 import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime, formatCompletedAt } from './utils/formatDate';
 import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
+import { containerTransform } from './utils/motion';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
@@ -14,7 +16,7 @@ interface QuickCaptureProps {
   onCreate: (
     title: string,
     folderId: string | null,
-    options: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
+    options: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null; subtasks?: GeneratedSubtask[] }
   ) => void;
   /** 预填的默认截止日期（归一化为当天 00:00）；不传时保持原有行为 */
   initialDate?: number;
@@ -23,6 +25,26 @@ interface QuickCaptureProps {
   /** 截止时间仅填日期时默认补上的时/分（设置 → 默认截止时刻） */
   defaultDeadlineHour?: number;
   defaultDeadlineMinute?: number;
+  /** 已配置 AI（设置 → AI）：启用「一键生成子任务」按钮 */
+  aiEnabled?: boolean;
+  /** 一键生成子任务回调（App 注入，读取 AI 配置调用 aiClient）；opts 携带个数/补充要求 */
+  onGenerateSubtasks?: (title: string, deadline: number | null, opts?: { count?: number | null; hint?: string }) => Promise<GeneratedSubtask[]>;
+  /** AI 预填：任务标题（AI 已解析好，直接填入） */
+  initialTitle?: string;
+  /** AI 预填：截止时间戳 */
+  initialDeadline?: number | null;
+  /** AI 预填：重要程度 */
+  initialPriority?: Priority;
+  /** AI 预填：备注 */
+  initialRemark?: string;
+  /** AI 预填：重复规则 */
+  initialRepeatRule?: TaskRepeatRule | null;
+  /** AI 预填：自定义重复间隔天数 */
+  initialRepeatIntervalDays?: number | null;
+  /** AI 预填：提前提醒偏移 */
+  initialReminderOffsets?: string[];
+  /** AI 预填：子任务（含截止与备注） */
+  initialSubtasks?: GeneratedSubtask[];
 }
 
 /** 截止时间快捷项：一小时后为具体时刻，其余为日期（选择时按默认截止时刻补全） */
@@ -165,6 +187,7 @@ function parsePlusProperties(text: string): {
       if (/提前\s*1\s*天|提前一天|提前1日|当天提醒/.test(seg)) o.push('1d');
       if (/提前\s*3\s*天|提前三天|提前3日/.test(seg)) o.push('3d');
       if (/提前\s*6\s*小时|提前6小时/.test(seg)) o.push('6h');
+      if (/提前\s*1\s*小时|提前一小时/.test(seg)) o.push('1h');
       if (o.length > 0) { reminderOffsets = o; continue; }
     }
     kept.push(seg);
@@ -275,24 +298,31 @@ function DualCalendar({
 }
 
 /** 新建任务弹窗（Quick Capture，对齐设计稿 side-0 quick-capture / modeTime 三列布局） */
-export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0 }: QuickCaptureProps) {
-  const [title, setTitle] = useState('');
-  const [remark, setRemark] = useState('');
+export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0, aiEnabled = false, onGenerateSubtasks, initialTitle, initialDeadline, initialPriority, initialRemark, initialRepeatRule, initialRepeatIntervalDays, initialReminderOffsets, initialSubtasks }: QuickCaptureProps) {
+  const [title, setTitle] = useState(initialTitle ?? '');
+  const [remark, setRemark] = useState(initialRemark ?? '');
   const [folderId, setFolderId] = useState<string | null>(initialFolderId);
   const [folderOpen, setFolderOpen] = useState(false);
   /** 手动选择的截止时间；null 时回退到标题自然语言解析。提供 initialDate 时预填（归一化为当天 00:00） */
   const [manualDeadline, setManualDeadline] = useState<number | null>(() =>
-    initialDate !== undefined ? new Date(initialDate).setHours(0, 0, 0, 0) : null
+    initialDate !== undefined ? new Date(initialDate).setHours(0, 0, 0, 0) : (initialDeadline ?? null)
   );
   /** 提前提醒偏移多选（'1d'/'3d'/'6h'），依赖截止时间 */
-  const [reminderOffsets, setReminderOffsets] = useState<string[]>([]);
+  const [reminderOffsets, setReminderOffsets] = useState<string[]>(initialReminderOffsets ?? []);
   /** 多选提醒时刻（绝对毫秒时间戳）：日历右键可设置任意多个，每个时刻对应一个独立气泡分别设置 */
   const [reminderTimes, setReminderTimes] = useState<number[]>([]);
   /** 时刻气泡：左键设置截止后浮现，供填写具体截止时刻 */
   const [deadlineEditOpen, setDeadlineEditOpen] = useState(false);
-  const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(null);
-  const [repeatIntervalDays, setRepeatIntervalDays] = useState<number | null>(null);
-  const [important, setImportant] = useState(false);
+  const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(initialRepeatRule ?? null);
+  const [repeatIntervalDays, setRepeatIntervalDays] = useState<number | null>(initialRepeatIntervalDays ?? null);
+  const [important, setImportant] = useState(initialPriority === 'important');
+  /** AI 生成的子任务草稿（预览可编辑；接受后在创建时随父任务插入） */
+  const [subtasks, setSubtasks] = useState<GeneratedSubtask[]>(initialSubtasks ?? []);
+  const [subtaskLoading, setSubtaskLoading] = useState(false);
+  const [subtaskError, setSubtaskError] = useState<string | null>(null);
+  /** AI 生成参数：子任务个数 + 补充要求 */
+  const [subtaskCount, setSubtaskCount] = useState<number | null>(null);
+  const [subtaskHint, setSubtaskHint] = useState('');
 
   // 扁平化文件夹用于选择器（含"未分类"顶层项）
   const flatFolders: { id: string | null; name: string; depth: number }[] = [
@@ -318,6 +348,15 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
     ? applyDefaultDeadlineTime(manualDeadline, defaultDeadlineHour, defaultDeadlineMinute)
     : parsedDeadline;
   const hasDeadline = effectiveDeadline !== null;
+  /** 子任务时间强约束区间：[新建时间, 父任务截止]（无截止时上界为 null） */
+  const subtaskMinTs = Date.now();
+  const subtaskMaxTs = effectiveDeadline;
+  /** 子任务时间是否越界：下界=现在，上界=父任务截止（若设置了） */
+  const isSubtaskTimeOutOfRange = (ts: number): boolean => {
+    if (ts < subtaskMinTs) return true;
+    if (subtaskMaxTs != null && ts > subtaskMaxTs) return true;
+    return false;
+  };
 
   // "+"串联属性解析（如 "九月九日登山+每月重复+提前3天提醒"）：自动填充重复/提醒，并净化任务标题
   const plusProps = useMemo(() => parsePlusProperties(title), [title]);
@@ -405,13 +444,59 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
     return toTimeValue(d.getHours(), d.getMinutes());
   };
 
+  /** 净化后的纯任务标题（"+"串联输入时去除日期/重复/提醒修饰） */
+  const resolvedTitle = useMemo(
+    () => (plusProps ? (plusProps.cleanTitle || title.trim()) : title.trim()),
+    [plusProps, title],
+  );
+
+  /** 一键生成子任务：调 App 注入的 AI 回调，生成可编辑草稿（重新生成时替换前次结果） */
+  const handleGenerateSubtasks = async () => {
+    if (!onGenerateSubtasks || !title.trim()) return;
+    setSubtaskLoading(true);
+    setSubtaskError(null);
+    try {
+      const subs = await onGenerateSubtasks(resolvedTitle, effectiveDeadline, {
+        count: subtaskCount,
+        hint: subtaskHint,
+      });
+      setSubtasks(subs);
+      if (subs.length === 0) {
+        setSubtaskError('未能生成子任务，请重试或检查任务截止时间');
+      }
+    } catch (error) {
+      setSubtaskError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubtaskLoading(false);
+    }
+  };
+
+  /** datetime-local → 时间戳 / null */
+  const localToTs = (v: string): number | null => (v ? new Date(v).getTime() : null);
+  /** 时间戳 → datetime-local 值 */
+  const tsToLocal = (ts: number | null): string => {
+    if (ts == null) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   const handleCreate = () => {
     if (!title.trim()) return;
+    // 强约束：子任务时间必须在 [新建时间, 父任务截止] 之间
+    for (const s of subtasks) {
+      if (s.deadline != null && isSubtaskTimeOutOfRange(s.deadline)) {
+        setSubtaskError(
+          subtaskMaxTs != null
+            ? '存在子任务时间超出范围，请调整为「现在 ~ 截止时间」之间'
+            : '存在子任务时间早于当前时间，请调整'
+        );
+        return;
+      }
+    }
     // 互斥：设了多选提醒时刻则不携带偏移（单任务只需一种提醒配置）；无截止时间不保留偏移
     const customTimes = reminderTimes.length > 0;
-    // "+"串联输入时使用净化后的纯标题（如 "九月九日登山+每月重复+提前3天提醒" → "登山"）
-    const finalTitle = plusProps ? (plusProps.cleanTitle || title.trim()) : title.trim();
-    onCreate(finalTitle, folderId, {
+    onCreate(resolvedTitle, folderId, {
       priority: important ? 'important' : 'normal',
       deadline: effectiveDeadline,
       remark: remark.trim(),
@@ -419,6 +504,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       reminderTimes: customTimes ? reminderTimes : [],
       repeatRule: effectiveDeadline ? repeatRule : null,
       repeatIntervalDays: effectiveDeadline && repeatRule === 'custom' ? repeatIntervalDays : null,
+      subtasks: subtasks.length > 0 ? subtasks : undefined,
     });
   };
 
@@ -442,12 +528,17 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(8px)' }} onClick={onClose} />
 
       {/* Popup */}
-      <div style={{
-        position: 'relative',
-        width: 620,
+      <motion.div
+        variants={containerTransform}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        style={{
+          position: 'relative',
+          width: 620,
         maxWidth: 'calc(100% - 32px)',
         borderRadius: 'calc(var(--radius)*1.2)',
-        background: 'rgba(255,255,255,0.82)',
+        background: 'color-mix(in srgb, var(--background) 82%, transparent)',
         backdropFilter: 'blur(40px) saturate(1.8)',
         WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
@@ -485,9 +576,9 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
 
             {/* 展开面板：文件夹选择 */}
             {folderOpen && (
-              <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 420, damping: 20, mass: 0.9 }} style={{ paddingTop: 10 }}>
+              <motion.div variants={containerTransform} initial="initial" animate="animate" exit="exit" style={{ paddingTop: 10 }}>
                 <div style={{
-                  borderRadius: 14, background: 'rgba(255,255,255,0.78)', backdropFilter: 'blur(40px) saturate(1.8)',
+                  borderRadius: 14, background: 'color-mix(in srgb, var(--background) 78%, transparent)', backdropFilter: 'blur(40px) saturate(1.8)',
                   WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
                   boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
                   padding: 6, display: 'inline-flex', flexDirection: 'column',
@@ -525,6 +616,144 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                 autoFocus
               />
             </div>
+
+            {/* 子任务区（置顶于时间区域上方）：一键生成仅在配置 AI 后浮现；手动添加始终可用 */}
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* 一键生成行：仅配置 AI 后浮现 */}
+              {aiEnabled && onGenerateSubtasks && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    disabled={!title.trim() || subtaskLoading}
+                    onClick={handleGenerateSubtasks}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      height: 34, padding: '0 14px', borderRadius: 999, cursor: 'pointer',
+                      border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+                      background: 'transparent', color: 'var(--primary)',
+                      fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                      opacity: !title.trim() || subtaskLoading ? 0.5 : 1,
+                    }}
+                  >
+                    <Sparkles style={{ width: 13, height: 13 }} />
+                    {subtaskLoading ? '正在生成…' : subtasks.length > 0 ? '重新生成' : '一键生成子任务'}
+                  </button>
+                  <input
+                    type="number" min={1}
+                    value={subtaskCount ?? ''}
+                    onChange={(e) => setSubtaskCount(e.target.value ? Number(e.target.value) : null)}
+                    placeholder="个数"
+                    title="期望生成的子任务个数（留空由 AI 决定）"
+                    aria-label="子任务个数"
+                    style={{
+                      width: 56, height: 34, padding: '0 8px', boxSizing: 'border-box',
+                      border: '1px solid var(--input)', borderRadius: 8, background: 'var(--background)',
+                      color: 'inherit', fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)',
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={subtaskHint}
+                    onChange={(e) => setSubtaskHint(e.target.value)}
+                    placeholder="补充要求（可选，如：侧重执行顺序）"
+                    aria-label="子任务补充要求"
+                    style={{
+                      flex: 1, minWidth: 120, height: 34, padding: '0 10px', boxSizing: 'border-box',
+                      border: '1px solid var(--input)', borderRadius: 8, background: 'var(--background)',
+                      color: 'inherit', fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)',
+                    }}
+                  />
+                </div>
+              )}
+              {subtaskError && (
+                <p style={{ fontSize: 11.5, color: 'var(--state-error)', margin: '0 2px' }}>{subtaskError}</p>
+              )}
+              {/* 手动添加入口：无论是否配置 AI 始终可用 */}
+              <button
+                type="button"
+                onClick={() => { setSubtasks((prev) => [...prev, { title: '', deadline: null, remark: '' }]); setSubtaskError(null); }}
+                style={{
+                  alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5,
+                  height: 32, padding: '0 12px', borderRadius: 999, cursor: 'pointer',
+                  border: '1px solid var(--border)', background: 'transparent',
+                  color: 'var(--muted-foreground)', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                }}
+              >
+                <Plus style={{ width: 13, height: 13 }} />添加子任务（手动）
+              </button>
+            </div>
+
+            {/* 子任务草稿预览（可编辑、可增删、可清空） */}
+            {subtasks.length > 0 && (
+              <div style={{
+                marginTop: 10, padding: '10px 12px', borderRadius: 12,
+                background: 'var(--muted)', border: '1px solid var(--border)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--foreground)' }}>子任务（{subtasks.length} 项，随「创建任务」一起插入）</span>
+                  <button
+                    type="button"
+                    onClick={() => { setSubtasks([]); setSubtaskError(null); }}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 3, border: 'none', background: 'transparent',
+                      cursor: 'pointer', fontSize: 11.5, fontWeight: 600, color: 'var(--state-error)', fontFamily: 'var(--font-sans)',
+                    }}
+                  ><X style={{ width: 12, height: 12 }} />清空</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {subtasks.map((s, i) => (
+                    <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="text"
+                          value={s.title}
+                          onChange={(e) => setSubtasks((prev) => prev.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))}
+                          aria-label={`子任务${i + 1}名称`}
+                          style={{
+                            flex: 1, minWidth: 0, height: 30, padding: '0 8px', boxSizing: 'border-box',
+                            border: '1px solid var(--input)', borderRadius: 8, background: 'var(--background)',
+                            color: 'inherit', fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)',
+                          }}
+                        />
+                        <input
+                          type="datetime-local"
+                          value={tsToLocal(s.deadline)}
+                          min={tsToLocal(subtaskMinTs)}
+                          max={subtaskMaxTs != null ? tsToLocal(subtaskMaxTs) : undefined}
+                          onChange={(e) => setSubtasks((prev) => prev.map((x, idx) => idx === i ? { ...x, deadline: localToTs(e.target.value) } : x))}
+                          aria-label={`子任务${i + 1}截止时间`}
+                          title="子任务时间须在「现在 ~ 截止时间」之间"
+                          style={{
+                            height: 30, padding: '0 4px', boxSizing: 'border-box',
+                            border: '1px solid var(--input)', borderRadius: 8, background: 'var(--background)',
+                            color: 'inherit', fontSize: 11.5, outline: 'none', fontFamily: 'var(--font-sans)',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSubtasks((prev) => prev.filter((_, idx) => idx !== i))}
+                          aria-label={`删除子任务${i + 1}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, border: 'none', background: 'transparent', color: 'var(--icon-muted)', cursor: 'pointer' }}
+                        ><X style={{ width: 13, height: 13 }} /></button>
+                      </div>
+                      {/* 子任务备注：说明要做什么（AI 生成强制 20~50 字；手动可留空） */}
+                      <input
+                        type="text"
+                        value={s.remark ?? ''}
+                        onChange={(e) => setSubtasks((prev) => prev.map((x, idx) => idx === i ? { ...x, remark: e.target.value } : x))}
+                        aria-label={`子任务${i + 1}备注`}
+                        placeholder="备注（20~50 字，说明要做什么）"
+                        style={{
+                          height: 28, padding: '0 8px', boxSizing: 'border-box',
+                          border: '1px dashed var(--input)', borderRadius: 8, background: 'var(--background)',
+                          color: 'var(--muted-foreground)', fontSize: 11.5, outline: 'none', fontFamily: 'var(--font-sans)',
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 截止时间 & 提醒：共用以太历（左键=截止 / 右键=提醒），气泡分栏标明 */}
             <div className="field-card">
@@ -628,7 +857,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
               aria-label="备注"
               style={{
                 width: '100%', marginTop: 10, padding: '8px 12px', boxSizing: 'border-box', resize: 'none',
-                border: '1px solid var(--input)', borderRadius: 10, background: '#fff', color: 'inherit',
+                border: '1px solid var(--input)', borderRadius: 10, background: 'var(--background)', color: 'inherit',
                 fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)', lineHeight: 1.4,
               }}
             />
@@ -641,7 +870,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                 onChange={(e) => setRepeatRule((e.target.value || null) as TaskRepeatRule | null)}
                 style={{
                   height: 30, padding: '0 8px', boxSizing: 'border-box',
-                  border: '1px solid var(--input)', borderRadius: 8, background: '#fff', color: 'inherit',
+                  border: '1px solid var(--input)', borderRadius: 8, background: 'var(--background)', color: 'inherit',
                   fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)', flex: 1,
                 }}
                 aria-label="重复规则"
@@ -661,7 +890,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                   placeholder="天数"
                   style={{
                     width: 64, height: 30, padding: '0 8px', boxSizing: 'border-box',
-                    border: '1px solid var(--input)', borderRadius: 8, background: '#fff', color: 'inherit',
+                    border: '1px solid var(--input)', borderRadius: 8, background: 'var(--background)', color: 'inherit',
                     fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)',
                   }}
                   aria-label="重复间隔天数"
@@ -684,7 +913,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

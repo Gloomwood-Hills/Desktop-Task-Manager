@@ -1,4 +1,4 @@
-import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw, UploadCloud, DownloadCloud, Trash2, ChevronsUp, ChevronsDown } from 'lucide-react';
+import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw, UploadCloud, DownloadCloud, Trash2, ChevronsUp, ChevronsDown, PanelLeft } from 'lucide-react';
 import { ViewMode } from '../data/types';
 import { isMobile } from '../data/platform';
 import CommandBubble from './commandBubble';
@@ -10,6 +10,8 @@ interface TopBarProps {
   onChangeViewMode: (m: ViewMode) => void;
   /** 自然语言命令处理：在第一排视图切换条旁提供命令气泡 */
   onCommand?: (text: string) => void;
+  /** 命令框聚焦信号（小部件"快速记录"唤起时自动聚焦） */
+  commandFocusSignal?: number;
   /** 搜索（仅列表视图第三栏显示） */
   searchQuery: string;
   onSearchChange: (value: string) => void;
@@ -27,6 +29,9 @@ interface TopBarProps {
   allExpanded?: boolean;
   onToggleExpandAll?: () => void;
   syncBusy?: boolean;
+  /** 文件夹侧栏开关（跨视图） */
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 /** 顶栏（分栏布局三行）：
@@ -35,9 +40,10 @@ interface TopBarProps {
  * 第三栏（仅列表视图）：折叠全部 + 搜索。
  * 移动端（Android）为全屏应用，无窗口可拖动。 */
 export default function TopBar({
-  viewMode, onChangeViewMode, onCommand,
+  viewMode, onChangeViewMode, onCommand, commandFocusSignal = 0,
   searchQuery, onSearchChange, onOpenSettings, onNewTask, onNewFolder, pinned, onTogglePin,
   onSync, onUploadCloud, onDownloadCloud, onOpenDeleted, allExpanded = false, onToggleExpandAll, syncBusy = false,
+  sidebarOpen = true, onToggleSidebar,
 }: TopBarProps) {
   // 输入控件/文本按钮尺寸：桌面 34px，移动端 ≥44px（Apple HIG / Material 触控标准）
   const controlSize = isMobile ? 44 : 34;
@@ -129,12 +135,22 @@ export default function TopBar({
         userSelect: 'none',
       }}
     >
-      {/* 第一排：视图切换（列表 / 月 / 日）+ 命令气泡 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 4 }}>
+      {/* 第一排：侧栏开关 + 视图切换（列表 / 月 / 日）+ 命令气泡 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 4, paddingRight: 4 }}>
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            aria-label={sidebarOpen ? "取消固定文件夹侧栏" : "固定文件夹侧栏"}
+            title={sidebarOpen ? "取消固定（改为悬停浮现）" : "固定侧栏（常开）"}
+            style={{ ...iconBtnStyle, color: sidebarOpen ? 'var(--primary)' : 'var(--icon-muted)' }}
+          >
+            <PanelLeft style={{ width: iconGlyph, height: iconGlyph }} />
+          </button>
+        )}
         {renderViewTabs()}
         {onCommand && (
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', minWidth: 0, flexShrink: 0 }}>
-            <CommandBubble onCommand={onCommand} />
+            <CommandBubble onCommand={onCommand} focusSignal={commandFocusSignal} />
           </div>
         )}
       </div>

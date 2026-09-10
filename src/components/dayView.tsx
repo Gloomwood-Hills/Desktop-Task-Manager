@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, AlignLeft, Tag, Check } from 'lucide-react';
 import { TaskWithSubtasks } from '../data/types';
 import { generateRepeatOccurrences } from './utils/repeatUtils';
+import { panelSpring } from './utils/motion';
 
 export interface DayViewProps {
   /** 当天活动任务（顶层，含子任务） */
@@ -114,7 +116,11 @@ function SubtaskRow({ task, onToggleComplete, onContextMenuTask }: {
             ...circleStyle(completed),
           }}
         >
-          {completed && <Check style={{ width: 9, height: 9, strokeWidth: 3 }} />}
+          {completed && (
+            <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={panelSpring} style={{ display: 'inline-flex' }}>
+              <Check style={{ width: 9, height: 9, strokeWidth: 3 }} />
+            </motion.span>
+          )}
         </div>
         <span
           style={{
@@ -144,7 +150,7 @@ function SubtaskRow({ task, onToggleComplete, onContextMenuTask }: {
 
 /** 单条时间轴事件：轨道节点圆圈（可勾选） + 时刻药丸 + 内容卡片（备注/分类/子任务，主题色沿用列表视图） */
 function TimelineEntry({
-  task, dayStart, folderMap, onToggleComplete, isLast, onContextMenuTask,
+  task, dayStart, folderMap, onToggleComplete, isLast, onContextMenuTask, parentTitle,
 }: {
   task: TaskWithSubtasks;
   dayStart: number;
@@ -152,6 +158,7 @@ function TimelineEntry({
   onToggleComplete: (id: string) => void;
   isLast: boolean;
   onContextMenuTask?: (e: ReactMouseEvent, taskId: string) => void;
+  parentTitle?: string;
 }) {
   const time = entryTime(task, dayStart);
   const important = task.priority === 'important';
@@ -203,7 +210,11 @@ function TimelineEntry({
             transition: 'transform 0.12s ease',
           }}
         >
-          {completed && <Check style={{ width: 10, height: 10, strokeWidth: 3 }} />}
+          {completed && (
+            <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={panelSpring} style={{ display: 'inline-flex' }}>
+              <Check style={{ width: 10, height: 10, strokeWidth: 3 }} />
+            </motion.span>
+          )}
         </div>
       </div>
 
@@ -235,6 +246,13 @@ function TimelineEntry({
             opacity: completed ? 0.55 : 1,
           }}
         >
+          {/* 子任务归属气泡（需求4）：表明它属于哪个父任务 */}
+            {parentTitle && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 8, padding: '2px 8px', borderRadius: 999, background: 'color-mix(in srgb, var(--chart-3) 12%, transparent)', color: 'var(--chart-3)', fontSize: 11, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                <Tag style={{ width: 10, height: 10, flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{parentTitle}</span>
+              </div>
+            )}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             {important && !completed && (
               <span
@@ -335,8 +353,8 @@ export default function DayView({
   const dayStart = useMemo(() => startOfDay(date), [date]);
   const isToday = dayStart === startOfDay(Date.now());
 
-  // 当天条目 = 活动 + 已完成（均为顶层，子任务放在气泡内展示），按截止时间排序。
-  // 重复任务：若其任意出现日命中当天，则计入（虚拟出现，不创建 DB 记录）。
+  // 当天条目 = 活动 + 已完成。凡命中当天（或重复出现日）的节点都作为独立条目，
+  // 包含平时归属于父任务、但在自身截止日命中的子任务（需求3）。条目附带归属父标题。
   const sorted = useMemo(() => {
     const dayEnd = dayStart + DAY_MS - 1;
     const hitsRepeatDay = (t: TaskWithSubtasks): boolean => {
@@ -345,25 +363,106 @@ export default function DayView({
         (ts) => ts >= dayStart && ts < dayStart + DAY_MS
       );
     };
-    const active = tasks.filter((t) => t.parentId === null && (hitsDay(t, dayStart) || hitsRepeatDay(t)));
-    const done = completedTasks.filter((t) => t.parentId === null && hitsDay(t, dayStart));
+    type Entry = { task: TaskWithSubtasks; parentTitle?: string };
+    const collect = (list: TaskWithSubtasks[]): Entry[] => {
+      const out: Entry[] = [];
+      const walk = (t: TaskWithSubtasks, parentTitle?: string) => {
+        const isTop = parentTitle === undefined;
+        if (hitsDay(t, dayStart) || (isTop && hitsRepeatDay(t))) {
+          out.push({ task: t, parentTitle });
+        }
+        for (const sub of t.subtasks ?? []) walk(sub, parentTitle ?? t.title);
+      };
+      for (const t of list) walk(t);
+      return out;
+    };
+    const active = collect(tasks);
+    const done = collect(completedTasks);
     return [...active, ...done].sort((a, b) => {
-      const da = a.deadline ?? Number.POSITIVE_INFINITY;
-      const db = b.deadline ?? Number.POSITIVE_INFINITY;
+      const da = a.task.deadline ?? Number.POSITIVE_INFINITY;
+      const db = b.task.deadline ?? Number.POSITIVE_INFINITY;
       if (da !== db) return da - db;
-      const sa = a.startDate ?? Number.POSITIVE_INFINITY;
-      const sb = b.startDate ?? Number.POSITIVE_INFINITY;
+      const sa = a.task.startDate ?? Number.POSITIVE_INFINITY;
+      const sb = b.task.startDate ?? Number.POSITIVE_INFINITY;
       if (sa !== sb) return sa - sb;
-      return a.title.localeCompare(b.title);
+      return a.task.title.localeCompare(b.task.title);
     });
   }, [tasks, completedTasks, dayStart]);
 
   const d = new Date(date);
   const title = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 · 周${WEEKDAYS[d.getDay()]}`;
 
+  // 快速日期选择（需求5）：供直接跳到某年某月某日
+  const datePickerValue = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const handleDatePick = (v: string) => {
+    if (!v) return;
+    const [y, m, dd] = v.split('-').map((n) => Number(n));
+    if (y && m && dd) onDateChange(new Date(y, m - 1, dd).getTime()); // 当天 00:00
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {/* 顶部：日期大标题 + 事项计数 + 前后翻日/今天 */}
+      {/* 第一排：前后翻日 + 今天 + 快速选日期（左对齐） */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingBottom: 12 }}>
+        <button
+          type="button"
+          onClick={() => onDateChange(dayStart - DAY_MS)}
+          aria-label="前一天"
+          style={NAV_BUTTON}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+        >
+          <ChevronLeft style={{ width: 16, height: 16 }} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onDateChange(dayStart + DAY_MS)}
+          aria-label="后一天"
+          style={NAV_BUTTON}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+        >
+          <ChevronRight style={{ width: 16, height: 16 }} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onDateChange(startOfDay(Date.now()))}
+          disabled={isToday}
+          aria-label="回到今天"
+          title="回到今天"
+          style={{
+            marginLeft: 8,
+            padding: '5px 12px',
+            border: '0.5px solid var(--border)',
+            borderRadius: 999,
+            background: 'var(--background)',
+            color: 'var(--foreground)',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: isToday ? 'default' : 'pointer',
+            fontFamily: 'var(--font-sans)',
+            opacity: isToday ? 0.4 : 1,
+            transition: 'background-color 0.15s ease',
+          }}
+          onMouseEnter={(e) => { if (!isToday) e.currentTarget.style.background = 'var(--accent)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--background)'; }}
+        >
+          今天
+        </button>
+        <input
+          type="date"
+          value={datePickerValue}
+          onChange={(e) => handleDatePick(e.target.value)}
+          aria-label="快速选择日期"
+          title="快速跳到指定日期"
+          style={{
+            marginLeft: 8, height: 28, padding: '0 8px 0 8px', boxSizing: 'border-box',
+            border: '0.5px solid var(--border)', borderRadius: 8, background: 'var(--background)',
+            color: 'var(--foreground)', fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)', cursor: 'pointer',
+          }}
+        />
+      </div>
+      {/* 第二排：日期大标题 + 事项计数（左对齐） */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingBottom: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
@@ -382,53 +481,6 @@ export default function DayView({
             {sorted.length} 个事项
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={() => onDateChange(dayStart - DAY_MS)}
-            aria-label="前一天"
-            style={NAV_BUTTON}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          >
-            <ChevronLeft style={{ width: 16, height: 16 }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDateChange(dayStart + DAY_MS)}
-            aria-label="后一天"
-            style={NAV_BUTTON}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          >
-            <ChevronRight style={{ width: 16, height: 16 }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDateChange(startOfDay(Date.now()))}
-            disabled={isToday}
-            aria-label="回到今天"
-            title="回到今天"
-            style={{
-              marginLeft: 8,
-              padding: '5px 12px',
-              border: '0.5px solid var(--border)',
-              borderRadius: 999,
-              background: 'var(--background)',
-              color: 'var(--foreground)',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: isToday ? 'default' : 'pointer',
-              fontFamily: 'var(--font-sans)',
-              opacity: isToday ? 0.4 : 1,
-              transition: 'background-color 0.15s ease',
-            }}
-            onMouseEnter={(e) => { if (!isToday) e.currentTarget.style.background = 'var(--accent)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--background)'; }}
-          >
-            今天
-          </button>
-        </div>
       </div>
 
       {/* 时间轴列表 / 空态 */}
@@ -438,15 +490,16 @@ export default function DayView({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {sorted.map((t, i) => (
+          {sorted.map((e, i) => (
             <TimelineEntry
-              key={t.id}
-              task={t}
+              key={`${e.task.id}-${e.parentTitle ?? 'top'}`}
+              task={e.task}
               dayStart={dayStart}
               folderMap={folderMap}
               onToggleComplete={onToggleComplete}
               isLast={i === sorted.length - 1}
               onContextMenuTask={onContextMenuTask}
+              parentTitle={e.parentTitle}
             />
           ))}
         </div>

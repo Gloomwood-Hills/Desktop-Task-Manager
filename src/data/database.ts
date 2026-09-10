@@ -125,6 +125,9 @@ async function initDatabase(db: Database): Promise<void> {
       webdavPassword TEXT NOT NULL DEFAULT '',
       lastSyncedAt INTEGER,
       lastSyncAction TEXT,
+      aiBaseUrl TEXT NOT NULL DEFAULT '',
+      aiApiKey TEXT NOT NULL DEFAULT '',
+      aiModel TEXT NOT NULL DEFAULT '',
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     )
@@ -163,6 +166,9 @@ async function initDatabase(db: Database): Promise<void> {
   // 旧库迁移：Settings 新增 syncPolicy 列（默认同步策略，默认为双向合并）
   await migrateSettingsAddSyncPolicy(db);
 
+  // 旧库迁移：Settings 新增 AI 助手配置列（BaseURL/APIKey/Model）
+  await migrateSettingsAddAI(db);
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS WindowState (
       id TEXT PRIMARY KEY,
@@ -171,10 +177,14 @@ async function initDatabase(db: Database): Promise<void> {
       width INTEGER NOT NULL DEFAULT 420,
       height INTEGER NOT NULL DEFAULT 700,
       collapsedFolders TEXT DEFAULT '[]',
+      sidebarOpen INTEGER NOT NULL DEFAULT 1,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     )
   `);
+
+  // 旧库迁移：WindowState 新增 sidebarOpen 列（文件夹侧栏展开状态）
+  await migrateWindowStateAddSidebar(db);
 
   await insertDefaultData(db);
 
@@ -430,5 +440,27 @@ async function migrateSettingsAddSyncPolicy(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
   if (!cols.some((c) => c.name === 'syncPolicy')) {
     await db.execute("ALTER TABLE Settings ADD COLUMN syncPolicy TEXT NOT NULL DEFAULT 'twoWay'");
+  }
+}
+
+/** 旧库迁移：WindowState 新增 sidebarOpen 列（文件夹侧栏展开状态，默认开） */
+async function migrateWindowStateAddSidebar(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(WindowState)');
+  if (!cols.some((c) => c.name === 'sidebarOpen')) {
+    await db.execute('ALTER TABLE WindowState ADD COLUMN sidebarOpen INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
+/** 旧库迁移：Settings 新增 AI 助手配置列（BaseURL/APIKey/Model，默认空串） */
+async function migrateSettingsAddAI(db: Database): Promise<void> {
+  const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
+  if (!cols.some((c) => c.name === 'aiBaseUrl')) {
+    await db.execute("ALTER TABLE Settings ADD COLUMN aiBaseUrl TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cols.some((c) => c.name === 'aiApiKey')) {
+    await db.execute("ALTER TABLE Settings ADD COLUMN aiApiKey TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cols.some((c) => c.name === 'aiModel')) {
+    await db.execute("ALTER TABLE Settings ADD COLUMN aiModel TEXT NOT NULL DEFAULT ''");
   }
 }

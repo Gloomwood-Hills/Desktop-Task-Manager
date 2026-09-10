@@ -5,13 +5,15 @@ interface PromptDialogProps {
   defaultValue?: string;
   placeholder?: string;
   confirmText?: string;
+  /** 输入最大字数限制（如文件夹名 20） */
+  maxLength?: number;
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }
 
 /** 文本输入对话框（替代 WebView 不稳定的 window.prompt） */
 export function PromptDialog({
-  title, defaultValue = '', placeholder, confirmText = '确定', onConfirm, onCancel,
+  title, defaultValue = '', placeholder, confirmText = '确定', maxLength, onConfirm, onCancel,
 }: PromptDialogProps) {
   const [value, setValue] = useState(defaultValue);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -45,6 +47,7 @@ export function PromptDialog({
           type="text"
           value={value}
           placeholder={placeholder}
+          maxLength={maxLength}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') submit();

@@ -123,6 +123,15 @@ class WidgetAddTaskActivity : AppCompatActivity() {
     findViewById<ImageView>(R.id.btn_close).setOnClickListener { finishToHome() }
     findViewById<TextView>(R.id.btn_cancel).setOnClickListener { finishToHome() }
     findViewById<TextView>(R.id.btn_create).setOnClickListener { saveTask() }
+
+    // 从桌面小部件「快速记录」进入时自动聚焦标题，可直接输入并自然语言解析
+    if (intent.getBooleanExtra(TaskWidgetProvider.EXTRA_FOCUS_TITLE, false)) {
+      titleInput.requestFocus()
+      titleInput.postDelayed({
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        imm.showSoftInput(titleInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+      }, 250)
+    }
   }
 
   /** 读取 Folder 表（deleted=0），首项为「未分类」 */

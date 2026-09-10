@@ -65,6 +65,7 @@ export class WindowStateRepository {
     return {
       ...r,
       collapsedFolders,
+      sidebarOpen: r.sidebarOpen === 1 || r.sidebarOpen === true,
     } as unknown as WindowState;
   }
 }

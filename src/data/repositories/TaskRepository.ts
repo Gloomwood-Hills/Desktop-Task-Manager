@@ -193,6 +193,27 @@ export class TaskRepository {
     return result.rowsAffected > 0;
   }
 
+  /** 软删一个任务及其全部后代（子任务、孙任务……）。先按 parentId 树收集所有后代 id，再统一软删。 */
+  async softDeleteWithDescendants(id: string): Promise<boolean> {
+    const all = await this.getAll(); // deleted=0 的全部任务
+    const ids = new Set<string>();
+    const queue = [id];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      if (ids.has(cur)) continue;
+      ids.add(cur);
+      for (const t of all) if (t.parentId === cur) queue.push(t.id);
+    }
+    const now = Date.now();
+    for (const did of ids) {
+      await this.db.execute(
+        `UPDATE Task SET deleted = 1, updatedAt = ? WHERE id = ?`,
+        [now, did]
+      );
+    }
+    return ids.size > 0;
+  }
+
   /**
    * 撤销完成工具：软删同一重复系列下所有未完成、未删除的实例（除 exceptId 本身）。
    * 以稳定的 repeatSeriesId 为准，不依赖易丢失/陈旧的 repeatNextId 单链，

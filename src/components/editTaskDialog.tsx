@@ -5,6 +5,7 @@ import { Task, TaskRepeatRule } from '../data/types';
 import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime } from './utils/formatDate';
 import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
 import { ReminderCalendar } from './quickCapture';
+import { containerTransform } from './utils/motion';
 
 interface EditTaskDialogProps {
   task: Task;
@@ -24,9 +25,6 @@ function toLocalInputValue(ts: number): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-
-/** 面板 q弹进场（Motion spring） */
-const panelSpring = { type: 'spring' as const, stiffness: 420, damping: 20, mass: 0.9 };
 
 /** 偏移配置的展示文案：'提前一天' / '提前一天 · 提前6小时'；自定义时刻单独显示 */
 function reminderLabel(offsets: string[], customAt: number | null): string {
@@ -119,7 +117,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
 
   /** 面板容器（q弹进场） */
   const panelWrap = (children: React.ReactNode) => (
-    <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={panelSpring} style={{ padding: `${s.padTop - 2}px ${s.padX}px 0` }}>
+    <motion.div variants={containerTransform} initial="initial" animate="animate" exit="exit" style={{ padding: `${s.padTop - 2}px ${s.padX}px 0` }}>
       {children}
     </motion.div>
   );

@@ -24,6 +24,8 @@ export type ParsedCommand =
   | { kind: 'set-reminder-at'; query: string; reminderAt: number }
   | { kind: 'set-priority'; query: string; priority: 'important' | 'normal' }
   | { kind: 'move-to-folder'; query: string; folderName: string }
+  | { kind: 'delete-task'; query: string }
+  | { kind: 'delete-folder'; name: string }
   | { kind: 'unknown' };
 
 /** 去除句子中的日期/时间/前缀修饰，提取任务标题关键词 */
@@ -99,12 +101,13 @@ function parseRepeatRule(text: string): { rule: TaskRepeatRule; intervalDays: nu
   return null;
 }
 
-/** 解析提前提醒偏移：1天/3天/6小时 → ReminderOffsetKey[] */
+/** 解析提前提醒偏移：1天/3天/6小时/1小时 → ReminderOffsetKey[] */
 function parseReminderOffsets(text: string): ReminderOffsetKey[] {
   const offsets: ReminderOffsetKey[] = [];
   if (/提前\s*1\s*天|提前一天|提前1日/.test(text)) offsets.push('1d');
   if (/提前\s*3\s*天|提前三天|提前3日/.test(text)) offsets.push('3d');
   if (/提前\s*6\s*小时|提前6小时/.test(text)) offsets.push('6h');
+  if (/提前\s*1\s*小时|提前一小时/.test(text)) offsets.push('1h');
   return offsets;
 }
 
@@ -126,7 +129,7 @@ function extractQueryAfterBa(text: string): string {
  * 例： "九月九日登山+每月重复+提前3天提醒" / "新建任务X，明天截止，每天重复，提前1天提醒"
  * 返回 { kind:'create-task', ... }；title 为空表示无法识别为任务。
  */
-function parseCreateTask(text: string): ParsedCommand {
+function parseCreateTask(text: string): Extract<ParsedCommand, { kind: 'create-task' }> {
   // 去掉"新建/创建/添加 任务"等前缀
   const body = text.replace(/^(?:新建|创建|添加)(?:一个|一个新|一个新)?(?:任务)?\s*[:：]?\s*/, '');
   const parts = body.split(/[+＋,，、;；]/).map((p) => p.trim()).filter(Boolean);
@@ -159,7 +162,6 @@ function parseCreateTask(text: string): ParsedCommand {
   }
 
   const rawTitle = titleChunks.join(' ');
-  const first = parts[0];
   // 标题净化失败时兜底用首个非属性段
   const title = extractTaskKeyword(rawTitle) || (titleChunks.length ? titleChunks[0] : '');
   return { kind: 'create-task', title, deadline, repeatRule, repeatIntervalDays, reminderOffsets, reminderAt: null };
@@ -193,6 +195,27 @@ export function parseCommand(text: string): ParsedCommand {
     const query = extractQueryAfterBa(t);
     const folderName = m[2].replace(/文件夹$/, '').trim();
     if (query && folderName) return { kind: 'move-to-folder', query, folderName };
+  }
+
+  // 删除操作：必须明确出现"删除/去除"关键词（需求4），否则不会误触发
+  if (/^(?:删除|去除|删掉)/.test(t)) {
+    // 删除文件夹
+    let dfm = t.match(/^(?:删除|去除|删掉)(?:文件夹)?(.+?)(?:文件夹|分类)$/);
+    if (dfm) {
+      const name = dfm[1].replace(/^文件夹/, '').trim();
+      if (name) return { kind: 'delete-folder', name };
+    }
+    dfm = t.match(/^(?:删除|去除|删掉)文件夹(.+)$/);
+    if (dfm) {
+      const name = dfm[1].trim();
+      if (name) return { kind: 'delete-folder', name };
+    }
+    // 删除任务
+    const dtm = t.match(/^(?:删除|去除|删掉)(?:任务)?\s*(.+)$/);
+    if (dtm) {
+      const q = dtm[1].replace(/任务$/, '').trim();
+      if (q) return { kind: 'delete-task', query: q };
+    }
   }
 
   // 3) 把X设为重要 / 标记为重要

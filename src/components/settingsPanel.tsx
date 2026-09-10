@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Cloud, BookOpen, ChevronDown } from 'lucide-react';
+import { X, Check, Cloud, BookOpen, ChevronDown } from 'lucide-react';
 import { Settings, SortType, SyncPolicy, DEFAULT_WEBDAV_URL } from '../data/types';
+import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, testAiConnection } from '../services/aiClient';
 import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from '../data/sync';
 import type { SyncSettings, SyncLogEntry } from '../data/sync';
 import { isMobile } from '../data/platform';
@@ -15,13 +16,14 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type TabId = '外观' | '排序' | '提醒' | '同步' | '排障';
+type TabId = '外观' | '排序' | '提醒' | '同步' | 'AI' | '排障';
 
 const TABS: { id: TabId; disabled?: boolean }[] = [
   { id: '外观' },
   { id: '排序' },
   { id: '提醒' },
   { id: '同步' },
+  { id: 'AI' },
   { id: '排障' },
 ];
 
@@ -30,6 +32,16 @@ const SORT_OPTIONS: { label: string; value: SortType }[] = [
   { label: '按截止时间', value: 'deadline' },
   { label: '按名称', value: 'name' },
   { label: '手动排序', value: 'manual' },
+];
+
+/** 常用 OpenAI 兼容 AI 服务预设：点击即可填入 BaseURL 与默认模型 */
+const AI_PRESETS: { name: string; baseUrl: string; model: string }[] = [
+  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+  { name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+  { name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
 ];
 
 /** 设置面板（右侧滑入，对齐设计稿 settings） */
@@ -46,12 +58,46 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [deadlineGradient, setDeadlineGradient] = useState(settings?.deadlineGradient ?? true);
   const [autoSync, setAutoSync] = useState(settings?.autoSync ?? true);
 
+  // AI tab 本地受控状态（输入即时响应，持久化异步不阻塞键入）
+  const [aiBaseUrl, setAiBaseUrl] = useState(settings?.aiBaseUrl ?? '');
+  const [aiApiKey, setAiApiKey] = useState(settings?.aiApiKey ?? '');
+  const [aiModel, setAiModel] = useState(settings?.aiModel ?? '');
+
   // ===== 同步 tab 状态 =====
   /** 最近一次同步/连接测试结果（ok 决定状态区颜色） */
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   /** 坚果云账密获取指南是否展开 */
   const [guideOpen, setGuideOpen] = useState(false);
+
+  // ===== AI tab 状态 =====
+  /** 最近一次 AI 连接测试结果 */
+  const [aiResult, setAiResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  /** AI 测试连接：用当前已填配置发一条极短消息 */
+  const handleTestAi = async () => {
+    const baseUrl = aiBaseUrl || DEFAULT_AI_BASE_URL;
+    const apiKey = aiApiKey;
+    const model = aiModel || DEFAULT_AI_MODEL;
+    if (!apiKey) { setAiResult({ ok: false, message: '请先填写 API Key' }); return; }
+    setAiBusy(true);
+    try {
+      await testAiConnection({ baseUrl, apiKey, model });
+      setAiResult({ ok: true, message: '连接成功，AI 助手可用' });
+    } catch (error) {
+      setAiResult({ ok: false, message: `连接失败：${error instanceof Error ? error.message : String(error)}` });
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  /** 点击常用服务预设：填入 BaseURL 与默认模型（API Key 由用户自行填写） */
+  const applyAiPreset = (p: { name: string; baseUrl: string; model: string }) => {
+    setAiBaseUrl(p.baseUrl);
+    setAiModel(p.model);
+    onChange({ aiBaseUrl: p.baseUrl, aiModel: p.model });
+    setAiResult(null);
+  };
 
   // ===== 排障 tab 状态 =====
   const [logs, setLogs] = useState<SyncLogEntry[]>([]);
@@ -633,12 +679,13 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>密码</label>
                 <input
-                  type="password"
+                  type="text"
                   value={settings?.webdavPassword ?? ''}
                   placeholder="WebDAV 密码"
                   autoComplete="off"
                   onChange={(e) => onChange({ webdavPassword: e.target.value })}
                   style={{ ...inputStyle, marginTop: 8 }}
+                  className="pw-mask"
                   aria-label="WebDAV 密码"
                 />
               </div>
@@ -673,6 +720,125 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
             </section>
           )}
 
+          {/* ===== AI 智能助手 ===== */}
+          {tab === 'AI' && (
+            <section>
+              {/* 说明文案 */}
+              <div style={{
+                borderRadius: 'calc(var(--radius) * 0.8)', padding: '12px 14px',
+                background: 'var(--muted)', border: '1px solid var(--border)', marginBottom: 20,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)' }}>AI 智能助手（OpenAI 兼容）</span>
+                </div>
+                <p style={{ ...descStyle, lineHeight: 1.6 }}>
+                  填写任一 OpenAI 兼容服务的 BaseURL / API Key / 模型名（DeepSeek、OpenAI、通义、Moonshot 等均可）。配置后：
+                  <br />· 新建任务时可用「一键生成子任务」自动拆分排期；
+                  <br />· 命令栏可直接用自然语言执行复杂操作（如"新建一个重复三天的上课任务，8月4号结束"）。
+                  <br />API Key 仅保存在本机数据库，不会上传到任何地方。
+                </p>
+              </div>
+
+              {/* 常用服务预设：点击自动填入 BaseURL 与默认模型 */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>常用服务</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                  {AI_PRESETS.map((p) => {
+                    const active = aiBaseUrl.trim().toLowerCase() === p.baseUrl.toLowerCase();
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => applyAiPreset(p)}
+                        title={`${p.baseUrl} · ${p.model}`}
+                        aria-pressed={active}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                          border: '1px solid var(--border)',
+                          background: active ? 'color-mix(in srgb, var(--brand-100) 26%, transparent)' : 'var(--background)',
+                          color: active ? 'var(--brand-800)' : 'var(--foreground)',
+                          fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                            transition: 'background-color 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--accent)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = active ? 'color-mix(in srgb, var(--brand-100) 26%, transparent)' : 'var(--background)'; }}
+                      >
+                        {p.name}
+                        {active && <Check style={{ width: 12, height: 12 }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted-foreground)' }}>
+                  点击填入接口地址与模型，再自行填写 API Key 即可。
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>BaseURL</label>
+                <input
+                  type="text"
+                  value={aiBaseUrl}
+                  placeholder={DEFAULT_AI_BASE_URL}
+                  autoComplete="off"
+                  onChange={(e) => { setAiBaseUrl(e.target.value); onChange({ aiBaseUrl: e.target.value.trim() }); }}
+                  style={{ ...inputStyle, marginTop: 8 }}
+                  aria-label="AI BaseURL"
+                />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>API Key</label>
+                <input
+                  type="text"
+                  value={aiApiKey}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                  onChange={(e) => { setAiApiKey(e.target.value); onChange({ aiApiKey: e.target.value.trim() }); }}
+                  style={{ ...inputStyle, marginTop: 8 }}
+                  className="pw-mask"
+                  aria-label="AI API Key"
+                />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>模型</label>
+                <input
+                  type="text"
+                  value={aiModel}
+                  placeholder={DEFAULT_AI_MODEL}
+                  autoComplete="off"
+                  onChange={(e) => { setAiModel(e.target.value); onChange({ aiModel: e.target.value.trim() }); }}
+                  style={{ ...inputStyle, marginTop: 8 }}
+                  aria-label="AI 模型名"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button onClick={handleTestAi} disabled={aiBusy} style={secondaryBtn}>
+                  {aiBusy ? '正在测试…' : '测试连接'}
+                </button>
+              </div>
+
+              {/* 状态区：正在测试时即时反馈，完成后展示结果 */}
+              {aiBusy && (
+                <div style={{ borderRadius: 'calc(var(--radius) * 0.8)', padding: '12px 14px', background: 'var(--muted)', border: '1px solid var(--border)' }}>
+                  <p style={{ fontSize: 12.5, margin: 0, lineHeight: 1.6, color: 'var(--muted-foreground)' }}>
+                    正在测试连接，请稍候…
+                  </p>
+                </div>
+              )}
+              {aiResult && !aiBusy && (
+                <div style={{ borderRadius: 'calc(var(--radius) * 0.8)', padding: '12px 14px', background: 'var(--muted)', border: '1px solid var(--border)' }}>
+                  <p style={{ fontSize: 12.5, margin: 0, lineHeight: 1.6, color: aiResult.ok ? 'var(--foreground)' : 'var(--destructive)' }}>
+                    {aiResult.message}
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* ===== 排障 ===== */}
           {tab === '排障' && (
             <section>
@@ -696,6 +862,9 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                       : '无',
                     ok: !!settings?.lastSyncedAt,
                   },
+                  { label: 'AI 服务', value: settings?.aiBaseUrl || '未配置', ok: !!settings?.aiBaseUrl },
+                  { label: 'AI Key', value: settings?.aiApiKey ? '已填写' : '未填写', ok: !!settings?.aiApiKey },
+                  { label: 'AI 模型', value: settings?.aiModel || '未配置', ok: !!settings?.aiModel },
                 ].map((row) => (
                   <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                     <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{row.label}</span>

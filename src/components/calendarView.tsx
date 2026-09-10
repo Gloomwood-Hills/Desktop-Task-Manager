@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, Plus, Check } from 'lucide-react';
 import { Task, TaskWithSubtasks } from '../data/types';
 import { generateRepeatOccurrences } from './utils/repeatUtils';
+import { panelSpring } from './utils/motion';
 
 export interface CalendarViewProps {
   /** 活动（未完成）任务：用于月格药丸与面板的未完成部分 */
@@ -111,7 +113,11 @@ function Pill({ maxChars, title, tone, completed, onClick, onContextMenu }: Pill
       onContextMenu={onContextMenu}
       style={{ ...baseStyle, ...pillStyleFor(tone) }}
     >
-      {completed && <Check style={{ width: 9, height: 9, marginRight: 2, flexShrink: 0 }} />}
+      {completed && (
+        <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={panelSpring} style={{ display: 'inline-flex' }}>
+          <Check style={{ width: 9, height: 9, marginRight: 2, flexShrink: 0 }} />
+        </motion.span>
+      )}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{truncated}</span>
     </div>
   );
@@ -267,10 +273,11 @@ const NAV_BUTTON: CSSProperties = {
 };
 
 /** 详情面板里的一行：勾号 + 标题 + 「日程」小标 + 右侧时间戳；已完成任务显示灰色删除线样式 */
-function DetailRow({ task, onToggle, onContextMenu }: {
+function DetailRow({ task, onToggle, onContextMenu, parentTitle }: {
   task: TaskWithSubtasks;
   onToggle: (id: string) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
+  parentTitle?: string;
 }) {
   // 时间戳显示：取任务截止/开始中更接近当天的时间点
   const deadline = task.deadline;
@@ -328,18 +335,28 @@ function DetailRow({ task, onToggle, onContextMenu }: {
           cursor: 'pointer',
         }}
       >
-        {task.completed && <Check style={{ width: 11, height: 11, strokeWidth: 3 }} />}
+        {task.completed && (
+          <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={panelSpring} style={{ display: 'inline-flex' }}>
+            <Check style={{ width: 11, height: 11, strokeWidth: 3 }} />
+          </motion.span>
+        )}
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* 子任务归属气泡（需求4）：表明它属于哪个父任务 */}
+        {parentTitle && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px', borderRadius: 999, background: 'color-mix(in srgb, var(--chart-3) 12%, transparent)', color: 'var(--chart-3)', fontSize: 11, fontWeight: 600, lineHeight: 1.5, whiteSpace: 'nowrap', maxWidth: '100%', marginBottom: 4 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{parentTitle}</span>
+          </div>
+        )}
         <div
           style={{
             fontSize: 14,
             fontWeight: 500,
             color: task.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
             textDecoration: task.completed ? 'line-through' : 'none',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            lineHeight: 1.3,
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
           }}
         >
           {task.title}
@@ -349,6 +366,28 @@ function DetailRow({ task, onToggle, onContextMenu }: {
             ? '已完成'
             : `日程${hasSubtasks ? ` · ${task.subtasks.filter((s) => s.completed).length}/${task.subtasks.length}` : ''}`}
         </div>
+        {/* 任务备注（需求2，内联常显） */}
+        {task.remark.trim().length > 0 && (
+          <div style={{ marginTop: 4, fontSize: 11.5, color: 'var(--muted-foreground)', lineHeight: 1.4, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+            {task.remark}
+          </div>
+        )}
+        {/* 子任务展开：查看每个子任务的标题与备注（需求2） */}
+        {hasSubtasks && (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {task.subtasks.map((s) => (
+              <div key={s.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.completed ? 'var(--primary)' : 'var(--muted-foreground)', flexShrink: 0, marginTop: 5 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, color: s.completed ? 'var(--muted-foreground)' : 'var(--foreground)', textDecoration: s.completed ? 'line-through' : 'none', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{s.title}</div>
+                  {s.remark.trim().length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 1, lineHeight: 1.3, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{s.remark}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div
         style={{
@@ -409,26 +448,34 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
       map.set(key, list);
     };
 
-    // 活动任务
-    for (const task of tasks) {
-      const keys = new Set<string>();
-      if (task.startDate !== null) keys.add(dayKey(task.startDate));
-      if (task.deadline !== null) keys.add(dayKey(task.deadline));
-      // 重复任务：补全可见区间内所有出现日
-      if (task.repeatRule && task.deadline) {
-        for (const occ of generateRepeatOccurrences(task, rangeStart, rangeEnd)) {
-          keys.add(dayKey(occ));
+    // 活动任务（含子任务）：凡命中当天的节点（顶层或子任务）都作为独立条目，子任务带归属气泡
+    const walkActive = (list: TaskWithSubtasks[]) => {
+      for (const task of list) {
+        const keys = new Set<string>();
+        if (task.startDate !== null) keys.add(dayKey(task.startDate));
+        if (task.deadline !== null) keys.add(dayKey(task.deadline));
+        // 重复任务：补全可见区间内所有出现日
+        if (task.repeatRule && task.deadline) {
+          for (const occ of generateRepeatOccurrences(task, rangeStart, rangeEnd)) {
+            keys.add(dayKey(occ));
+          }
         }
+        for (const key of keys) addTask(task, key);
+        if ((task.subtasks ?? []).length > 0) walkActive(task.subtasks);
       }
-      for (const key of keys) addTask(task, key);
-    }
+    };
+    walkActive(tasks);
 
-    // 已完成实例（含重复系列的历史完成记录）—— 按 deadline 命中日计入
-    for (const t of completedTasks ?? []) {
-      if (t.deleted) continue;
-      const key = t.deadline !== null ? dayKey(t.deadline) : null;
-      if (key) addTask(toDetail(t), key);
-    }
+    // 已完成实例（含已完成子任务，需求3）—— 按 deadline 命中日计入
+    const walkDone = (list: TaskWithSubtasks[]) => {
+      for (const t of list) {
+        if (t.deleted) continue;
+        const key = t.deadline !== null ? dayKey(t.deadline) : null;
+        if (key) addTask(toDetail(t), key);
+        if ((t.subtasks ?? []).length > 0) walkDone(t.subtasks);
+      }
+    };
+    walkDone((completedTasks ?? []) as TaskWithSubtasks[]);
 
     // 排序：未完成在前 / priority 重要优先 / 截止早者在前 / 标题字典序
     for (const list of map.values()) {
@@ -476,6 +523,19 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
     });
     return () => cancelAnimationFrame(id);
   }, [selectedTs]);
+
+  const titleById = useMemo(() => {
+    const m = new Map<string, string>();
+    const walk = (list: TaskWithSubtasks[]) => {
+      for (const t of list) {
+        m.set(t.id, t.title);
+        for (const s of t.subtasks ?? []) walk([s]);
+      }
+    };
+    walk(tasks);
+    walk((completedTasks ?? []) as TaskWithSubtasks[]);
+    return m;
+  }, [tasks, completedTasks]);
 
   const todayKey = dayKey(Date.now());
   const selectedKey = selectedTs !== null ? dayKey(selectedTs) : null;
@@ -673,6 +733,7 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
                         task={t}
                         onToggle={handleToggleFromDetail}
                         onContextMenu={onContextMenuTask ? (e) => onContextMenuTask(e, t.id) : undefined}
+                        parentTitle={t.parentId ? titleById.get(t.parentId) : undefined}
                       />
                     ))
                   )}

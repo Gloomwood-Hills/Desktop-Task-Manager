@@ -1,7 +1,7 @@
 /** 提前提醒偏移配置：相对截止时间的提前量，用于"提醒时间"的多选预设。
  * 存储偏移的 key 而非绝对的提醒时刻，这样截止时间改变时提醒自动联动顺延。 */
 
-export type ReminderOffsetKey = '1d' | '3d' | '6h';
+export type ReminderOffsetKey = '1d' | '3d' | '6h' | '1h';
 
 export interface ReminderOffsetOption {
   key: ReminderOffsetKey;
@@ -13,6 +13,7 @@ export const REMINDER_OFFSET_OPTIONS: ReminderOffsetOption[] = [
   { key: '1d', label: '提前一天', ms: 24 * 60 * 60 * 1000 },
   { key: '3d', label: '提前三天', ms: 3 * 24 * 60 * 60 * 1000 },
   { key: '6h', label: '提前6小时', ms: 6 * 60 * 60 * 1000 },
+  { key: '1h', label: '提前1小时', ms: 60 * 60 * 1000 },
 ];
 
 export function isReminderOffsetKey(key: string): key is ReminderOffsetKey {

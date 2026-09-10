@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { fadeThrough, toastUp, sharedAxis, DUR } from './components/utils/motion';
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -6,6 +8,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from '@tauri
 import { enable as autostartEnable, disable as autostartDisable } from '@tauri-apps/plugin-autostart';
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
+import FolderSidebar, { SidebarSelection } from './components/folderSidebar';
 import CompletedSection from './components/completedSection';
 import CalendarView from './components/calendarView';
 import DayView from './components/dayView';
@@ -18,7 +21,9 @@ import { useTaskData } from './hooks/useTaskData';
 import { parseCommand, fuzzyScore } from './components/utils/commandParser';
 import { applyDefaultDeadlineTime, formatDeadline } from './components/utils/formatDate';
 import { getDatabase } from './data';
-import { TaskService } from './services';
+import { TaskService, FOLDER_NAME_MAX } from './services';
+import { generateSubtasks, aiRunCommand, toTimestamp, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL } from './services/aiClient';
+import type { AiToolCall, GeneratedSubtask } from './services/aiClient';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy, TaskRepeatRule } from './data/types';
 import { isMobile } from './data/platform';
 import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync, logSync } from './data/sync';
@@ -58,6 +63,15 @@ function App() {
   const [prefillDate, setPrefillDate] = useState<number | null>(null);
   const [lastAction, setLastAction] = useState<LastAction>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** 命令框聚焦信号：小部件「快速记录」唤起主视图时自动聚焦命令栏 */
+  const [commandFocusSignal, setCommandFocusSignal] = useState(0);
+  /** AI 已解析好的「新建任务」草稿：弹出 QuickCapture 并预填（仅 create_task） */
+  const [aiCreateDraft, setAiCreateDraft] = useState<null | {
+    title: string; folderId: string | null; deadline: number | null; priority: Priority;
+    remark: string; reminderOffsets: string[]; repeatRule: TaskRepeatRule | null; repeatIntervalDays: number | null; subtasks: GeneratedSubtask[];
+  }>(null);
+  /** AI 已解析好的「编辑任务」草稿：弹出 EditTaskDialog 并预填（仅 update_task） */
+  const [aiEditDraft, setAiEditDraft] = useState<null | { task: Task; taskId: string; updates: Partial<Task> }>(null);
   const [pinned, setPinned] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   /** 编辑中的任务（右键菜单 → 编辑） */
@@ -69,6 +83,12 @@ function App() {
   const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
   /** 是否已展开全部（顶栏同名功能键） */
   const [allExpanded, setAllExpanded] = useState(false);
+  /** 文件夹侧栏「固定常开」开关（跨视图导航）；默认关闭 → 鼠标悬停左缘浮现，移开隐藏。持久化到 WindowState.sidebarOpen */
+  const [folderSidebarPinned, setFolderSidebarPinned] = useState<boolean>(() => windowState?.sidebarOpen ?? false);
+  /** 悬浮触发：鼠标悬停左侧边缘时置 true，移开置 false */
+  const [sidebarHover, setSidebarHover] = useState(false);
+  /** 侧栏选中的文件夹过滤（null=全部；'unclassified'=未分类；其它=文件夹 id） */
+  const [activeFolderId, setActiveFolderId] = useState<SidebarSelection>(null);
   /** 自然语言命令：编辑任务前的确认（仅编辑操作弹确认框） */
   const [commandEdit, setCommandEdit] = useState<{ task: Task; newDeadline: number | null } | null>(null);
 
@@ -347,6 +367,80 @@ function App() {
     }, 300);
   }, [expandedFolders, folderTree, saveWindowState]);
 
+  // ===== 文件夹侧栏（左缘悬浮浮现） =====
+
+  // 「固定常开」开关持久化（默认悬停浮现；用户点击固定后才常开，旧值不再恢复）
+  useEffect(() => {
+    saveWindowState({ sidebarOpen: folderSidebarPinned });
+  }, [folderSidebarPinned, saveWindowState]);
+
+  // 移动端小部件「快速记录」：原生向 WebView 派发 DOM 事件 → 自动聚焦命令框
+  useEffect(() => {
+    const h = () => setCommandFocusSignal((s) => s + 1);
+    window.addEventListener('open-command-bar', h);
+    return () => window.removeEventListener('open-command-bar', h);
+  }, []);
+
+  /** 是否显示侧栏：固定常开 或 悬停触发 */
+  const showSidebar = folderSidebarPinned || sidebarHover;
+  /** 悬停离开后的隐藏延迟（避免移到卡片区时闪隐）；ref 供清理 */
+  const sidebarHideTimer = useRef<number | null>(null);
+  const handleSidebarEnter = () => {
+    if (sidebarHideTimer.current !== null) { clearTimeout(sidebarHideTimer.current); sidebarHideTimer.current = null; }
+    setSidebarHover(true);
+  };
+  const handleSidebarLeave = () => {
+    if (sidebarHideTimer.current !== null) clearTimeout(sidebarHideTimer.current);
+    sidebarHideTimer.current = window.setTimeout(() => setSidebarHover(false), 160);
+  };
+
+  // ===== 移动端：左缘右滑唤起侧栏（替代桌面悬停） =====
+  // 触摸热区为左缘 28px 专用 div（touchAction: 'none'），避免被滚动容器的 pan-y 拦截。
+  const sidebarTouchStart = useRef<{ x: number; y: number } | null>(null);
+  const handleSidebarTouchStart = (e: React.TouchEvent) => {
+    if (!isMobile) return;
+    const t = e.touches[0];
+    sidebarTouchStart.current = { x: t.clientX, y: t.clientY };
+  };
+  const handleSidebarTouchMove = (e: React.TouchEvent) => {
+    if (!isMobile || !sidebarTouchStart.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - sidebarTouchStart.current.x;
+    const dy = Math.abs(t.clientY - sidebarTouchStart.current.y);
+    // 水平位移 > 垂直位移（排除纵向滚动）且右滑超过阈值 → 唤起侧栏
+    if (dx > 50 && dx > dy) {
+      setSidebarHover(true);
+      sidebarTouchStart.current = null;
+    }
+  };
+  const handleSidebarTouchEnd = () => {
+    if (!isMobile) return;
+    sidebarTouchStart.current = null;
+  };
+
+  /** 在文件夹树中定位节点 id 的祖先链（不含自身）；找到返回祖先 id 数组，找不到返回 null */
+  const collectPath = (nodes: FolderNode[], id: string): string[] | null => {
+    for (const n of nodes) {
+      if (n.id === id) return [];
+      const child = collectPath(n.children, id);
+      if (child !== null) return [n.id, ...child];
+    }
+    return null;
+  };
+
+  // 选中文件夹 → 自动展开其父链与自身（主树可见其子级）
+  useEffect(() => {
+    if (activeFolderId == null || activeFolderId === 'unclassified') return;
+    const path = collectPath(folderTree, activeFolderId);
+    const ids = [...(path ?? []), activeFolderId];
+    if (ids.length === 0) return;
+    setExpandedFolders((prev) => {
+      const s = new Set(prev);
+      ids.forEach((p) => s.add(p));
+      return s;
+    });
+  }, [activeFolderId, folderTree]);
+
   // ===== 开机自启动：settings.autoStart 变化时同步注册/取消系统启动项 =====
   // 桌面专属（Android 无自启动注册能力，且对应 Rust 插件不随移动端构建），跳过调用。
   useEffect(() => {
@@ -410,12 +504,20 @@ function App() {
   const handleCreateTask = async (
     title: string,
     folderId: string | null,
-    options?: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderAt?: number | null; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null }
+    options?: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderAt?: number | null; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null; subtasks?: GeneratedSubtask[] }
   ) => {
-    await createTask(title, folderId, options);
+    const parent = await createTask(title, folderId, options);
+    if (parent && options?.subtasks && options.subtasks.length > 0) {
+      const subs = options.subtasks.filter((s) => s.title.trim());
+      for (const sub of subs) {
+        await createTask(sub.title.trim(), parent.folderId, { parentId: parent.id, deadline: sub.deadline ?? null, remark: sub.remark });
+      }
+      if (subs.length > 0) setToast(`已创建任务及 ${subs.length} 个子任务`);
+    }
     setPrefillDate(null);
     setCaptureFolder(null);
     setCaptureOpen(false);
+    setAiCreateDraft(null);
   };
 
   // ===== 自然语言命令（视图切换条旁的命令气泡） =====
@@ -433,16 +535,128 @@ function App() {
     return best;
   };
 
+  // ===== AI 助手（工具调用） =====
+
+  /** AI 是否已配置（BaseURL + Key 齐全） */
+  const aiEnabled = !!settings?.aiBaseUrl && !!settings?.aiApiKey;
+  /** 组装 AI 配置（未填时回退默认地址/模型） */
+  const aiConfig = {
+    baseUrl: settings?.aiBaseUrl || DEFAULT_AI_BASE_URL,
+    apiKey: settings?.aiApiKey || '',
+    model: settings?.aiModel || DEFAULT_AI_MODEL,
+  };
+
+  /** 文件夹名 → folderId（未分类/找不到 → null） */
+  const folderIdByName = (name?: unknown): string | null => {
+    if (typeof name !== 'string' || !name.trim()) return null;
+    const f = allFolders.find((x) => !x.deleted && x.name === name.trim());
+    return f ? f.id : null;
+  };
+
+  /** 兼容 AI 返回的重复规则 + 间隔天数 */
+  const aiRepeat = (rule: unknown, interval?: unknown): { repeatRule: TaskRepeatRule | null; repeatIntervalDays: number | null } => {
+    const r = String(rule ?? '');
+    const allowed: TaskRepeatRule[] = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
+    if (allowed.includes(r as TaskRepeatRule)) {
+      const days = typeof interval === 'number' && interval > 0 ? Math.round(interval) : null;
+      return { repeatRule: r as TaskRepeatRule, repeatIntervalDays: r === 'custom' ? days : null };
+    }
+    return { repeatRule: null, repeatIntervalDays: null };
+  };
+
+  /** 解析 AI 的 deadline（ISO/数值/自然串 → 时间戳） */
+  const aiDeadline = (v: unknown): number | null => toTimestamp(v);
+
+  /** AI 解析结果 → 打开对应的预填弹窗（QuickCapture / EditTaskDialog），用户确认后再落库 */
+  const executeAiCalls = (calls: AiToolCall[]): void => {
+    for (const call of calls) {
+      const a = call.arguments;
+      if (call.name === 'create_task') {
+        const { repeatRule, repeatIntervalDays } = aiRepeat(a.repeat_rule, a.repeat_interval_days);
+        setAiCreateDraft({
+          title: String(a.title ?? '').trim(),
+          folderId: folderIdByName(a.folder),
+          deadline: aiDeadline(a.deadline),
+          priority: a.priority === 'important' ? 'important' : 'normal',
+          remark: typeof a.remark === 'string' ? a.remark : '',
+          reminderOffsets: Array.isArray(a.reminder_offsets)
+            ? a.reminder_offsets.filter((o): o is string => typeof o === 'string' && ['1d', '3d', '6h'].includes(o))
+            : [],
+          repeatRule,
+          repeatIntervalDays: repeatRule === 'custom' ? repeatIntervalDays : null,
+          subtasks: (Array.isArray(a.subtasks) ? a.subtasks : [])
+            .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object' && typeof s.title === 'string' && !!(s.title as string).trim())
+            .map((s) => ({ title: String(s.title).trim(), deadline: aiDeadline(s.deadline_iso ?? s.deadline), remark: typeof s.remark === 'string' ? s.remark : '' })),
+        });
+        return;
+      }
+      if (call.name === 'update_task') {
+        const matched = fuzzyFindTask(String(a.query ?? ''));
+        if (!matched) { setToast(`未找到任务「${a.query}」`); continue; }
+        const patch: Partial<Task> = {};
+        if (typeof a.title === 'string' && a.title.trim()) patch.title = a.title.trim();
+        if (a.deadline !== undefined) patch.deadline = aiDeadline(a.deadline);
+        if (a.priority !== undefined) patch.priority = a.priority === 'important' ? 'important' : 'normal';
+        if (typeof a.remark === 'string') patch.remark = a.remark;
+        const { repeatRule, repeatIntervalDays } = aiRepeat(a.repeat_rule, a.repeat_interval_days);
+        if (a.repeat_rule !== undefined) { patch.repeatRule = repeatRule; patch.repeatIntervalDays = repeatRule === 'custom' ? repeatIntervalDays : null; }
+        if (Array.isArray(a.reminder_offsets)) patch.reminderOffsets = a.reminder_offsets.filter((o): o is string => typeof o === 'string' && ['1d', '3d', '6h'].includes(o));
+        setAiEditDraft({ task: { ...matched, ...patch }, taskId: matched.id, updates: patch });
+        return;
+      }
+    }
+  };
+
   /** 解析并执行自然语言命令 */
   const handleCommand = async (raw: string) => {
     const cmd = parseCommand(raw);
     const defaultHour = settings?.defaultDeadlineHour ?? 18;
     const defaultMinute = settings?.defaultDeadlineMinute ?? 0;
 
+    // 需求4：新建文件夹/移动/删除 为简单操作，纯自然语言解析即可，不交给 AI 助手
     if (cmd.kind === 'create-folder') {
       const folder = await createFolder(cmd.folderName);
       setToast(folder ? `已创建文件夹「${cmd.folderName}」` : '创建文件夹失败');
       return;
+    }
+    if (cmd.kind === 'move-to-folder') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) { setToast('未找到匹配的任务'); return; }
+      const folder = allFolders.find((f) => f.name === cmd.folderName && !f.deleted);
+      if (!folder) { setToast(`未找到文件夹「${cmd.folderName}」`); return; }
+      await updateTask(matched.id, { folderId: folder.id });
+      setToast(`已将「${matched.title}」移入「${cmd.folderName}」`);
+      return;
+    }
+    if (cmd.kind === 'delete-task') {
+      const matched = fuzzyFindTask(cmd.query);
+      if (!matched) { setToast(`未找到任务「${cmd.query}」`); return; }
+      const ok = await deleteTask(matched.id); // 级联删除全部子任务（需求3）
+      setToast(ok ? `已删除任务「${matched.title}」及其子任务` : '删除任务失败');
+      return;
+    }
+    if (cmd.kind === 'delete-folder') {
+      const folder = allFolders.find((f) => f.name === cmd.name && !f.deleted);
+      if (!folder) { setToast(`未找到文件夹「${cmd.name}」`); return; }
+      const ok = await deleteFolder(folder.id);
+      setToast(ok ? `已删除文件夹「${cmd.name}」` : '删除文件夹失败');
+      return;
+    }
+
+    // 需求1/2：新建/编辑任务（含未识别的复杂指令）→ 由 AI 解析全部字段，弹出预填窗口供确认
+    if (aiEnabled && (cmd.kind === 'create-task' || cmd.kind === 'edit-task' || cmd.kind === 'unknown')) {
+      try {
+        const calls = await aiRunCommand(aiConfig, {
+          command: raw,
+          context: {
+            taskTitles: allActiveTasks.map((t) => t.title),
+            folderNames: allFolders.filter((f) => !f.deleted).map((f) => f.name),
+            now: Date.now(),
+          },
+          now: Date.now(),
+        });
+        if (calls.length > 0) { executeAiCalls(calls); return; }
+      } catch { /* AI 调用失败 → 兜底确定性解析 */ }
     }
 
     if (cmd.kind === 'create-task') {
@@ -508,17 +722,7 @@ function App() {
       return;
     }
 
-    if (cmd.kind === 'move-to-folder') {
-      const matched = fuzzyFindTask(cmd.query);
-      if (!matched) { setToast('未找到匹配的任务'); return; }
-      const folder = allFolders.find((f) => f.name === cmd.folderName && !f.deleted);
-      if (!folder) { setToast(`未找到文件夹「${cmd.folderName}」`); return; }
-      await updateTask(matched.id, { folderId: folder.id });
-      setToast(`已将「${matched.title}」移入「${cmd.folderName}」`);
-      return;
-    }
-
-    setToast('未能识别指令，试试：新建XX分类 / 明天下午去游泳 / 把XX设为每天重复 / 把XX提前1天提醒');
+    setToast(`未能识别指令${aiEnabled ? '' : '（可在设置 → AI 配置 AI 助手）'}，试试：新建XX分类 / 明天下午去游泳 / 把XX设为每天重复`);
   };
 
   // ===== 一键更新（合并式同步，无需选择上传/下载方向） =====
@@ -577,6 +781,18 @@ function App() {
     } catch { /* 打开失败时忽略 */ }
   };
 
+  /** 拖任务到文件夹：把任务及其所有子孙任务的 folderId 一并更新（保证 buildFolderTree 统计正确） */
+  const handleMoveTaskToFolder = async (taskId: string, folderId: string) => {
+    const task = findTaskAnywhere(taskId);
+    if (!task) return;
+    const ids: string[] = [task.id];
+    const collect = (subs: TaskWithSubtasks[]) => subs.forEach((s) => { ids.push(s.id); collect(s.subtasks ?? []); });
+    collect((task as TaskWithSubtasks).subtasks ?? []);
+    for (const id of ids) await updateTask(id, { folderId });
+    const folderName = allFolders.find((f) => f.id === folderId)?.name ?? '';
+    setToast(`已将「${task.title}」移入「${folderName}」`);
+  };
+
   // ===== 视图数据（V2）：日历 / 日视图共用的展平活动任务列表 =====
 
   /** 展平的未完成任务列表（递归收集文件夹树与未分类任务，含任意层级子任务，响应式随数据刷新） */
@@ -592,6 +808,43 @@ function App() {
     walk(unclassifiedTasks);
     return out;
   }, [folderTree, unclassifiedTasks]);
+
+  // ===== 文件夹侧栏过滤（跨列表/月/日视图） =====
+
+  /** 选中文件夹自身及其所有子孙文件夹 id 集合；null=全部/未分类 */
+  const activeFolderSet = useMemo(() => {
+    if (activeFolderId == null || activeFolderId === 'unclassified') return null;
+    const set = new Set<string>();
+    const collectSubtree = (n: FolderNode) => {
+      set.add(n.id);
+      n.children.forEach(collectSubtree);
+    };
+    const find = (nodes: FolderNode[]): boolean => {
+      for (const n of nodes) {
+        if (n.id === activeFolderId) { collectSubtree(n); return true; }
+        if (find(n.children)) return true;
+      }
+      return false;
+    };
+    if (find(folderTree)) return set;
+    return null;
+  }, [activeFolderId, folderTree]);
+
+  /** 按月/日视图过滤后的活动任务（含文件夹过滤，不再过滤已完成的子树层面） */
+  const filteredActiveTasks = useMemo<TaskWithSubtasks[]>(() => {
+    if (activeFolderId == null) return allActiveTasks;
+    if (activeFolderId === 'unclassified') return allActiveTasks.filter((t) => t.folderId == null);
+    if (!activeFolderSet) return [];
+    return allActiveTasks.filter((t) => t.folderId != null && activeFolderSet.has(t.folderId));
+  }, [allActiveTasks, activeFolderId, activeFolderSet]);
+
+  /** 当前选中文件夹的显示名（用于"仅看"条与 toast） */
+  const activeFolderName = useMemo(
+    () => activeFolderId && activeFolderId !== 'unclassified'
+      ? (allFolders.find((f) => f.id === activeFolderId)?.name ?? '')
+      : activeFolderId === 'unclassified' ? '未分类' : '',
+    [activeFolderId, allFolders],
+  );
 
   // ===== 搜索过滤（标题/备注/子任务，递归） =====
 
@@ -627,6 +880,22 @@ function App() {
     };
     return folderTree.map(filterNode).filter((n): n is FolderNode => n !== null);
   }, [folderTree, searchQuery]);
+
+  // 列表视图的文件夹隔离：全量 / 仅未分类 / 单文件夹子树
+  const listRender = useMemo<{ tree: FolderNode[]; roots: TaskWithSubtasks[] }>(() => {
+    if (activeFolderId == null) return { tree: treeToRender, roots: unclassifiedToRender };
+    if (activeFolderId === 'unclassified') return { tree: [], roots: unclassifiedToRender };
+    const find = (nodes: FolderNode[]): FolderNode | null => {
+      for (const n of nodes) {
+        if (n.id === activeFolderId) return n;
+        const c = find(n.children);
+        if (c) return c;
+      }
+      return null;
+    };
+    const node = find(treeToRender);
+    return { tree: node ? [node] : [], roots: [] };
+  }, [activeFolderId, treeToRender, unclassifiedToRender]);
 
   const matchCount = useMemo(() => {
     const activeCount = treeToRender.reduce((acc, folder) => {
@@ -721,11 +990,27 @@ function App() {
         border: isMobile
           ? 'none'
           : '0.5px solid color-mix(in srgb, var(--border) 30%, transparent)',
-      }}>
+      }}
+    >
+        {/* 移动端左缘触摸热区：专用 28px 宽 div 捕获右滑唤出侧栏手势。
+            touchAction:'none' 确保浏览器不将手势交给纵向滚动处理；
+            仅在移动端且侧栏未展开时存在，避免遮挡内容。 */}
+        {isMobile && !showSidebar && (
+          <div
+            onTouchStart={handleSidebarTouchStart}
+            onTouchMove={handleSidebarTouchMove}
+            onTouchEnd={handleSidebarTouchEnd}
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0, width: 28,
+              zIndex: 55, touchAction: 'none',
+            }}
+          />
+        )}
         <TopBar
           viewMode={viewMode}
           onChangeViewMode={changeViewMode}
           onCommand={handleCommand}
+          commandFocusSignal={commandFocusSignal}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -747,39 +1032,64 @@ function App() {
           allExpanded={allExpanded}
           onToggleExpandAll={handleToggleExpandAll}
           syncBusy={syncBusy}
+          sidebarOpen={folderSidebarPinned}
+          onToggleSidebar={() => setFolderSidebarPinned((v) => !v)}
         />
 
         {/* 分隔线 */}
         <div style={{ height: 0.5, background: 'var(--border)', margin: '0 20px', flexShrink: 0, opacity: 0.6 }} />
 
-        {/* 搜索提示（仅列表视图） */}
-        {viewMode === 'list' && searchQuery.trim() && (
-          <div style={{ padding: '8px 20px 2px', flexShrink: 0 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>找到 {matchCount} 个匹配结果</span>
-          </div>
-        )}
+        {/* 主体：左侧边缘热区 + 悬浮文件夹侧栏 + 右侧视图区 */}
+        <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'stretch' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {/* 搜索提示（仅列表视图） */}
+            {viewMode === 'list' && searchQuery.trim() && (
+              <div style={{ padding: '8px 20px 2px', flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>找到 {matchCount} 个匹配结果</span>
+              </div>
+            )}
 
-        {/* 树视图（可滚动） */}
-        <main
-          data-tree
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            minHeight: 0,
-            // Android WebView 触摸滚动：显式允许纵向滚动手势（触屏不启动拖拽排序）
-            WebkitOverflowScrolling: 'touch',
-            overscrollBehavior: 'contain',
-            touchAction: 'pan-y',
-            // 移动端系统栏（导航栏）避让由原生层处理，此处仅留视觉留白
-            padding: isMobile ? '8px 16px 24px' : '8px 20px 20px',
-          }}
-        >
-          {/* 列表视图：文件夹树 + 已完成区（现有行为保持不变） */}
+            {/* 月/日视图：显示当前文件夹过滤 + 一键回到全部 */}
+            {viewMode !== 'list' && activeFolderId !== null && activeFolderName && (
+              <div style={{ padding: '8px 20px 0', flexShrink: 0 }}>
+                <div
+                  onClick={() => setActiveFolderId(null)}
+                  role="button"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+                    fontSize: 11.5, fontWeight: 600, color: 'var(--primary)',
+                    background: 'var(--brand-50)', border: '1px solid color-mix(in srgb, var(--brand-400) 30%, transparent)',
+                  }}
+                >
+                  仅看：{activeFolderName}
+                  <span style={{ fontSize: 12, lineHeight: 1 }}>×</span>
+                </div>
+              </div>
+            )}
+
+            {/* 树视图（可滚动） */}
+            <main
+              data-tree
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                minHeight: 0,
+                // Android WebView 触摸滚动：显式允许纵向滚动手势（触屏不启动拖拽排序）
+                WebkitOverflowScrolling: 'touch',
+                overscrollBehavior: 'contain',
+                touchAction: 'pan-y',
+                // 移动端系统栏（导航栏）避让由原生层处理，此处仅留视觉留白
+                padding: isMobile ? '8px 16px 24px' : '8px 20px 20px',
+              }}
+            >
+          {/* 视图切换：Fade-through 过渡（列表/日历/日） */}
+          <AnimatePresence mode="wait">
           {viewMode === 'list' && (
-            <>
+            <motion.div key="view-list" variants={fadeThrough} initial="initial" animate="animate" exit="exit">
               <FolderTree
-                folders={treeToRender}
-                rootTasks={unclassifiedToRender}
+                folders={listRender.tree}
+                rootTasks={listRender.roots}
                 expandedFolders={expandedFolders}
                 expandedTasks={expandedTasks}
                 searchQuery={searchQuery}
@@ -790,6 +1100,7 @@ function App() {
                 dark={theme === 'dark'}
                 onReorderTasks={reorderTasks}
                 onReorderFolders={reorderFolders}
+                onMoveTaskToFolder={handleMoveTaskToFolder}
                 onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
                 onToggleTaskExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
                 onToggleCompleted={handleToggleCompleted}
@@ -815,48 +1126,109 @@ function App() {
                 onToggleExpanded={() => setCompletedExpanded(!completedExpanded)}
                 onRestore={handleRestore}
               />
-            </>
+            </motion.div>
           )}
 
           {/* 日历视图（V3）：月历药丸标签 + 选中态详情面板 */}
           {viewMode === 'calendar' && (
-            <CalendarView
-              tasks={allActiveTasks}
-              completedTasks={completedTasks as TaskWithSubtasks[]}
-              onToggleTask={(id) => void handleToggleCompleted(id)}
-              onAddTask={(ts) => {
-                // 「+ 添加事项」：预填该日并打开快速新建
-                setPrefillDate(ts);
-                setCaptureFolder(null);
-                setCaptureOpen(true);
-              }}
-              onContextMenuTask={(e, taskId) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const t = findTaskAnywhere(taskId);
-                setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
-              }}
-            />
+            <motion.div key="view-calendar" variants={fadeThrough} initial="initial" animate="animate" exit="exit">
+              <CalendarView
+                tasks={filteredActiveTasks}
+                completedTasks={completedTasks as TaskWithSubtasks[]}
+                onToggleTask={(id) => void handleToggleCompleted(id)}
+                onAddTask={(ts) => {
+                  // 「+ 添加事项」：预填该日并打开快速新建
+                  setPrefillDate(ts);
+                  setCaptureFolder(null);
+                  setCaptureOpen(true);
+                }}
+                onContextMenuTask={(e, taskId) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const t = findTaskAnywhere(taskId);
+                  setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
+                }}
+              />
+            </motion.div>
           )}
 
           {/* 日视图（V2） */}
           {viewMode === 'day' && (
-            <DayView
-              tasks={allActiveTasks}
-              completedTasks={completedTasks as TaskWithSubtasks[]}
-              date={calendarDate}
-              folderMap={new Map(allFolders.map((f) => [f.id, f.name]))}
-              onDateChange={setCalendarDate}
-              onToggleComplete={handleToggleCompleted}
-              onContextMenuTask={(e, taskId) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const t = findTaskAnywhere(taskId);
-                setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
-              }}
-            />
+            <motion.div key="view-day" variants={fadeThrough} initial="initial" animate="animate" exit="exit">
+              <DayView
+                tasks={filteredActiveTasks}
+                completedTasks={completedTasks as TaskWithSubtasks[]}
+                date={calendarDate}
+                folderMap={new Map(allFolders.map((f) => [f.id, f.name]))}
+                onDateChange={setCalendarDate}
+                onToggleComplete={handleToggleCompleted}
+                onContextMenuTask={(e, taskId) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const t = findTaskAnywhere(taskId);
+                  setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
+                }}
+              />
+            </motion.div>
           )}
-        </main>
+          </AnimatePresence>
+            </main>
+          </div>
+
+          {/* 左缘热区（始终存在捕获悬停）+ 悬浮文件夹卡片 */}
+          <AnimatePresence>
+            {isMobile && showSidebar && (
+              <motion.div
+                key="sidebar-scrim"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: DUR.short }}
+                onClick={() => setSidebarHover(false)}
+                style={{ position: 'absolute', inset: 0, zIndex: 59, background: 'rgba(0,0,0,0.25)' }}
+              />
+            )}
+          </AnimatePresence>
+          <div
+            onMouseEnter={handleSidebarEnter}
+            onMouseLeave={handleSidebarLeave}
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0,
+              width: showSidebar ? 178 : 10,
+              zIndex: 60,
+              transition: 'width 0.15s ease',
+            }}
+          >
+            {/* 边缘细条（可见把手）：悬停/固定时高亮 */}
+            <div style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0, width: 10,
+              background: 'var(--border)',
+              opacity: showSidebar ? 0.9 : 0.5,
+              borderRight: '1px solid color-mix(in srgb, var(--border) 60%, transparent)',
+            }} />
+            <AnimatePresence>
+              {showSidebar && (
+                <motion.div
+                  key="sidebar"
+                  variants={sharedAxis}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ position: 'absolute', left: 12, top: 6, bottom: 6, width: 166 }}
+                >
+                  <FolderSidebar
+                    tree={treeToRender}
+                    expandedFolders={expandedFolders}
+                    active={activeFolderId}
+                    onSelect={setActiveFolderId}
+                    onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
+                    onNewFolder={() => setDialog({ type: 'create-folder', parentId: null })}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
 
         {/* 移动端底部导航已移除：视图切换移到顶栏下方（同步键下），底部让给列表内容 + 手势区 */}
       </div>
@@ -905,32 +1277,53 @@ function App() {
       />
 
       {/* Quick Capture */}
-      {captureOpen && (
-        <QuickCapture
-          folders={folderTree}
-          onClose={() => {
-            setPrefillDate(null);
-            setCaptureFolder(null);
-            setCaptureOpen(false);
-          }}
-          onCreate={handleCreateTask}
-          initialDate={prefillDate ?? undefined}
-          initialFolderId={captureFolder}
-          defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
-          defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
-        />
-      )}
+      <AnimatePresence>
+        {(captureOpen || aiCreateDraft) && (
+          <QuickCapture
+            key="quick-capture"
+            folders={folderTree}
+            onClose={() => {
+              setPrefillDate(null);
+              setCaptureFolder(null);
+              setCaptureOpen(false);
+              setAiCreateDraft(null);
+            }}
+            onCreate={handleCreateTask}
+            initialDate={prefillDate ?? undefined}
+            initialFolderId={aiCreateDraft ? aiCreateDraft.folderId : captureFolder}
+            initialTitle={aiCreateDraft?.title}
+            initialDeadline={aiCreateDraft?.deadline}
+            initialPriority={aiCreateDraft?.priority}
+            initialRemark={aiCreateDraft?.remark}
+            initialRepeatRule={aiCreateDraft?.repeatRule}
+            initialRepeatIntervalDays={aiCreateDraft?.repeatIntervalDays}
+            initialReminderOffsets={aiCreateDraft?.reminderOffsets}
+            initialSubtasks={aiCreateDraft?.subtasks}
+            defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
+            defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
+            aiEnabled={aiEnabled}
+            onGenerateSubtasks={async (title, deadline, opts) => {
+              if (!aiConfig.apiKey) throw new Error('请在 设置 → AI 中配置 API Key');
+              return generateSubtasks(aiConfig, { title, deadline, now: Date.now(), count: opts?.count, hint: opts?.hint });
+            }}
+          />
+        )}
 
-      {/* 编辑任务弹窗 */}
-      {editingTask && (
-        <EditTaskDialog
-          task={editingTask}
-          onSave={async (updates) => { await updateTask(editingTask.id, updates); }}
-          onClose={() => setEditingTask(null)}
-          defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
-          defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
-        />
-      )}
+        {/* 编辑任务弹窗（右键编辑 / AI 编辑预填） */}
+        {(editingTask || aiEditDraft) && (
+          <EditTaskDialog
+            key="edit-task"
+            task={aiEditDraft ? aiEditDraft.task : editingTask!}
+            onSave={async (updates) => {
+              if (aiEditDraft) await updateTask(aiEditDraft.taskId, updates);
+              else if (editingTask) await updateTask(editingTask.id, updates);
+            }}
+            onClose={() => { setEditingTask(null); setAiEditDraft(null); }}
+            defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
+            defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
+          />
+        )}
+      </AnimatePresence>
 
       {/* 自然语言命令：编辑任务确认框（仅编辑操作弹确认框） */}
       {commandEdit && (
@@ -962,8 +1355,9 @@ function App() {
       {dialog?.type === 'create-folder' && (
         <PromptDialog
           title="新建文件夹"
-          placeholder="文件夹名称"
+          placeholder="文件夹名称（≤20字）"
           confirmText="创建"
+          maxLength={FOLDER_NAME_MAX}
           onConfirm={async (name) => {
             await createFolder(name, dialog.parentId);
             setDialog(null);
@@ -975,8 +1369,9 @@ function App() {
         <PromptDialog
           title="重命名文件夹"
           defaultValue={dialog.defaultValue}
-          placeholder="文件夹名称"
+          placeholder="文件夹名称（≤20字）"
           confirmText="保存"
+          maxLength={FOLDER_NAME_MAX}
           onConfirm={async (name) => {
             await renameFolder(dialog.folderId, name);
             setDialog(null);
@@ -1013,48 +1408,56 @@ function App() {
       )}
 
       {/* Undo Toast */}
-      {toast && (
-        <div style={{
-          position: 'fixed',
-          // 移动端上移，避免被底部视图导航遮挡
-          bottom: isMobile ? 84 : 24,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 16,
-          height: 40,
-          padding: '0 20px',
-          borderRadius: 'calc(var(--radius)*0.8)',
-          background: 'var(--foreground)',
-          color: 'var(--background)',
-          fontSize: 13,
-          fontWeight: 500,
-          boxShadow: 'var(--shadow-lg)',
-          zIndex: 200,
-          whiteSpace: 'nowrap',
-        }}>
-          <span>{toast}</span>
-          {lastAction && (
-            <button
-              onClick={handleUndo}
-              style={{
-                color: 'var(--brand-400)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                border: 'none',
-                background: 'transparent',
-                fontSize: 13,
-                fontFamily: 'var(--font-sans)',
-                padding: 0,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              撤销
-            </button>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            variants={toastUp}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={{
+              position: 'fixed',
+              // 移动端上移，避免被底部视图导航遮挡
+              bottom: isMobile ? 84 : 24,
+              left: '50%',
+              x: '-50%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 16,
+              height: 40,
+              padding: '0 20px',
+              borderRadius: 'calc(var(--radius)*0.8)',
+              background: 'var(--foreground)',
+              color: 'var(--background)',
+              fontSize: 13,
+              fontWeight: 500,
+              boxShadow: 'var(--shadow-lg)',
+              zIndex: 200,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>{toast}</span>
+            {lastAction && (
+              <button
+                onClick={handleUndo}
+                style={{
+                  color: 'var(--brand-400)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: 'transparent',
+                  fontSize: 13,
+                  fontFamily: 'var(--font-sans)',
+                  padding: 0,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                撤销
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 已删除任务查看（30 天内保留，到期自动清除） */}
       {deletedOpen && (
