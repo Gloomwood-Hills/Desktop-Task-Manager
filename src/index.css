@@ -197,17 +197,6 @@ body {
   background: transparent;
 }
 
-/* 设置面板右侧滑入动画 */
-@keyframes settings-slide-in {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-@keyframes settings-scrim-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 /* 一键更新按钮同步进行中的图标旋转 */
 @keyframes dtm-spin {
   from { transform: rotate(0deg); }

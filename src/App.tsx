@@ -394,29 +394,74 @@ function App() {
     sidebarHideTimer.current = window.setTimeout(() => setSidebarHover(false), 160);
   };
 
-  // ===== 移动端：左缘右滑唤起侧栏（替代桌面悬停） =====
-  // 触摸热区为左缘 28px 专用 div（touchAction: 'none'），避免被滚动容器的 pan-y 拦截。
-  const sidebarTouchStart = useRef<{ x: number; y: number } | null>(null);
-  const handleSidebarTouchStart = (e: React.TouchEvent) => {
+  // ===== 移动端：左缘右滑唤起「分类」侧栏（替代桌面悬停） =====
+  // 为什么不再用「贴左缘的 28px 窄热区」：Android 手势导航会把屏幕最左侧约 24dp 的
+  // 横向滑动优先判定为「返回」并消费掉，导致贴边热区经常收不到完整的触摸序列。
+  // 因此改为监听主内容区「左侧 34% 起手」的横向手势（避开系统手势区，又足够宽），
+  // 横向位移占优且超过阈值即唤起；侧栏已开时向左滑即收起。
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const sidebarOpenRef = useRef(false);
+  sidebarOpenRef.current = showSidebar;
+
+  /** 收起侧栏（移动端同时取消「固定常开」，保证一次手势就能关掉） */
+  const closeSidebar = () => {
+    setSidebarHover(false);
+    if (isMobile) setFolderSidebarPinned(false);
+  };
+
+  /** 侧栏遮罩上的左滑起手 X（用于滑动手势关闭） */
+  const scrimTouchX = useRef<number | null>(null);
+
+  useEffect(() => {
     if (!isMobile) return;
-    const t = e.touches[0];
-    sidebarTouchStart.current = { x: t.clientX, y: t.clientY };
-  };
-  const handleSidebarTouchMove = (e: React.TouchEvent) => {
-    if (!isMobile || !sidebarTouchStart.current) return;
-    const t = e.touches[0];
-    const dx = t.clientX - sidebarTouchStart.current.x;
-    const dy = Math.abs(t.clientY - sidebarTouchStart.current.y);
-    // 水平位移 > 垂直位移（排除纵向滚动）且右滑超过阈值 → 唤起侧栏
-    if (dx > 50 && dx > dy) {
-      setSidebarHover(true);
-      sidebarTouchStart.current = null;
-    }
-  };
-  const handleSidebarTouchEnd = () => {
-    if (!isMobile) return;
-    sidebarTouchStart.current = null;
-  };
+    const el = contentRef.current;
+    if (!el) return;
+
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+    let decided = false;
+    let mode: 'open' | 'close' | null = null;
+
+    const onStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      tracking = true;
+      decided = false;
+      mode = null;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!tracking) return;
+      const t = e.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (!decided) {
+        // 位移过小先不定方向，避免轻微抖动误判
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        decided = true;
+        // 纵向占优 → 交回原生滚动，本次跟踪放弃
+        if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
+        if (sidebarOpenRef.current) mode = 'close';
+        else if (startX <= window.innerWidth * 0.34) mode = 'open';
+        else { tracking = false; return; }
+      }
+      if (mode === 'open' && dx > 46) { setSidebarHover(true); tracking = false; }
+      else if (mode === 'close' && dx < -46) { closeSidebar(); tracking = false; }
+    };
+    const onEnd = () => { tracking = false; decided = false; mode = null; };
+
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: true });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
 
   /** 在文件夹树中定位节点 id 的祖先链（不含自身）；找到返回祖先 id 数组，找不到返回 null */
   const collectPath = (nodes: FolderNode[], id: string): string[] | null => {
@@ -992,19 +1037,25 @@ function App() {
           : '0.5px solid color-mix(in srgb, var(--border) 30%, transparent)',
       }}
     >
-        {/* 移动端左缘触摸热区：专用 28px 宽 div 捕获右滑唤出侧栏手势。
-            touchAction:'none' 确保浏览器不将手势交给纵向滚动处理；
-            仅在移动端且侧栏未展开时存在，避免遮挡内容。 */}
+        {/* 移动端左缘把手：点按即可唤出「分类」侧栏（做手势之外的显式入口）。
+            横向滑动手势由 <main> 上的原生监听处理；贴边滑动易被系统返回手势抢占，
+            故此处退化为「点按打开」，并避开顶栏与底部区域。 */}
         {isMobile && !showSidebar && (
           <div
-            onTouchStart={handleSidebarTouchStart}
-            onTouchMove={handleSidebarTouchMove}
-            onTouchEnd={handleSidebarTouchEnd}
+            onClick={() => setSidebarHover(true)}
+            role="button"
+            aria-label="打开分类栏"
             style={{
-              position: 'absolute', left: 0, top: 0, bottom: 0, width: 28,
-              zIndex: 55, touchAction: 'none',
+              position: 'absolute', left: 0, top: 92, bottom: 120, width: 16,
+              zIndex: 56, display: 'flex', alignItems: 'center', cursor: 'pointer',
             }}
-          />
+          >
+            <span style={{
+              display: 'block', width: 4, height: 46, borderRadius: 999, marginLeft: 2,
+              background: 'color-mix(in srgb, var(--primary) 50%, transparent)',
+              boxShadow: '0 0 0 1px color-mix(in srgb, var(--background) 65%, transparent)',
+            }} />
+          </div>
         )}
         <TopBar
           viewMode={viewMode}
@@ -1070,6 +1121,7 @@ function App() {
 
             {/* 树视图（可滚动） */}
             <main
+              ref={contentRef}
               data-tree
               style={{
                 flex: 1,
@@ -1184,7 +1236,15 @@ function App() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: DUR.short }}
-                onClick={() => setSidebarHover(false)}
+                onClick={closeSidebar}
+                onTouchStart={(e) => { scrimTouchX.current = e.touches[0].clientX; }}
+                onTouchMove={(e) => {
+                  if (scrimTouchX.current != null && e.touches[0].clientX - scrimTouchX.current < -46) {
+                    closeSidebar();
+                    scrimTouchX.current = null;
+                  }
+                }}
+                onTouchEnd={() => { scrimTouchX.current = null; }}
                 style={{ position: 'absolute', inset: 0, zIndex: 59, background: 'rgba(0,0,0,0.25)' }}
               />
             )}
@@ -1214,6 +1274,14 @@ function App() {
                   initial="initial"
                   animate="animate"
                   exit="exit"
+                  onTouchStart={(e) => { scrimTouchX.current = e.touches[0].clientX; }}
+                  onTouchMove={(e) => {
+                    if (scrimTouchX.current != null && e.touches[0].clientX - scrimTouchX.current < -52) {
+                      closeSidebar();
+                      scrimTouchX.current = null;
+                    }
+                  }}
+                  onTouchEnd={() => { scrimTouchX.current = null; }}
                   style={{ position: 'absolute', left: 12, top: 6, bottom: 6, width: 166 }}
                 >
                   <FolderSidebar
@@ -1340,16 +1408,19 @@ function App() {
         />
       )}
 
-      {/* 设置面板 */}
-      {settingsOpen && (
-        <SettingsPanel
-          theme={theme as ThemeMode}
-          onThemeChange={(t) => setTheme(t)}
-          settings={settings}
-          onChange={updateSettings}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
+      {/* 设置面板（AnimatePresence：进入 + 退出动画成对） */}
+      <AnimatePresence>
+        {settingsOpen && (
+          <SettingsPanel
+            key="settings-panel"
+            theme={theme as ThemeMode}
+            onThemeChange={(t) => setTheme(t)}
+            settings={settings}
+            onChange={updateSettings}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* 文件夹对话框（替代 prompt/confirm） */}
       {dialog?.type === 'create-folder' && (

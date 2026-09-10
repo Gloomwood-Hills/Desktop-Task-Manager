@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { X, Check, Cloud, BookOpen, ChevronDown } from 'lucide-react';
 import { Settings, SortType, SyncPolicy, DEFAULT_WEBDAV_URL } from '../data/types';
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, testAiConnection } from '../services/aiClient';
@@ -291,30 +292,43 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
 
   return (
     <>
-      {/* Scrim */}
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 2,
-        background: 'rgba(0,0,0,0.15)',
-        animation: 'settings-scrim-fade 0.2s ease',
-      }} onClick={onClose} />
+      {/* Scrim（进入淡入 / 退出淡出，与面板位移同时进行） */}
+      <motion.div
+        key="settings-scrim"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 2,
+          background: 'rgba(0,0,0,0.15)',
+        }}
+      />
 
-      {/* 设置面板 */}
-      <div style={{
-        position: 'fixed',
-        top: 0, right: 0, bottom: 0,
-        zIndex: 10,
-        width: 420,
-        maxWidth: '92%',
-        display: 'flex',
-        flexDirection: 'column',
-        animation: 'settings-slide-in 0.22s cubic-bezier(0.32, 0.72, 0, 1)',
-        background: 'color-mix(in srgb, var(--background) 82%, transparent)',
-        WebkitBackdropFilter: 'saturate(180%) blur(60px)',
-        backdropFilter: 'saturate(180%) blur(60px)',
-        borderRadius: '16px 0 0 16px',
-        boxShadow: '-4px 0 32px rgba(0,0,0,0.12), -1px 0 0 color-mix(in srgb, var(--border) 50%, transparent)',
-        color: 'var(--foreground)',
-      }}>
+      {/* 设置面板：进入从右侧滑入，退出反向滑出（AnimatePresence 承接 exit） */}
+      <motion.div
+        key="settings-panel"
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
+        style={{
+          position: 'fixed',
+          top: 0, right: 0, bottom: 0,
+          zIndex: 10,
+          width: 420,
+          maxWidth: '92%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'color-mix(in srgb, var(--background) 82%, transparent)',
+          WebkitBackdropFilter: 'saturate(180%) blur(60px)',
+          backdropFilter: 'saturate(180%) blur(60px)',
+          borderRadius: '16px 0 0 16px',
+          boxShadow: '-4px 0 32px rgba(0,0,0,0.12), -1px 0 0 color-mix(in srgb, var(--border) 50%, transparent)',
+          color: 'var(--foreground)',
+        }}
+      >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 12px', flexShrink: 0 }}>
           <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--foreground)', whiteSpace: 'nowrap' }}>设置</span>
@@ -939,7 +953,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
             </section>
           )}
         </div>
-      </div>
+      </motion.div>
     </>
   );
 }
