@@ -3,10 +3,25 @@ node_modules/
 dist/
 src-tauri/target/
 .env
+.env.*
 .DS_Store
 *.log
 .vscode/
 .idea/
+
+# 敏感文件与密钥（绝不入库）
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.jks
+*.keystore
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Android 交叉编译本地工具链（迁移自 %USERPROFILE% 以规避中文路径 lld 链接失败）
 .rustup/
@@ -18,6 +33,10 @@ src-tauri/gen/schemas/
 # Android Gradle 构建缓存与调试 APK（debug 包体积达数百 MB，超 GitHub 100MB 限制且可再生成）
 .gradle/
 release/*-debug.apk
+
+# 发布产物（exe/apk 二进制体积大，不入 git，改由 GitHub Releases 发布）
+release/*.exe
+release/*.apk
 
 # 开发/内部文件（不随发布上传）
 .trae/
