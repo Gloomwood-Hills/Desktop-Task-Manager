@@ -49,7 +49,7 @@
 
 ### 桌面端
 
-下载 [Release](https://github.com/Gloomwood-Hills/Desktop-Task-Manager/releases) 中的便携版 `DesktopTaskManager-v2.1.0.exe`，双击即可运行（免安装）。
+下载 [Release](https://github.com/Gloomwood-Hills/Desktop-Task-Manager/releases) 中的便携版 `DesktopTaskManager-v1.0.0.exe`，双击即可运行（免安装）。
 
 ### 手机端
 

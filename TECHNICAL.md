@@ -251,7 +251,7 @@ npm run tauri build    # cargo build --release，嵌入 dist
 npm run release        # 上述 + scripts/copy-release.mjs 归档便携版 exe
 ```
 
-便携版 exe 输出到 `release/DesktopTaskManager-v2.1.0.exe`。
+便携版 exe 输出到 `release/DesktopTaskManager-v1.0.0.exe`。
 
 ### Android
 
