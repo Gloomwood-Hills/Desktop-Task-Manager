@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 截止徽章：3-7天（橙 #FF9500，16% 底） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#29FF9500" />
+    <corners android:radius="999dp" />
+</shape>

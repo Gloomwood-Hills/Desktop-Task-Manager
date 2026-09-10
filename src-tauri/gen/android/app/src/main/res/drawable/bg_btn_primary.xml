@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 主操作按钮：蓝色胶囊，对应应用端 创建任务/保存 按钮 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#007AFF" />
+    <corners android:radius="999dp" />
+</shape>

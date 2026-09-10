@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Customize your theme here. -->
+    </style>
+
+    <!-- 小部件「＋新增」弹窗主题：半透明窗口，让桌面壁纸透出，呈现"直接在桌面弹出"的效果。
+         布局本身是 遮罩+居中卡片，配合透明窗口即浮层弹窗。 -->
+    <style name="Theme.WidgetTaskDialog" parent="Theme.app">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackground">@android:color/transparent</item>
+    </style>
+</resources>

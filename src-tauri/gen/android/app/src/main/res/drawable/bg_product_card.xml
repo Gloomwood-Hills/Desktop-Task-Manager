@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 新建任务弹窗卡片：近白色 + 大圆角，对应应用端 popup 白色毛玻璃卡片 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FDFDFE" />
+    <corners android:radius="20dp" />
+</shape>

@@ -27,8 +27,21 @@ src-tauri/target/
 .rustup/
 .cargo/
 .node-compile-cache/
-src-tauri/gen/android/
 src-tauri/gen/schemas/
+
+# ===== Android 工程（src-tauri/gen/android）=====
+# 纳入「手写」的原生定制源码：小部件 Kotlin（Provider/Factory/Service/AddTask/Appearance/Db）、
+# 布局与 drawable、values、AndroidManifest、buildSrc 与 Gradle 脚手架，供小部件功能回溯。
+# 生成物、构建产物、启动图标、前端资源与签名不入库：
+#   - 骨架自带的 gen/android/.gitignore 与 gen/android/app/.gitignore 已覆盖
+#     build/、.gradle/、local.properties、generated/、tauri.properties、tauri.build.gradle.kts 等
+#   - 下面补充其未覆盖的项
+src-tauri/gen/android/app/src/main/assets/
+src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/app/src/main/res/mipmap-*/
+src-tauri/gen/android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml
+src-tauri/gen/android/app/src/main/res/drawable/ic_launcher_background.xml
+src-tauri/gen/android/buildSrc/.kotlin/
 
 # Android Gradle 构建缓存与调试 APK（debug 包体积达数百 MB，超 GitHub 100MB 限制且可再生成）
 .gradle/

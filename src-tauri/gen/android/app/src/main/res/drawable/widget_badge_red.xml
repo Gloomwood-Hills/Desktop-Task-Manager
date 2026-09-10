@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 截止徽章：逾期/1天内（红 #FF3333，16% 底） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#29FF3333" />
+    <corners android:radius="999dp" />
+</shape>
