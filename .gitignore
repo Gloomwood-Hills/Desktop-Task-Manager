@@ -35,8 +35,13 @@ src-tauri/gen/schemas/
 release/*-debug.apk
 
 # 发布产物（exe/apk 二进制体积大，不入 git，改由 GitHub Releases 发布）
-release/*.exe
-release/*.apk
+release/
+*.exe
+*.msi
+*.apk
+*.dmg
+*.deb
+*.AppImage
 
 # 开发/内部文件（不随发布上传）
 .trae/
