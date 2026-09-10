@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | 桌面框架 | **Tauri 2** | Rust 后端 + WebView2 前端，包体小、启动快 |
 | 前端 | **React 18 + TypeScript + Vite + Tailwind CSS** | 组件化 UI，Vite 构建 |
+| 动效 | **motion（framer-motion v13）** | Material 3 运动系统，仅用 transform/opacity GPU 加速 |
 | 数据库 | **SQLite**（tauri-plugin-sql） | 本地存储，桌面端与 Android 小部件共享 |
 | 系统集成 | **windows-rs**（Rust） | WorkerW 桌面挂载、托盘、全局快捷键 |
 | 通知 | **tauri-plugin-notification** | 系统通知（提醒） |
@@ -272,3 +273,48 @@ cd src-tauri\gen\android
 2. Android target 使用 `rustls` 而非 `openssl-sys`（交叉编译 openssl 困难）
 3. `reqwest` 在 Android 上用 `rustls-tls` feature，桌面端用默认
 4. WebView 内 fetch 受 CORS 限制，WebDAV 请求必须由 Rust 侧发起
+
+## 10. UI 动效系统
+
+### 10.1 运动令牌
+
+`src/components/utils/motion.ts` 统一全应用的缓动曲线、时长与过渡变体，消除散落的魔法数字：
+
+- **EASE**：6 条 Material 3 缓动曲线（standard / emphasized 及其 decelerate / accelerate 变体）
+- **DUR**：三档时长（short 微反馈 0.15s / medium 组件过渡 0.3s / long 大范围转场 0.5s）
+- **panelSpring**：面板弹簧（stiffness 420 / damping 20 / mass 0.9）
+- **变体**：`fadeThrough`（视图切换）/ `containerTransform`（对话框）/ `sharedAxis`（侧栏滑入）/ `listItem`（列表项增删）/ `toastUp`（Toast）
+
+对应的 CSS 变量（`--ease-*`、`--dur-*`）定义在 `src/index.css`。
+
+### 10.2 动画原则
+
+- 仅使用 `transform` / `opacity`，保证桌面 WebView2 与 Android WebView 的 GPU 加速流畅度
+- 视图切换用 `AnimatePresence mode="wait"` + `fadeThrough`
+- 列表项增删用 `layout` + `listItem` 变体实现平滑补位
+- 复选框完成态用 `motion.span` scale + fade 绘制对勾
+
+### 10.3 无障碍
+
+- `main.tsx` 使用 `<MotionConfig reducedMotion="user">` 让组件跳过位移动画
+- `index.css` 增加 `@media (prefers-reduced-motion: reduce)` 禁用/缩短动画
+
+## 11. AI 客户端
+
+`src/services/aiClient.ts` 封装 OpenAI 兼容接口（BaseURL + API Key + Model），兼容 DeepSeek / OpenAI / 通义 / Moonshot 等。
+
+### 11.1 能力
+
+| 函数 | 作用 |
+| --- | --- |
+| `generateSubtasks` | 给定父任务标题 + 截止时间，AI 生成按实际工作量排期的子任务（时间强约束在 `[当前时间, 父截止]` 内） |
+| `aiRunCommand` | 命令栏 function calling，AI 解析「新建/编辑任务」并返回 `create_task` / `update_task` 工具调用 |
+| `testAiConnection` | 验证 AI 配置是否可用 |
+
+### 11.2 关键设计
+
+- **显式时间上下文**：模型不知道"当前时刻"，prompt 中显式给出当前时间与区间天数，避免子任务 deadline 聚集
+- **按工作量分配**：禁止机械平均分配时间，工作量大的子任务获得更长区间，最后一个子任务 deadline 接近父任务截止
+- **AI 只负责复杂解析**：新建文件夹 / 移动 / 删除等简单指令由应用内自然语言解析器处理，AI 不输出这些工具调用
+- **时间钳制**：`clampTs` 把 AI 返回的时间戳强约束到合法区间，非法值丢弃
+- **配置安全**：API Key 仅保存在本地 SQLite，不随同步上传

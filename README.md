@@ -26,6 +26,8 @@
 - **系统托盘 + 全局快捷键**：`Ctrl+Shift+Space` 快速唤起，托盘菜单操作
 - **开机自启动**：可选开机自动启动
 - **本地 SQLite 存储**：数据保存在本地，不依赖网络
+- **AI 智能助手**：命令栏可用自然语言让 AI 解析「新建/编辑任务」的多字段；任务可一键生成按实际工作量排期的子任务（兼容 DeepSeek / OpenAI / 通义 / Moonshot 等 OpenAI 风格接口，需在设置中配置）
+- **Material 3 动效**：视图切换、对话框、任务增删、侧栏、Toast 等全链路过渡动画，仅用 transform/opacity 保证 GPU 流畅，并支持「减少动态效果」无障碍降级
 
 ### 手机端（Android 小部件）
 
@@ -98,6 +100,7 @@ cd src-tauri\gen\android
 
 - **Tauri 2**（Rust 后端 + WebView2 前端）
 - **React 18 + TypeScript + Vite + Tailwind CSS**
+- **motion（framer-motion v13）**：Material 3 运动系统动效
 - **SQLite**（tauri-plugin-sql，本地存储，桌面与 Android 小部件共享）
 - **tauri-plugin-notification**（系统通知）
 - **tauri-plugin-autostart**（开机自启动）
@@ -114,11 +117,12 @@ cd src-tauri\gen\android
 
 ```
 src/                    前端（WebView 内运行，TypeScript + React）
-  components/           UI 组件（quickCapture / calendarView / dayView / topBar 等）
+  components/           UI 组件（quickCapture / calendarView / dayView / topBar / folderSidebar 等）
+    utils/motion.ts     运动令牌与过渡变体（Material 3 动效）
   data/
     database.ts         SQLite 初始化与连接
     repositories/       Repository 模式数据访问层
-    services/           业务服务层
+    services/           业务服务层（aiClient.ts：AI 子任务生成 + 命令解析）
     sync/               WebDAV 同步引擎（engine / merge / snapshot / webdavClient）
   hooks/                useTaskData 等
 src-tauri/              Rust 后端
