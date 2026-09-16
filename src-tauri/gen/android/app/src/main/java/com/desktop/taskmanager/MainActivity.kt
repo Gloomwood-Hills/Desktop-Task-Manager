@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.webkit.WebView
 import android.view.View
+import org.json.JSONObject
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -12,11 +13,14 @@ import androidx.core.view.WindowInsetsCompat
 class MainActivity : TauriActivity() {
   /** 当前 WebView（在 onWebViewCreate 时注入），用于向前端派发"聚焦命令框"事件 */
   private var activeWeb: WebView? = null
+  /** 冷启动时暂存小部件传入的任务 ID，等待 WebView 完成加载后定位详情。 */
+  private var pendingTaskId: String? = null
 
   @SuppressLint("WebViewClientOnReceivedSslError")
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     activeWeb = webView
+    if (pendingTaskId != null) postOpenTask()
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,6 +37,10 @@ class MainActivity : TauriActivity() {
       WindowInsetsCompat.CONSUMED
     }
     refreshWidget()
+    pendingTaskId = intent.getStringExtra(TaskWidgetProvider.EXTRA_TASK_ID)
+    if (intent.action == TaskWidgetProvider.ACTION_OPEN_TASK && pendingTaskId != null) {
+      postOpenTask()
+    }
     // 冷启动从小部件「快速记录」进入：WebView 尚未加载完成，延迟后派发聚焦命令框事件
     if (intent.getBooleanExtra(TaskWidgetProvider.EXTRA_OPEN_COMMAND, false)) {
       postFocusCommand()
@@ -42,6 +50,10 @@ class MainActivity : TauriActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     refreshWidget()
+    if (intent.action == TaskWidgetProvider.ACTION_OPEN_TASK) {
+      pendingTaskId = intent.getStringExtra(TaskWidgetProvider.EXTRA_TASK_ID)
+      postOpenTask()
+    }
     // 应用已在后台/前台，WebView 就绪 → 立即派发聚焦命令框事件
     if (intent.getBooleanExtra(TaskWidgetProvider.EXTRA_OPEN_COMMAND, false)) {
       dispatchFocusCommand()
@@ -73,6 +85,25 @@ class MainActivity : TauriActivity() {
         null
       )
     }
+  }
+
+  /** 向前端派发任务定位事件，手机端打开底部详情面板。 */
+  private fun dispatchOpenTask(taskId: String) {
+    runCatching {
+      val quoted = JSONObject.quote(taskId)
+      activeWeb?.evaluateJavascript(
+        "window.dispatchEvent(new CustomEvent('open-task',{detail:{id:$quoted}}))",
+        null
+      )
+    }
+  }
+
+  /** 冷启动/从后台进入时延迟派发，保证 WebView 已经有 React 监听器。 */
+  private fun postOpenTask() {
+    activeWeb?.postDelayed({
+      pendingTaskId?.let { dispatchOpenTask(it) }
+      pendingTaskId = null
+    }, 700)
   }
 
   /**

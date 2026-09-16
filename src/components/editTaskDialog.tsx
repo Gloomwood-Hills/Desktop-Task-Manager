@@ -7,6 +7,7 @@ import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../
 import { ReminderCalendar } from './quickCapture';
 import { containerTransform } from './utils/motion';
 import { glassSurface, glassBlur } from './utils/glass';
+import { isMobile } from '../data/platform';
 
 interface EditTaskDialogProps {
   task: Task;
@@ -133,19 +134,19 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 150,
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: s.dialogTop,
+      display: 'flex', alignItems: isMobile ? 'flex-end' : 'flex-start', justifyContent: 'center', paddingTop: isMobile ? 0 : s.dialogTop,
     }}>
       {/* Scrim */}
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', ...glassBlur(8) }} onClick={onClose} />
 
       {/* 弹窗 */}
-      <div style={{
+      <div className={isMobile ? 'mobile-form-sheet' : undefined} style={{
         position: 'relative',
-        width: compact ? 440 : 520,
-        maxWidth: 'calc(100% - 24px)',
-        maxHeight: `calc(100vh - ${s.dialogTop * 2}px)`,
+        width: isMobile ? '100%' : compact ? 440 : 520,
+        maxWidth: isMobile ? '100%' : 'calc(100% - 24px)',
+        maxHeight: isMobile ? 'calc(100vh - 8px)' : `calc(100vh - ${s.dialogTop * 2}px)`,
         overflowY: 'auto',
-        borderRadius: 'calc(var(--radius)*1.2)',
+        borderRadius: isMobile ? '22px 22px 0 0' : 'calc(var(--radius)*1.2)',
         ...glassSurface('#ffffff', 82, 40),
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
         color: 'var(--foreground)',

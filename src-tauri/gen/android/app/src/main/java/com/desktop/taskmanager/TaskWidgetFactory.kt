@@ -1,6 +1,5 @@
 package com.desktop.taskmanager
 
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
@@ -36,6 +35,7 @@ class TaskWidgetFactory(private val context: Context, intent: Intent) : RemoteVi
   private val items = mutableListOf<Item>()
   private var sortType = "deadline"
   private var importantTop = false
+  private var dark = false
   private val collator = Collator.getInstance(Locale.CHINA)
   private companion object { const val TAG = "TaskWidget" }
 
@@ -63,7 +63,7 @@ class TaskWidgetFactory(private val context: Context, intent: Intent) : RemoteVi
       views.setInt(R.id.item_title, "setPaintFlags", Paint.STRIKE_THRU_TEXT_FLAG)
       views.setTextColor(R.id.item_title, 0xFF8E8E93.toInt())
     } else {
-      views.setTextColor(R.id.item_title, 0xFF1D1D1F.toInt())
+      views.setTextColor(R.id.item_title, if (dark) 0xFFFFFFFF.toInt() else 0xFF1D1D1F.toInt())
     }
 
     // 文件夹名（无文件夹时隐藏该行）
@@ -78,25 +78,25 @@ class TaskWidgetFactory(private val context: Context, intent: Intent) : RemoteVi
     // 已完成任务不再显示截止徽章，弱化视觉干扰
     if (item.completed) hideDeadline(views) else bindDeadline(views, item)
 
-    // 点击整行 → 切换完成状态（完成 / 撤销完成）。
-    // 只用【每项独立 setOnClickPendingIntent】：任务 ID 直接内嵌在每项自己的 PendingIntent 里，
-    // 不依赖桌面合并。真机实测（华为鸿蒙 5.x）：
-    // - fill-in + 模板：广播能到但 extra_task_id 被桌面丢弃；
-    // - 若同时保留模板，点击处理器优先走模板路径、忽略每项 PendingIntent；
-    // 因此【不要】在 Provider 设 setPendingIntentTemplate，也不要用 fill-in。
-    val togglePendingIntent = PendingIntent.getBroadcast(
-      context,
-      item.id.hashCode(),
-      Intent(context, TaskWidgetProvider::class.java).apply {
+    // 滚动版使用集合视图模板：复选框与标题分别携带不同的 FillInIntent。
+    // 鸿蒙兼容版不使用此 Factory，而由 TaskWidgetProvider 使用独立 PendingIntent。
+    views.setOnClickFillInIntent(
+      R.id.item_check,
+      Intent().apply {
         action = TaskWidgetProvider.ACTION_TOGGLE_COMPLETE
         putExtra(TaskWidgetProvider.EXTRA_TASK_ID, item.id)
         putExtra(TaskWidgetProvider.EXTRA_TARGET_COMPLETED, !item.completed)
-        // 每项唯一 data URI：保证不同任务的 PendingIntent 身份不冲突（PendingIntent 身份不含 extras）
-        data = Uri.parse("widget-task://${item.id}")
+        data = Uri.parse("widget-scroll-task://${item.id}")
       },
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
-    views.setOnClickPendingIntent(R.id.widget_item_root, togglePendingIntent)
+    views.setOnClickFillInIntent(
+      R.id.item_title,
+      Intent().apply {
+        action = TaskWidgetProvider.ACTION_OPEN_TASK
+        putExtra(TaskWidgetProvider.EXTRA_TASK_ID, item.id)
+        data = Uri.parse("widget-scroll-open://${item.id}")
+      },
+    )
 
     return views
   }
@@ -115,6 +115,7 @@ class TaskWidgetFactory(private val context: Context, intent: Intent) : RemoteVi
     items.clear()
     val db = WidgetDb.openReadOnly(context) ?: return
     try {
+      dark = context.getSharedPreferences("widget_appearance", Context.MODE_PRIVATE).getString("theme", "light") == "dark"
       readSettings(db)
 
       val rows = mutableListOf<Item>()

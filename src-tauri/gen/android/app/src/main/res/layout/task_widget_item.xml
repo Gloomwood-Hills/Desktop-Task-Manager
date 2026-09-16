@@ -5,8 +5,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingTop="5dp"
-    android:paddingBottom="5dp">
+    android:background="@drawable/widget_tap_feedback"
+    android:paddingTop="7dp"
+    android:paddingBottom="7dp">
 
     <!-- 行1：复选框 + 标题 -->
     <LinearLayout
@@ -17,9 +18,9 @@
 
         <ImageView
             android:id="@+id/item_check"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_marginEnd="8dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="10dp"
             android:contentDescription="@null"
             android:src="@drawable/ic_task_normal" />
 
@@ -31,15 +32,14 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="#1D1D1F"
-            android:textSize="13.5sp"
-            android:textStyle="bold" />
+            android:textSize="14sp" />
     </LinearLayout>
 
     <!-- 行2：文件夹 + 截止徽章（5 个徽章预定义，Factory 按等级切可见性） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
+            android:layout_marginTop="4dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -51,7 +51,7 @@
             android:drawablePadding="4dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:paddingStart="26dp"
+            android:paddingStart="32dp"
             android:textColor="#8E8E93"
             android:textSize="11sp" />
 

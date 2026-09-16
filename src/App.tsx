@@ -17,6 +17,9 @@ import ContextMenu, { ContextMenuState } from './components/contextMenu';
 import QuickCapture from './components/quickCapture';
 import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
+import MobileBottomNav from './components/mobile/mobileBottomNav';
+import MobileTaskList from './components/mobile/mobileTaskList';
+import MobileTaskSheet from './components/mobile/mobileTaskSheet';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
 import { parseCommand, fuzzyScore } from './components/utils/commandParser';
@@ -79,6 +82,8 @@ function App() {
   const [dialog, setDialog] = useState<DialogState>(null);
   /** 编辑中的任务（右键菜单 → 编辑） */
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  /** 移动端任务详情底部面板 */
+  const [mobileTask, setMobileTask] = useState<TaskWithSubtasks | null>(null);
   /** 顶栏同步按钮状态：进行中禁用点击并旋转图标 */
   const [syncBusy, setSyncBusy] = useState(false);
   /** 已删除任务查看弹窗 */
@@ -178,6 +183,31 @@ function App() {
     return findInTree(folderTree)
       || findInTasks(unclassifiedTasks)
       || completedTasks.find((t) => t.id === id);
+  };
+
+  /** 移动端详情需要保留子任务树；与仅需基础字段的菜单查找分开，避免扩大桌面调用的类型。 */
+  const findTaskWithSubtasksAnywhere = (id: string): TaskWithSubtasks | undefined => {
+    const walk = (tasks: TaskWithSubtasks[]): TaskWithSubtasks | undefined => {
+      for (const task of tasks) {
+        if (task.id === id) return task;
+        const child = walk(task.subtasks);
+        if (child) return child;
+      }
+      return undefined;
+    };
+    const inFolders = (nodes: FolderNode[]): TaskWithSubtasks | undefined => {
+      for (const node of nodes) {
+        const found = walk(node.tasks);
+        if (found) return found;
+        const child = inFolders(node.children);
+        if (child) return child;
+      }
+      return undefined;
+    };
+    const active = inFolders(folderTree) || walk(unclassifiedTasks);
+    if (active) return active;
+    const completed = completedTasks.find((task) => task.id === id);
+    return completed ? { ...completed, subtasks: [] } : undefined;
   };
 
   /** 切换完成/撤销完成：按当前状态给出正确 toast 与撤销动作（月视图面板也可点已完成任务撤销） */
@@ -409,6 +439,19 @@ function App() {
     return () => window.removeEventListener('open-command-bar', h);
   }, []);
 
+  // 小部件点击任务标题后，移动端打开对应的详情底部面板。
+  useEffect(() => {
+    if (!isMobile) return;
+    const h = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      const task = findTaskWithSubtasksAnywhere(id);
+      if (task) setMobileTask(task);
+    };
+    window.addEventListener('open-task', h);
+    return () => window.removeEventListener('open-task', h);
+  }, [folderTree, unclassifiedTasks, completedTasks]);
+
   /** 是否显示侧栏：固定常开 或 悬停触发 */
   const showSidebar = folderSidebarPinned || sidebarHover;
   /** 悬停离开后的隐藏延迟（避免移到卡片区时闪隐）；ref 供清理 */
@@ -452,6 +495,11 @@ function App() {
     let mode: 'open' | 'close' | null = null;
 
     const onStart = (e: TouchEvent) => {
+      // 任务行拥有独立的左右滑动；不要让全局右滑手势同时打开分类抽屉。
+      if ((e.target as HTMLElement | null)?.closest('[data-mobile-task-row]')) {
+        tracking = false;
+        return;
+      }
       const t = e.touches[0];
       startX = t.clientX;
       startY = t.clientY;
@@ -1193,13 +1241,24 @@ function App() {
                 overscrollBehavior: 'contain',
                 touchAction: 'pan-y',
                 // 移动端系统栏（导航栏）避让由原生层处理，此处仅留视觉留白
-                padding: isMobile ? '8px 16px 24px' : '8px 20px 20px',
+              padding: isMobile ? '8px 16px 88px' : '8px 20px 20px',
               }}
             >
           {/* 视图切换：Fade-through 过渡（列表/日历/日） */}
           <AnimatePresence mode="wait">
           {viewMode === 'list' && (
             <motion.div key="view-list" variants={fadeThrough} initial="initial" animate="animate" exit="exit">
+              {isMobile ? (
+                <MobileTaskList
+                  folders={listRender.tree}
+                  rootTasks={listRender.roots}
+                  expandedTasks={expandedTasks}
+                  onToggleTaskExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
+                  onToggleCompleted={(task) => void handleToggleCompleted(task.id)}
+                  onOpenTask={setMobileTask}
+                  onEditTask={(task) => { setMobileTask(null); setEditingTask(task); }}
+                />
+              ) : (
               <FolderTree
                 folders={listRender.tree}
                 rootTasks={listRender.roots}
@@ -1224,17 +1283,20 @@ function App() {
                   setContextMenu({ x: e.clientX, y: e.clientY, taskId: null, folderId });
                 }}
               />
+              )}
 
-              {/* 分隔线 */}
-              <div style={{ height: 0.5, background: 'var(--border)', margin: '12px 0 8px', opacity: 0.5 }} />
+              <div className={isMobile ? 'mobile-completed-wrap' : undefined}>
+                {/* 分隔线 */}
+                <div style={{ height: 0.5, background: 'var(--border)', margin: '12px 0 8px', opacity: 0.5 }} />
 
-              <CompletedSection
-                tasks={filteredCompleted}
-                expanded={completedExpanded}
-                onToggleExpanded={() => setCompletedExpanded(!completedExpanded)}
-                onRestore={handleRestore}
-                onContextMenuTask={openTaskMenu}
-              />
+                <CompletedSection
+                  tasks={filteredCompleted}
+                  expanded={completedExpanded}
+                  onToggleExpanded={() => setCompletedExpanded(!completedExpanded)}
+                  onRestore={handleRestore}
+                  onContextMenuTask={openTaskMenu}
+                />
+              </div>
             </motion.div>
           )}
 
@@ -1346,7 +1408,17 @@ function App() {
           </div>
         </div>
 
-        {/* 移动端底部导航已移除：视图切换移到顶栏下方（同步键下），底部让给列表内容 + 手势区 */}
+        {isMobile && (
+          <MobileBottomNav
+            viewMode={viewMode}
+            onChangeViewMode={changeViewMode}
+            onNewTask={() => {
+              setPrefillDate(viewMode === 'day' ? calendarDate : null);
+              setCaptureFolder(null);
+              setCaptureOpen(true);
+            }}
+          />
+        )}
       </div>
 
       {/* 右键菜单 */}
@@ -1402,6 +1474,13 @@ function App() {
       />
 
       {/* Quick Capture */}
+      <MobileTaskSheet
+        task={isMobile ? mobileTask : null}
+        onClose={() => setMobileTask(null)}
+        onToggleCompleted={(id) => { void handleToggleCompleted(id); setMobileTask(null); }}
+        onEdit={(task) => { setMobileTask(null); setEditingTask(task); }}
+      />
+
       <AnimatePresence>
         {(captureOpen || aiCreateDraft) && (
           <QuickCapture

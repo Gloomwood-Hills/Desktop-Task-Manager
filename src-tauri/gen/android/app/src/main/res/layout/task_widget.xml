@@ -16,7 +16,7 @@
     android:orientation="vertical"
     android:padding="12dp">
 
-    <!-- 顶部控制栏：品牌点 + 标题 + 待办计数 + 图标按钮（刷新 / 外观 / 新增） -->
+    <!-- 顶部控制栏：品牌点 + 标题 + 待办计数 + 刷新 / 新增；外观设置移入应用，减少首屏干扰 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -63,32 +63,20 @@
 
         <ImageView
             android:id="@+id/btn_refresh"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:background="@drawable/widget_tap_feedback"
             android:clickable="true"
             android:contentDescription="@string/widget_refresh"
             android:focusable="true"
-            android:padding="4dp"
+            android:padding="7dp"
             android:src="@drawable/ic_refresh" />
 
         <ImageView
-            android:id="@+id/btn_appearance"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginStart="2dp"
-            android:background="@drawable/widget_tap_feedback"
-            android:clickable="true"
-            android:contentDescription="@string/widget_appearance"
-            android:focusable="true"
-            android:padding="4dp"
-            android:src="@drawable/ic_sliders" />
-
-        <ImageView
             android:id="@+id/btn_add"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
-            android:layout_marginStart="2dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="4dp"
             android:background="@drawable/widget_tap_feedback"
             android:clickable="true"
             android:contentDescription="@string/widget_add"
@@ -103,39 +91,7 @@
         android:layout_marginTop="10dp"
         android:background="#1A8E8E93" />
 
-    <!-- 快速记录解析输入入口：点击打开小部件新建任务界面（支持自然语言解析） -->
-    <LinearLayout
-        android:id="@+id/btn_quick_add"
-        android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:layout_marginTop="10dp"
-        android:background="@drawable/widget_input_pill"
-        android:clickable="true"
-        android:focusable="true"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="11dp"
-        android:paddingEnd="11dp">
-
-        <ImageView
-            android:layout_width="14dp"
-            android:layout_height="14dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_plus" />
-
-        <TextView
-            android:id="@+id/btn_quick_add_text"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:maxLines="1"
-            android:text="@string/widget_task_quick_add"
-            android:textColor="#8E8E93"
-            android:textSize="12.5sp" />
-    </LinearLayout>
-
-    <!-- ===== 任务行 × 6（weight 等分填满剩余高度） ===== -->
+    <!-- ===== 任务行 × 6（weight 等分填满剩余高度；小尺寸由 Provider 隐藏多余行） ===== -->
     <LinearLayout
         android:id="@+id/slot_1"
         android:layout_width="match_parent"

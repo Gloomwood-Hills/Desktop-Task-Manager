@@ -10,6 +10,7 @@ import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime, formatC
 import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
 import { containerTransform } from './utils/motion';
 import { glassSurface, glassBlur } from './utils/glass';
+import { isMobile } from '../data/platform';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
@@ -557,27 +558,28 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       inset: 0,
       zIndex: 100,
       display: 'flex',
-      alignItems: 'flex-start',
+      alignItems: isMobile ? 'flex-end' : 'flex-start',
       justifyContent: 'center',
-      paddingTop: 40,
+      paddingTop: isMobile ? 0 : 40,
     }}>
       {/* Scrim */}
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', ...glassBlur(8) }} onClick={onClose} />
 
       {/* Popup */}
       <motion.div
+        className={isMobile ? 'mobile-form-sheet' : undefined}
         variants={containerTransform}
         initial="initial"
         animate="animate"
         exit="exit"
         style={{
           position: 'relative',
-          width: 620,
-        maxWidth: 'calc(100% - 32px)',
-        borderRadius: 'calc(var(--radius)*1.2)',
+          width: isMobile ? '100%' : 620,
+        maxWidth: isMobile ? '100%' : 'calc(100% - 32px)',
+        borderRadius: isMobile ? '22px 22px 0 0' : 'calc(var(--radius)*1.2)',
         ...glassSurface('var(--background)', 82, 40),
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
-        maxHeight: 'calc(100vh - 80px)',
+        maxHeight: isMobile ? 'calc(100vh - 8px)' : 'calc(100vh - 80px)',
         overflowY: 'auto',
         color: 'var(--foreground)',
       }}>

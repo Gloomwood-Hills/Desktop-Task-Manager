@@ -2,8 +2,9 @@ import { Search, Settings, Plus, FolderPlus, Pin, PinOff, RefreshCw, UploadCloud
 import { ViewMode } from '../data/types';
 import { isMobile } from '../data/platform';
 import CommandBubble from './commandBubble';
+import MobileTopBar from './mobile/mobileTopBar';
 
-interface TopBarProps {
+export interface TopBarProps {
   /** 当前视图模式（列表 / 月 / 日）-> 顶栏第一排 */
   viewMode: ViewMode;
   /** 切换视图（持久化到 settings.viewMode） */
@@ -45,6 +46,23 @@ export default function TopBar({
   onSync, onUploadCloud, onDownloadCloud, onOpenDeleted, allExpanded = false, onToggleExpandAll, syncBusy = false,
   sidebarOpen = true, onToggleSidebar,
 }: TopBarProps) {
+  if (isMobile) {
+    return (
+      <MobileTopBar
+        viewMode={viewMode}
+        onCommand={onCommand}
+        commandFocusSignal={commandFocusSignal}
+        searchQuery={searchQuery}
+        onSearchChange={onSearchChange}
+        onOpenSettings={onOpenSettings}
+        onSync={onSync}
+        syncBusy={syncBusy}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={onToggleSidebar}
+      />
+    );
+  }
+
   // 输入控件/文本按钮尺寸：桌面 34px，移动端 ≥44px（Apple HIG / Material 触控标准）
   const controlSize = isMobile ? 44 : 34;
   // 图标按钮尺寸（缩小）：桌面 26px，移动端 36px

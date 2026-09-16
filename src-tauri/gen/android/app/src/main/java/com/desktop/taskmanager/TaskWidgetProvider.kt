@@ -10,6 +10,7 @@ import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Paint
 import android.net.Uri
+import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -22,13 +23,13 @@ import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
- * 桌面小部件：任务列表（静态布局，前 5 条）+ 刷新 + 新增。
+ * 桌面小部件：任务列表（静态兼容布局，最多 6 条）+ 刷新 + 新增。
  *
  * 为什么不用集合视图（真机定案，华为鸿蒙 5.x）：
  * 鸿蒙桌面既不派发集合视图（ListView）项上的每项 setOnClickPendingIntent，
  * 也不合并 fill-in 附加信息（模板广播能到但 extra_task_id 丢失）。
  * 唯一在所有桌面都可靠的是普通视图上的 setOnClickPendingIntent（刷新/新增按钮同机制），
- * 故列表改为静态渲染前 5 条任务，每行一个独立 PendingIntent，点击即切换完成状态。
+ * 故列表改为静态渲染，每行一个独立 PendingIntent；复选框切换完成，标题打开任务。
  */
 class TaskWidgetProvider : AppWidgetProvider() {
 
@@ -39,16 +40,33 @@ class TaskWidgetProvider : AppWidgetProvider() {
     }
   }
 
+  override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) {
+    io.execute { updateWidget(context, appWidgetManager, appWidgetId) }
+  }
+
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     // 诊断日志：任何广播到达都记录（含点击广播），区分"广播未送达"与"送达后处理失败"
     Log.i(TAG, "onReceive action=${intent.action} taskId=${intent.getStringExtra(EXTRA_TASK_ID)} data=${intent.data}")
     // 所有数据库/重绘操作都放到串行 io 线程，避免主线程阻塞导致卡顿
+    if (intent.action == ACTION_OPEN_TASK) {
+      val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: return
+      context.startActivity(Intent(context, MainActivity::class.java).apply {
+        action = ACTION_OPEN_TASK
+        putExtra(EXTRA_TASK_ID, taskId)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        data = Uri.parse("widget-open-task://$taskId")
+      })
+      return
+    }
     io.execute {
       when (intent.action) {
         ACTION_REFRESH -> {
           val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
-          if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) refreshAll(context, true)
+          if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            refreshAll(context, true)
+            TaskScrollableWidgetProvider.refreshAll(context)
+          }
         }
         ACTION_TOGGLE_COMPLETE -> handleToggleComplete(context, intent)
         ACTION_SCROLL -> handleScroll(context, intent)
@@ -99,6 +117,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
 
     // 写库后失效缓存并重绘（当前已在 io 线程，直接重绘）
     refreshAll(context, true)
+    TaskScrollableWidgetProvider.refreshAll(context)
   }
 
   companion object {
@@ -106,6 +125,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
     const val ACTION_REFRESH = "com.desktop.taskmanager.WIDGET_REFRESH"
     const val ACTION_TOGGLE_COMPLETE = "com.desktop.taskmanager.WIDGET_TOGGLE_COMPLETE"
     const val ACTION_SCROLL = "com.desktop.taskmanager.WIDGET_SCROLL"
+    const val ACTION_OPEN_TASK = "com.desktop.taskmanager.WIDGET_OPEN_TASK"
     const val EXTRA_TASK_ID = "extra_task_id"
     const val EXTRA_TARGET_COMPLETED = "extra_target_completed"
     const val EXTRA_SCROLL_DELTA = "extra_scroll_delta"
@@ -158,7 +178,10 @@ class TaskWidgetProvider : AppWidgetProvider() {
 
     /** 请求刷新全部小部件（App 打开 / 写库成功后调用），后台执行并重新查库 */
     fun requestRefresh(context: Context) {
-      io.execute { refreshAll(context, true) }
+      io.execute {
+        refreshAll(context, true)
+        TaskScrollableWidgetProvider.refreshAll(context)
+      }
     }
 
     private fun updateWidget(context: Context, manager: AppWidgetManager, widgetId: Int) {
@@ -172,7 +195,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
 
       // 静态渲染：未完成在前，按应用设置排序；上/下键按偏移分页（每页 = SLOT 行数）
       val all = loadTasksCached(context)
-      val perPage = SLOT_IDS.size
+      val perPage = visibleSlots(manager, widgetId)
       val total = all.size
       val pageCount = if (total == 0) 1 else ((total + perPage - 1) / perPage)
       val off = scrollOffset(context, widgetId)
@@ -189,7 +212,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
 
       for (i in SLOT_IDS.indices) {
         val slotId = SLOT_IDS[i]
-        if (i < page.size) {
+        if (i < perPage && i < page.size) {
           val t = page[i]
           views.setViewVisibility(slotId, View.VISIBLE)
 
@@ -214,7 +237,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
           // 截止/开始日期（单行文本，按紧迫度着色）
           bindDeadlineText(views, DL_IDS[i], t, dark)
 
-          // 点击整行 → 切换完成状态（每项独立 PendingIntent，任务 ID 内嵌，不依赖桌面合并）
+          // 兼容版：只有左侧复选框切换完成；标题区域打开对应任务，降低误触。
           val togglePendingIntent = PendingIntent.getBroadcast(
             context,
             t.id.hashCode(),
@@ -227,7 +250,8 @@ class TaskWidgetProvider : AppWidgetProvider() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
           )
-          views.setOnClickPendingIntent(slotId, togglePendingIntent)
+          views.setOnClickPendingIntent(CHECK_IDS[i], togglePendingIntent)
+          views.setOnClickPendingIntent(TITLE_IDS[i], openTaskPending(context, t.id))
         } else {
           views.setViewVisibility(slotId, View.GONE)
         }
@@ -236,11 +260,9 @@ class TaskWidgetProvider : AppWidgetProvider() {
       // 空列表占位
       views.setViewVisibility(R.id.widget_empty, if (total == 0) View.VISIBLE else View.GONE)
 
-      // 刷新：重新拉取数据；新增/快速记录：打开小部件新建任务界面；外观：打开小部件外观设置；整卡点击：打开应用主窗口
+      // 刷新：重新拉取数据；新增：打开小部件新建任务界面；整卡点击：打开应用主窗口
       views.setOnClickPendingIntent(R.id.btn_refresh, refreshPending(context, widgetId))
       views.setOnClickPendingIntent(R.id.btn_add, openAddTaskPending(context))
-      views.setOnClickPendingIntent(R.id.btn_quick_add, quickCommandPending(context))
-      views.setOnClickPendingIntent(R.id.btn_appearance, openAppearancePending(context))
 
       // 上/下翻页
       views.setOnClickPendingIntent(R.id.btn_up, scrollPending(context, widgetId, -perPage))
@@ -250,12 +272,40 @@ class TaskWidgetProvider : AppWidgetProvider() {
       manager.updateAppWidget(widgetId, views)
     }
 
+    /** 根据桌面分配给小部件的最小高度收敛行数，避免小尺寸下六行挤成一团。 */
+    private fun visibleSlots(manager: AppWidgetManager, widgetId: Int): Int {
+      val minHeight = manager.getAppWidgetOptions(widgetId)
+        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 180)
+      return when {
+        minHeight < 205 -> 3
+        minHeight < 260 -> 4
+        minHeight < 315 -> 5
+        else -> SLOT_IDS.size
+      }
+    }
+
     private fun refreshPending(context: Context, widgetId: Int): PendingIntent {
       val intent = Intent(context, TaskWidgetProvider::class.java).apply {
         action = ACTION_REFRESH
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
       }
       return PendingIntent.getBroadcast(context, widgetId * 10 + 1, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    /** 从小部件标题区域打开应用，并把任务 ID 交给 WebView 定位详情。 */
+    private fun openTaskPending(context: Context, taskId: String): PendingIntent {
+      val intent = Intent(context, MainActivity::class.java).apply {
+        action = ACTION_OPEN_TASK
+        putExtra(EXTRA_TASK_ID, taskId)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        data = Uri.parse("widget-open-task://$taskId")
+      }
+      return PendingIntent.getActivity(
+        context,
+        taskId.hashCode() xor 0x5a5a,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
     }
 
     private fun scrollPending(context: Context, widgetId: Int, delta: Int): PendingIntent {
@@ -273,7 +323,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
       val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
       val delta = intent.getIntExtra(EXTRA_SCROLL_DELTA, 0)
       if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID || delta == 0) return
-      val perPage = SLOT_IDS.size
+      val perPage = visibleSlots(AppWidgetManager.getInstance(context), widgetId)
       val total = loadTasksCached(context).size
       val pageCount = if (total == 0) 1 else ((total + perPage - 1) / perPage)
       val current = scrollOffset(context, widgetId)
@@ -371,7 +421,6 @@ class TaskWidgetProvider : AppWidgetProvider() {
       val brand = if (dark) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()
       views.setTextColor(R.id.widget_title, title)
       views.setTextColor(R.id.widget_count, brand)
-      views.setTextColor(R.id.btn_quick_add_text, muted)
       views.setTextColor(R.id.widget_page, muted)
       views.setTextColor(R.id.widget_empty, muted)
     }

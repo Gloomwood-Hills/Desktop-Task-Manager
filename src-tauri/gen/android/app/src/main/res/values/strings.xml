@@ -3,6 +3,8 @@
     <string name="main_activity_title">"Desktop Task Manager"</string>
     <string name="widget_title">"待办任务"</string>
     <string name="widget_description">"在桌面查看待办任务，支持刷新与新增"</string>
+    <string name="widget_scroll_title">"待办任务·滚动"</string>
+    <string name="widget_scroll_description">"在桌面纵向滑动查看待办任务"</string>
     <string name="widget_refresh">"⟳"</string>
     <string name="widget_add">"＋新增"</string>
     <string name="widget_appearance">"外观"</string>
