@@ -23,6 +23,12 @@ export type ParsedCommand =
   | { kind: 'set-reminder-offset'; query: string; offsets: ReminderOffsetKey[] }
   | { kind: 'set-reminder-at'; query: string; reminderAt: number }
   | { kind: 'set-priority'; query: string; priority: 'important' | 'normal' }
+  | { kind: 'toggle-completed'; query: string; completed: boolean }
+  | { kind: 'stop-repeat'; query: string }
+  | { kind: 'clear-reminder'; query: string }
+  | { kind: 'open-view'; view: 'list' | 'calendar' | 'day' }
+  | { kind: 'search'; query: string }
+  | { kind: 'expand-all'; expanded: boolean }
   | { kind: 'move-to-folder'; query: string; folderName: string }
   | { kind: 'delete-task'; query: string }
   | { kind: 'delete-folder'; name: string }
@@ -171,6 +177,25 @@ function parseCreateTask(text: string): Extract<ParsedCommand, { kind: 'create-t
 export function parseCommand(text: string): ParsedCommand {
   const t = text.trim();
   if (!t) return { kind: 'unknown' };
+
+  // 0) 不需要 AI 的视图、搜索与展开操作
+  if (/^(?:打开|切换到?|显示)?(?:列表|清单)视图$/.test(t)) return { kind: 'open-view', view: 'list' };
+  if (/^(?:打开|切换到?|显示)?日历视图$/.test(t)) return { kind: 'open-view', view: 'calendar' };
+  if (/^(?:打开|切换到?|显示)?日视图$/.test(t)) return { kind: 'open-view', view: 'day' };
+  let searchMatch = t.match(/^(?:搜索|查找|找任务)\s*(.+)$/);
+  if (searchMatch?.[1]?.trim()) return { kind: 'search', query: searchMatch[1].trim() };
+  if (/^(?:展开|打开)全部$/.test(t)) return { kind: 'expand-all', expanded: true };
+  if (/^(?:折叠|关闭)全部$/.test(t)) return { kind: 'expand-all', expanded: false };
+
+  // 任务完成状态：纯本地即时操作，避免为简单动作等待 AI
+  let completeMatch = t.match(/^(?:完成|勾选|标记完成)(?:任务)?\s*(.+)$/);
+  if (completeMatch?.[1]?.trim()) return { kind: 'toggle-completed', query: completeMatch[1].trim(), completed: true };
+  completeMatch = t.match(/^(?:撤销完成|取消完成|恢复)(?:任务)?\s*(.+)$/);
+  if (completeMatch?.[1]?.trim()) return { kind: 'toggle-completed', query: completeMatch[1].trim(), completed: false };
+  let stopMatch = t.match(/^把(.+?)(?:结束重复|停止重复|取消重复)$/);
+  if (stopMatch?.[1]?.trim()) return { kind: 'stop-repeat', query: stopMatch[1].trim().replace(/任务$/, '').trim() };
+  let clearReminderMatch = t.match(/^(?:取消|清除|删除)(?:任务)?提醒\s*(.+)$/);
+  if (clearReminderMatch?.[1]?.trim()) return { kind: 'clear-reminder', query: clearReminderMatch[1].trim() };
 
   // 1) 新建文件夹
   let m = t.match(/^新建(.+?)分类$/);

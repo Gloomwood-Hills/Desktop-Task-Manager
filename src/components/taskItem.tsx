@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, ChevronDown, ChevronRight, Clock, Calendar, AlignLeft, History } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Clock, Calendar, AlignLeft, History, Info } from 'lucide-react';
 import { Task, TaskWithSubtasks } from '../data/types';
 import { formatDeadline, formatDeadlineRel, formatDeadlineYMD, formatStartDate } from './utils/formatDate';
 import { panelSpring } from './utils/motion';
@@ -184,6 +184,7 @@ function SubtaskRow({
 }) {
   const expanded = expandedSet.has(task.id);
   const hasChildren = task.subtasks.length > 0;
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   return (
     <div>
@@ -232,6 +233,15 @@ function SubtaskRow({
         >
           <Highlight text={task.title} query={searchQuery} />
         </span>
+        <button
+          type="button"
+          aria-label={detailsOpen ? '收起任务详情' : '查看任务详情'}
+          title={detailsOpen ? '收起详情' : '查看详情'}
+          onClick={(e) => { e.stopPropagation(); setDetailsOpen((v) => !v); }}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, padding: 0, border: 0, borderRadius: 6, background: detailsOpen ? 'var(--accent)' : 'transparent', color: 'var(--icon-muted)', cursor: 'pointer', flexShrink: 0 }}
+        >
+          <Info style={{ width: 13, height: 13 }} />
+        </button>
         {task.deadline !== null && (
           <span
             title={formatDeadline(task.deadline)}
@@ -260,9 +270,11 @@ function SubtaskRow({
           </>
         )}
       </div>
-      {task.remark.trim().length > 0 && (
-        <div style={{ marginLeft: 25, padding: '1px 8px 6px', fontSize: 11.5, color: 'var(--muted-foreground)', lineHeight: 1.4, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-          {task.remark}
+      {detailsOpen && (
+        <div className="task-detail-panel" style={{ margin: '2px 8px 5px 25px', padding: '7px 9px', borderRadius: 8, background: 'color-mix(in srgb, var(--accent) 60%, transparent)', border: '0.5px solid color-mix(in srgb, var(--border) 50%, transparent)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <DetailRow icon={<AlignLeft style={{ width: 11, height: 11, color: 'var(--muted-foreground)', flexShrink: 0 }} />} label="备注" value={task.remark.trim() || '无备注'} />
+          {task.deadline !== null && <DetailRow icon={<Clock style={{ width: 11, height: 11, color: 'var(--muted-foreground)', flexShrink: 0 }} />} label="截止" value={formatDeadline(task.deadline)} />}
+          <DetailRow icon={<History style={{ width: 11, height: 11, color: 'var(--muted-foreground)', flexShrink: 0 }} />} label="创建" value={formatCreatedAt(task.createdAt)} />
         </div>
       )}
       {hasChildren && expanded && (
@@ -320,7 +332,8 @@ export default function TaskItem({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const expanded = expandedSet.has(task.id);
   const hasChildren = task.subtasks.length > 0;
-  const hasDetails = task.remark.trim().length > 0 || task.startDate !== null || task.deadline !== null;
+  // 创建时间对所有任务都有意义，因此详情入口始终显示，即使没有备注和截止日期。
+  const hasDetails = true;
 
   return (
     <div style={{ position: 'relative' }}>
@@ -412,13 +425,17 @@ export default function TaskItem({
             >
               <Highlight text={task.title} query={searchQuery} />
             </span>
-            {/* 详情展开指示 */}
+            {/* 详情入口：与子任务箭头分离，箭头只表达层级展开 */}
             {hasDetails && (
-              <span style={{ display: 'inline-flex', flexShrink: 0, opacity: 0.7 }}>
-                {detailsOpen
-                  ? <ChevronDown style={{ width: 12, height: 12, color: 'var(--icon-muted)' }} />
-                  : <ChevronRight style={{ width: 12, height: 12, color: 'var(--icon-muted)' }} />}
-              </span>
+              <button
+                type="button"
+                aria-label={detailsOpen ? '收起任务详情' : '查看任务详情'}
+                title={detailsOpen ? '收起详情' : '查看详情'}
+                onClick={(e) => { e.stopPropagation(); setDetailsOpen((v) => !v); }}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 23, height: 23, padding: 0, border: 0, borderRadius: 6, background: detailsOpen ? 'var(--accent)' : 'transparent', color: 'var(--icon-muted)', cursor: 'pointer', flexShrink: 0 }}
+              >
+                <Info style={{ width: 13, height: 13 }} />
+              </button>
             )}
             {/* 子任务展开 */}
             {hasChildren && (
@@ -445,7 +462,7 @@ export default function TaskItem({
 
       {/* 详情面板（备注 + 时间信息） */}
       {hasDetails && detailsOpen && (
-        <div style={{
+        <div className="task-detail-panel" style={{
           margin: '2px 8px 6px 36px',
           padding: '10px 12px',
           borderRadius: 'calc(var(--radius) * 0.5)',
@@ -455,13 +472,11 @@ export default function TaskItem({
           flexDirection: 'column',
           gap: 6,
         }}>
-          {task.remark.trim() && (
-            <DetailRow
-              icon={<AlignLeft style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
-              label="备注"
-              value={<Highlight text={task.remark} query={searchQuery} />}
-            />
-          )}
+          <DetailRow
+            icon={<AlignLeft style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
+            label="备注"
+            value={task.remark.trim() ? <Highlight text={task.remark} query={searchQuery} /> : '无备注'}
+          />
           {task.startDate !== null && (
             <DetailRow
               icon={<Calendar style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}

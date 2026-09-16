@@ -23,7 +23,7 @@ import { parseCommand, fuzzyScore } from './components/utils/commandParser';
 import { applyDefaultDeadlineTime, formatDeadline } from './components/utils/formatDate';
 import { getDatabase } from './data';
 import { TaskService, FOLDER_NAME_MAX } from './services';
-import { generateSubtasks, aiRunCommand, toTimestamp, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL } from './services/aiClient';
+import { generateSubtasks, aiRunCommand, toTimestamp, DEFAULT_AI_BASE_URL } from './services/aiClient';
 import type { AiToolCall, GeneratedSubtask } from './services/aiClient';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy, TaskRepeatRule } from './data/types';
 import { isMobile } from './data/platform';
@@ -607,15 +607,29 @@ function App() {
     return best;
   };
 
+  /** 命令栏也允许操作已完成任务（撤销完成），因此提供包含完成区的模糊匹配。 */
+  const fuzzyFindAnyTask = (query: string): Task | undefined => {
+    const q = query.trim().toLowerCase();
+    if (!q) return undefined;
+    const candidates = [...allActiveTasks, ...completedTasks];
+    let best: Task | undefined;
+    let bestScore = 0;
+    for (const t of candidates) {
+      const score = fuzzyScore(t.title, q);
+      if (score > bestScore) { best = t; bestScore = score; }
+    }
+    return best;
+  };
+
   // ===== AI 助手（工具调用） =====
 
-  /** AI 是否已配置（BaseURL + Key 齐全） */
-  const aiEnabled = !!settings?.aiBaseUrl && !!settings?.aiApiKey;
-  /** 组装 AI 配置（未填时回退默认地址/模型） */
+  /** AI 是否已配置：BaseURL、Key、模型名均由用户明确填写 */
+  const aiEnabled = !!settings?.aiBaseUrl?.trim() && !!settings?.aiApiKey?.trim() && !!settings?.aiModel?.trim();
+  /** 组装 AI 配置：BaseURL 可使用兼容旧行为的默认地址，模型不做默认回退 */
   const aiConfig = {
     baseUrl: settings?.aiBaseUrl || DEFAULT_AI_BASE_URL,
     apiKey: settings?.aiApiKey || '',
-    model: settings?.aiModel || DEFAULT_AI_MODEL,
+    model: settings?.aiModel || '',
   };
 
   /** 文件夹名 → folderId（未分类/找不到 → null） */
@@ -685,6 +699,23 @@ function App() {
     const defaultHour = settings?.defaultDeadlineHour ?? 18;
     const defaultMinute = settings?.defaultDeadlineMinute ?? 0;
 
+    // 轻量本地命令：视图、搜索、展开和任务状态无需调用 AI，立即反馈。
+    if (cmd.kind === 'open-view') {
+      changeViewMode(cmd.view);
+      setToast(`已切换到${cmd.view === 'list' ? '列表' : cmd.view === 'calendar' ? '日历' : '日'}视图`);
+      return;
+    }
+    if (cmd.kind === 'search') {
+      setSearchQuery(cmd.query);
+      setToast(`正在搜索「${cmd.query}」`);
+      return;
+    }
+    if (cmd.kind === 'expand-all') {
+      if (cmd.expanded) expandAll(); else collapseAll();
+      setToast(cmd.expanded ? '已展开全部' : '已折叠全部');
+      return;
+    }
+
     // 需求4：新建文件夹/移动/删除 为简单操作，纯自然语言解析即可，不交给 AI 助手
     if (cmd.kind === 'create-folder') {
       const folder = await createFolder(cmd.folderName);
@@ -692,7 +723,7 @@ function App() {
       return;
     }
     if (cmd.kind === 'move-to-folder') {
-      const matched = fuzzyFindTask(cmd.query);
+      const matched = fuzzyFindAnyTask(cmd.query);
       if (!matched) { setToast('未找到匹配的任务'); return; }
       const folder = allFolders.find((f) => f.name === cmd.folderName && !f.deleted);
       if (!folder) { setToast(`未找到文件夹「${cmd.folderName}」`); return; }
@@ -712,6 +743,32 @@ function App() {
       if (!folder) { setToast(`未找到文件夹「${cmd.name}」`); return; }
       const ok = await deleteFolder(folder.id);
       setToast(ok ? `已删除文件夹「${cmd.name}」` : '删除文件夹失败');
+      return;
+    }
+
+    if (cmd.kind === 'toggle-completed') {
+      const matched = fuzzyFindAnyTask(cmd.query);
+      if (!matched) { setToast(`未找到任务「${cmd.query}」`); return; }
+      if (matched.completed !== cmd.completed) await handleToggleCompleted(matched.id);
+      else setToast(`「${matched.title}」已经是${cmd.completed ? '已完成' : '未完成'}状态`);
+      return;
+    }
+    if (cmd.kind === 'stop-repeat') {
+      const matched = fuzzyFindAnyTask(cmd.query);
+      if (!matched) { setToast(`未找到任务「${cmd.query}」`); return; }
+      if (!matched.repeatRule) { setToast(`「${matched.title}」不是重复任务`); return; }
+      const prevRule = matched.repeatRule;
+      const prevInterval = matched.repeatIntervalDays;
+      await stopRepeat(matched.id);
+      setLastAction({ kind: 'stoppedRepeat', taskId: matched.id, repeatRule: prevRule, repeatIntervalDays: prevInterval });
+      setToast(`已结束重复「${matched.title}」`);
+      return;
+    }
+    if (cmd.kind === 'clear-reminder') {
+      const matched = fuzzyFindAnyTask(cmd.query);
+      if (!matched) { setToast(`未找到任务「${cmd.query}」`); return; }
+      await updateTask(matched.id, { reminderAt: null, reminderOffsets: [], reminderTimes: [] });
+      setToast(`已取消「${matched.title}」的提醒`);
       return;
     }
 
@@ -772,7 +829,7 @@ function App() {
       const matched = fuzzyFindTask(cmd.query);
       if (!matched) { setToast('未找到匹配的任务'); return; }
       await updateTask(matched.id, { reminderOffsets: cmd.offsets, reminderAt: null });
-      const label = cmd.offsets.map((o) => ({ '1d': '1天', '3d': '3天', '6h': '6小时' }[o])).join('、');
+      const label = cmd.offsets.map((o) => ({ '1d': '1天', '3d': '3天', '6h': '6小时', '1h': '1小时' }[o])).join('、');
       setToast(`已为「${matched.title}」设置提前${label}提醒`);
       return;
     }
@@ -1370,9 +1427,9 @@ function App() {
             defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
             defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
             aiEnabled={aiEnabled}
-            onGenerateSubtasks={async (title, deadline, opts) => {
-              if (!aiConfig.apiKey) throw new Error('请在 设置 → AI 中配置 API Key');
-              return generateSubtasks(aiConfig, { title, deadline, now: Date.now(), count: opts?.count, hint: opts?.hint });
+              onGenerateSubtasks={async (title, deadline, opts) => {
+              if (!aiConfig.apiKey || !aiConfig.model) throw new Error('请在 设置 → AI 中填写 API Key 与模型名');
+              return generateSubtasks(aiConfig, { title, deadline, now: Date.now(), count: opts?.count, hint: opts?.hint, mode: opts?.mode, existingSubtasks: opts?.existingSubtasks, signal: opts?.signal });
             }}
           />
         )}

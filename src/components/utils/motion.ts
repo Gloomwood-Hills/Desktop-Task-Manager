@@ -7,13 +7,15 @@ import type { Transition, Variants } from 'motion/react';
  */
 
 /** 缓动曲线（Material 3 standard / emphasized） */
+type CubicBezier = [number, number, number, number];
+
 export const EASE = {
-  standard: 'cubic-bezier(0.2, 0, 0, 1)',
-  standardDecelerate: 'cubic-bezier(0, 0, 0, 1)',
-  standardAccelerate: 'cubic-bezier(0.3, 0, 1, 1)',
-  emphasized: 'cubic-bezier(0.2, 0, 0, 1)',
-  emphasizedDecelerate: 'cubic-bezier(0.05, 0.7, 0.1, 1)',
-  emphasizedAccelerate: 'cubic-bezier(0.3, 0, 0.8, 0.15)',
+  standard: [0.2, 0, 0, 1] as CubicBezier,
+  standardDecelerate: [0, 0, 0, 1] as CubicBezier,
+  standardAccelerate: [0.3, 0, 1, 1] as CubicBezier,
+  emphasized: [0.2, 0, 0, 1] as CubicBezier,
+  emphasizedDecelerate: [0.05, 0.7, 0.1, 1] as CubicBezier,
+  emphasizedAccelerate: [0.3, 0, 0.8, 0.15] as CubicBezier,
 } as const;
 
 /** 时长（秒）：short 微反馈 / medium 组件过渡 / long 大范围转场 */
@@ -23,40 +25,40 @@ export const DUR = {
   long: 0.5,
 } as const;
 
-/** 面板弹簧（复用既有参数，供对话框等弹层统一使用） */
-export const panelSpring: Transition = { type: 'spring', stiffness: 420, damping: 20, mass: 0.9 };
+/** 面板弹簧（低回弹，避免输入框/弹窗出现明显的果冻感） */
+export const panelSpring: Transition = { type: 'spring', stiffness: 500, damping: 32, mass: 0.8 };
 
-/** Fade-through：视图/页面切换（淡出 + 缩放 0.92→1 + 淡入） */
+/** Fade-through：视图/页面切换（轻微缩放，避免大幅缩放造成文字重排感） */
 export const fadeThrough: Variants = {
-  initial: { opacity: 0, scale: 0.92 },
+  initial: { opacity: 0, scale: 0.985 },
   animate: { opacity: 1, scale: 1, transition: { duration: DUR.medium, ease: EASE.emphasizedDecelerate } },
-  exit: { opacity: 0, scale: 0.96, transition: { duration: DUR.short, ease: EASE.emphasizedAccelerate } },
+  exit: { opacity: 0, scale: 0.995, transition: { duration: DUR.short, ease: EASE.emphasizedAccelerate } },
 };
 
 /** Container transform：对话框/面板（弹簧缩放 + 淡入 + 上移） */
 export const containerTransform: Variants = {
-  initial: { opacity: 0, y: -8, scale: 0.98 },
+  initial: { opacity: 0, y: -6, scale: 0.985 },
   animate: { opacity: 1, y: 0, scale: 1, transition: panelSpring },
-  exit: { opacity: 0, y: -8, scale: 0.98, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
+  exit: { opacity: 0, y: -4, scale: 0.99, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
 };
 
 /** Shared axis：水平滑入（侧栏、抽屉等） */
 export const sharedAxis: Variants = {
-  initial: { opacity: 0, x: -16 },
+  initial: { opacity: 0, x: -10 },
   animate: { opacity: 1, x: 0, transition: { duration: DUR.medium, ease: EASE.standardDecelerate } },
-  exit: { opacity: 0, x: -16, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
+  exit: { opacity: 0, x: -10, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
 };
 
 /** 列表项增删：淡入 + 上移（配合 layout 实现平滑补位） */
 export const listItem: Variants = {
-  initial: { opacity: 0, y: -8 },
+  initial: { opacity: 0, y: -4 },
   animate: { opacity: 1, y: 0, transition: { duration: DUR.short, ease: EASE.standardDecelerate } },
-  exit: { opacity: 0, y: -8, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
+  exit: { opacity: 0, y: -4, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
 };
 
 /** Toast 提示：底部滑入上移 + 淡入淡出 */
 export const toastUp: Variants = {
-  initial: { opacity: 0, y: 12, scale: 0.96 },
+  initial: { opacity: 0, y: 8, scale: 0.98 },
   animate: { opacity: 1, y: 0, scale: 1, transition: { duration: DUR.medium, ease: EASE.emphasizedDecelerate } },
-  exit: { opacity: 0, y: 12, transition: { duration: DUR.short, ease: EASE.emphasizedAccelerate } },
+  exit: { opacity: 0, y: 8, transition: { duration: DUR.short, ease: EASE.emphasizedAccelerate } },
 };

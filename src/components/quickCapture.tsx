@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Folder as FolderIcon, ChevronDown, Check, Star,
   Plus, CalendarDays, X, Sparkles,
 } from 'lucide-react';
 import { FolderNode, Priority, TaskRepeatRule } from '../data/types';
-import { GeneratedSubtask } from '../services/aiClient';
+import { GeneratedSubtask, SubtaskPlanMode } from '../services/aiClient';
 import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime, formatCompletedAt } from './utils/formatDate';
 import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
 import { containerTransform } from './utils/motion';
@@ -29,7 +29,7 @@ interface QuickCaptureProps {
   /** 已配置 AI（设置 → AI）：启用「一键生成子任务」按钮 */
   aiEnabled?: boolean;
   /** 一键生成子任务回调（App 注入，读取 AI 配置调用 aiClient）；opts 携带个数/补充要求 */
-  onGenerateSubtasks?: (title: string, deadline: number | null, opts?: { count?: number | null; hint?: string }) => Promise<GeneratedSubtask[]>;
+  onGenerateSubtasks?: (title: string, deadline: number | null, opts?: { count?: number | null; hint?: string; mode?: SubtaskPlanMode; existingSubtasks?: GeneratedSubtask[]; signal?: AbortSignal }) => Promise<GeneratedSubtask[]>;
   /** AI 预填：任务标题（AI 已解析好，直接填入） */
   initialTitle?: string;
   /** AI 预填：截止时间戳 */
@@ -321,9 +321,25 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
   const [subtasks, setSubtasks] = useState<GeneratedSubtask[]>(initialSubtasks ?? []);
   const [subtaskLoading, setSubtaskLoading] = useState(false);
   const [subtaskError, setSubtaskError] = useState<string | null>(null);
+  /** AI 建议暂存区：用户确认后才合并到正式子任务列表，避免覆盖手动编辑。 */
+  const [subtaskSuggestion, setSubtaskSuggestion] = useState<GeneratedSubtask[] | null>(null);
+  const [subtaskMode, setSubtaskMode] = useState<SubtaskPlanMode>(initialSubtasks?.length ? 'optimize' : 'initial');
+  const subtaskAbortRef = useRef<AbortController | null>(null);
   /** AI 生成参数：子任务个数 + 补充要求 */
   const [subtaskCount, setSubtaskCount] = useState<number | null>(null);
   const [subtaskHint, setSubtaskHint] = useState('');
+  /** 首屏只保留标题与创建动作，其余字段按需展开。 */
+  const [advancedOpen, setAdvancedOpen] = useState(() => Boolean(
+    initialDate !== undefined
+      || initialFolderId !== null
+      || initialPriority === 'important'
+      || initialRemark?.trim()
+      || initialRepeatRule
+      || initialRepeatIntervalDays
+      || initialReminderOffsets?.length
+      || initialSubtasks?.length
+      || initialDeadline !== undefined,
+  ));
 
   // 扁平化文件夹用于选择器（含"未分类"顶层项）
   const flatFolders: { id: string | null; name: string; depth: number }[] = [
@@ -451,25 +467,45 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
     [plusProps, title],
   );
 
-  /** 一键生成子任务：调 App 注入的 AI 回调，生成可编辑草稿（重新生成时替换前次结果） */
+  /** AI 规划：结果先放入建议区，用户确认后才新增/替换，支持依据现有子任务迭代。 */
   const handleGenerateSubtasks = async () => {
     if (!onGenerateSubtasks || !title.trim()) return;
+    subtaskAbortRef.current?.abort();
+    const controller = new AbortController();
+    subtaskAbortRef.current = controller;
     setSubtaskLoading(true);
     setSubtaskError(null);
+    setSubtaskSuggestion(null);
     try {
       const subs = await onGenerateSubtasks(resolvedTitle, effectiveDeadline, {
         count: subtaskCount,
         hint: subtaskHint,
+        mode: subtaskMode,
+        existingSubtasks: subtasks,
+        signal: controller.signal,
       });
-      setSubtasks(subs);
+      setSubtaskSuggestion(subs);
       if (subs.length === 0) {
         setSubtaskError('未能生成子任务，请重试或检查任务截止时间');
       }
     } catch (error) {
-      setSubtaskError(error instanceof Error ? error.message : String(error));
+      if ((error as Error)?.name !== 'AbortError') setSubtaskError(error instanceof Error ? error.message : String(error));
     } finally {
       setSubtaskLoading(false);
+      if (subtaskAbortRef.current === controller) subtaskAbortRef.current = null;
     }
+  };
+
+  const acceptSubtaskSuggestion = () => {
+    if (!subtaskSuggestion?.length) return;
+    setSubtasks((prev) => subtaskMode === 'extend' ? [...prev, ...subtaskSuggestion] : [...subtaskSuggestion]);
+    setSubtaskSuggestion(null);
+    setSubtaskError(null);
+  };
+
+  const cancelSubtaskGeneration = () => {
+    subtaskAbortRef.current?.abort();
+    setSubtaskLoading(false);
   };
 
   /** datetime-local → 时间戳 / null */
@@ -547,6 +583,30 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       }}>
         <div className="qc-scope">
           <div className="qc-body">
+            {/* 首屏输入：标题回车可直接创建，减少首次使用的认知负担 */}
+            <div className="task-input">
+              <Plus />
+              <input
+                type="text"
+                name="task-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+                placeholder="输入任务，自动解析日期..."
+                autoFocus
+              />
+            </div>
+            <button
+              type="button"
+              className="qc-more-toggle"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              aria-expanded={advancedOpen}
+            >
+              {advancedOpen ? '收起更多选项' : '更多选项（分类、提醒、备注、子任务）'}
+              <ChevronDown style={{ width: 13, height: 13, transform: advancedOpen ? 'rotate(180deg)' : undefined, transition: 'transform 180ms ease' }} />
+            </button>
+            {advancedOpen && (
+            <div className="qc-advanced">
             {/* 顶部选项行：文件夹 / 重要（提醒设置位于下方时间卡片，分类旁不再放提醒气泡） */}
             <div className="opt-row">
               <div
@@ -601,25 +661,27 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
               </motion.div>
             )}
 
-            {/* 任务输入（置于时间区域上方） */}
-            <div className="task-input">
-              <Plus />
-              <input
-                type="text"
-                name="task-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
-                placeholder="输入任务，自动解析日期..."
-                autoFocus
-              />
-            </div>
-
             {/* 子任务区（置顶于时间区域上方）：一键生成仅在配置 AI 后浮现；手动添加始终可用 */}
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* 一键生成行：仅配置 AI 后浮现 */}
+              {/* AI 规划行：仅配置 AI 后浮现；默认仅生成建议，不覆盖用户已编辑内容 */}
               {aiEnabled && onGenerateSubtasks && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {([
+                      ['initial', '首次拆分'],
+                      ['extend', '补充后续'],
+                      ['optimize', '优化计划'],
+                    ] as [SubtaskPlanMode, string][]).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => { setSubtaskMode(mode); setSubtaskSuggestion(null); }}
+                        aria-pressed={subtaskMode === mode}
+                        style={{ height: 28, padding: '0 9px', borderRadius: 999, border: '1px solid var(--border)', background: subtaskMode === mode ? 'color-mix(in srgb, var(--primary) 12%, transparent)' : 'transparent', color: subtaskMode === mode ? 'var(--primary)' : 'var(--muted-foreground)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
+                      >{label}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     disabled={!title.trim() || subtaskLoading}
@@ -634,8 +696,9 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                     }}
                   >
                     <Sparkles style={{ width: 13, height: 13 }} />
-                    {subtaskLoading ? '正在生成…' : subtasks.length > 0 ? '重新生成' : '一键生成子任务'}
+                    {subtaskLoading ? '正在生成…' : subtaskMode === 'extend' ? '生成后续步骤' : subtaskMode === 'optimize' ? '生成优化建议' : '生成拆分建议'}
                   </button>
+                  {subtaskLoading && <button type="button" onClick={cancelSubtaskGeneration} style={{ height: 30, padding: '0 8px', border: 0, background: 'transparent', color: 'var(--muted-foreground)', cursor: 'pointer', fontSize: 11.5 }}>取消</button>}
                   <input
                     type="number" min={1}
                     value={subtaskCount ?? ''}
@@ -661,10 +724,28 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                       color: 'inherit', fontSize: 12, outline: 'none', fontFamily: 'var(--font-sans)',
                     }}
                   />
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
+                    {subtaskMode === 'extend' && subtasks.length > 0 ? 'AI 只补充当前列表之后的新步骤。' : subtaskMode === 'optimize' && subtasks.length > 0 ? 'AI 会参考现有步骤，结果需确认后才替换。' : '生成结果会先作为建议展示，不会直接覆盖手动编辑。'}
+                  </div>
                 </div>
               )}
               {subtaskError && (
                 <p style={{ fontSize: 11.5, color: 'var(--state-error)', margin: '0 2px' }}>{subtaskError}</p>
+              )}
+              {subtaskSuggestion && subtaskSuggestion.length > 0 && (
+                <div style={{ padding: '9px 10px', borderRadius: 10, background: 'color-mix(in srgb, var(--primary) 7%, var(--muted))', border: '1px solid color-mix(in srgb, var(--primary) 22%, transparent)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--primary)' }}>AI 建议（{subtaskSuggestion.length} 项）</span>
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      <button type="button" onClick={acceptSubtaskSuggestion} style={{ border: 0, borderRadius: 999, padding: '4px 9px', background: 'var(--primary)', color: '#fff', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>采用建议</button>
+                      <button type="button" onClick={() => setSubtaskSuggestion(null)} style={{ border: '1px solid var(--border)', borderRadius: 999, padding: '3px 8px', background: 'transparent', color: 'var(--muted-foreground)', cursor: 'pointer', fontSize: 11 }}>忽略</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {subtaskSuggestion.map((s, i) => <div key={`${s.title}-${i}`} style={{ fontSize: 11.5, color: 'var(--foreground)', lineHeight: 1.4 }}>{i + 1}. {s.title}{s.deadline ? ` · ${formatDeadline(s.deadline)}` : ''}</div>)}
+                  </div>
+                </div>
               )}
               {/* 手动添加入口：无论是否配置 AI 始终可用 */}
               <button
@@ -905,10 +986,13 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
               </div>
             )}
 
-            {/* 创建按钮 */}
-            <button className="create-btn" disabled={!title.trim()} onClick={handleCreate}>
-              创建任务
-            </button>
+            </div>
+            )}
+            <div className="qc-action-bar">
+              <button className="create-btn" disabled={!title.trim()} onClick={handleCreate}>
+                创建任务
+              </button>
+            </div>
           </div>
         </div>
       </motion.div>

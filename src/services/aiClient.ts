@@ -14,11 +14,10 @@ export interface AiConfig {
 }
 
 export const DEFAULT_AI_BASE_URL = 'https://api.deepseek.com/v1';
-export const DEFAULT_AI_MODEL = 'deepseek-chat';
 
-/** AI 是否已配置（BaseURL 与 Key 齐全即可用） */
-export function aiConfigured(config: Pick<AiConfig, 'baseUrl' | 'apiKey'> | null | undefined): boolean {
-  return !!config && !!config.baseUrl && !!config.apiKey;
+/** AI 是否已配置：模型名必须由用户明确填写，不能依赖内置默认值。 */
+export function aiConfigured(config: Pick<AiConfig, 'baseUrl' | 'apiKey' | 'model'> | null | undefined): boolean {
+  return !!config && !!config.baseUrl?.trim() && !!config.apiKey?.trim() && !!config.model?.trim();
 }
 
 /** 生成的子任务条目（时间戳：可为 null；remark：AI 生成时强制 20~50 字执行说明） */
@@ -27,6 +26,9 @@ export interface GeneratedSubtask {
   deadline: number | null;
   remark?: string;
 }
+
+/** 子任务规划模式：首次拆分、补充后续步骤、优化现有计划。 */
+export type SubtaskPlanMode = 'initial' | 'extend' | 'optimize';
 
 /** AI 工具调用结果：函数名 + 参数（由命令栏执行） */
 export interface AiToolCall {
@@ -72,6 +74,7 @@ interface ChatOptions {
   temperature?: number;
   tools?: unknown[];
   toolChoice?: 'auto' | 'required' | 'none';
+  signal?: AbortSignal;
 }
 
 /** 底层 chat/completions 调用 */
@@ -98,6 +101,7 @@ async function chatCompletion(config: AiConfig, messages: ChatMessage[], options
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(payload),
+    signal: options.signal,
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -249,19 +253,32 @@ function clampTs(v: number | null, lo: number, hi: number | null): number | null
  * 温度 0（快速应答/确定性输出）；时间强约束到 [新建时间, 父截止] 之间。 */
 export async function generateSubtasks(
   config: AiConfig,
-  opts: { title: string; deadline: number | null; now: number; count?: number | null; hint?: string },
+  opts: { title: string; deadline: number | null; now: number; count?: number | null; hint?: string; mode?: SubtaskPlanMode; existingSubtasks?: GeneratedSubtask[]; signal?: AbortSignal },
 ): Promise<GeneratedSubtask[]> {
-  const countText = opts.count && opts.count > 0 ? `${opts.count} 个` : '3~6 个';
+  const mode = opts.mode ?? 'initial';
+  const existing = opts.existingSubtasks ?? [];
+  const cacheKey = JSON.stringify({ model: config.model, title: opts.title, deadline: opts.deadline, count: opts.count ?? null, hint: opts.hint ?? '', mode, existing });
+  const cached = subtaskCache.get(cacheKey);
+  if (cached) return cached.map((x) => ({ ...x }));
+  const countText = opts.count && opts.count > 0 ? `${opts.count} 个` : mode === 'extend' ? '1~3 个' : '3~5 个';
   const spanDays = opts.deadline ? Math.max(1, Math.round((opts.deadline - opts.now) / DAY_MS)) : 0;
   // 关键：模型不知道"当前时刻"，必须显式给出当前时间与区间天数，否则无法均匀铺开
   const rangeText = opts.deadline
     ? `当前时间：${fmtLocal(opts.now)}\n任务截止：${fmtLocal(opts.deadline)}（从今天算起约 ${spanDays} 天内，区间共 ${spanDays} 天，请把这 ${spanDays} 天合理地分给各子任务）`
     : `当前时间：${fmtLocal(opts.now)}\n任务截止：未指定（请合理安排截止时间，不要早于当前时间）`;
-  const user = `任务：${opts.title}\n${rangeText}\n请生成 ${countText} 个有先后顺序的子任务。\n${opts.hint?.trim() ? `补充要求：${opts.hint.trim()}` : ''}`;
+  const modeText = mode === 'extend'
+    ? '当前模式是“补充后续步骤”：只返回尚未存在的后续步骤，不要重复已有子任务。'
+    : mode === 'optimize'
+      ? '当前模式是“优化现有计划”：返回优化后的完整子任务列表；保留合理步骤，必要时调整顺序、标题和截止时间。'
+      : '当前模式是“首次拆分”：从零开始规划子任务。';
+  const existingText = existing.length > 0
+    ? `\n现有子任务（已由用户编辑，请认真参考）：\n${existing.map((s, i) => `${i + 1}. ${s.title}${s.deadline ? `｜截止 ${fmtLocal(s.deadline)}` : ''}${s.remark ? `｜${s.remark}` : ''}`).join('\n')}`
+    : '';
+  const user = `任务：${opts.title}\n${rangeText}\n${modeText}\n请生成 ${countText} 个有先后顺序的子任务。${existingText}\n${opts.hint?.trim() ? `补充要求：${opts.hint.trim()}` : ''}`;
   const { content } = await chatCompletion(config, [
     { role: 'system', content: SUBTASK_SYSTEM },
     { role: 'user', content: user },
-  ], { temperature: 0 });
+  ], { temperature: 0, signal: opts.signal });
   const parsed = extractJsonBlock(content ?? '');
   if (!Array.isArray(parsed) || parsed.length === 0) return [];
   const subs = parsed
@@ -272,8 +289,12 @@ export async function generateSubtasks(
       remark: typeof x.remark === 'string' ? x.remark.trim() : '',
     }))
     .filter((x) => x.title.length > 0);
-  return subs;
+  subtaskCache.set(cacheKey, subs);
+  return subs.map((x) => ({ ...x }));
 }
+
+/** 当前编辑会话级缓存：重复请求相同规划不重复消耗网络与额度。 */
+const subtaskCache = new Map<string, GeneratedSubtask[]>();
 
 const COMMAND_SYSTEM = (ctx: AiCommandContext) =>
   `你是本任务管理应用的命令助手。你只负责「新建任务」「编辑任务」这两类需要解析多字段的复杂操作；新建文件夹、移动任务到文件夹、删除任务/文件夹等简单指令不要去解析，直接不输出任何 tool call（应用会用自己的自然语言解析器处理）。

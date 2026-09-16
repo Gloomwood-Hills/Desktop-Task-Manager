@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { X, Check, Cloud, BookOpen, ChevronDown } from 'lucide-react';
 import { Settings, SortType, SyncPolicy, DEFAULT_WEBDAV_URL } from '../data/types';
 import { glassSurface } from './utils/glass';
-import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, testAiConnection } from '../services/aiClient';
+import { DEFAULT_AI_BASE_URL, testAiConnection } from '../services/aiClient';
 import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from '../data/sync';
 import type { SyncSettings, SyncLogEntry } from '../data/sync';
 import { isMobile } from '../data/platform';
@@ -36,14 +36,14 @@ const SORT_OPTIONS: { label: string; value: SortType }[] = [
   { label: '手动排序', value: 'manual' },
 ];
 
-/** 常用 OpenAI 兼容 AI 服务预设：点击即可填入 BaseURL 与默认模型 */
-const AI_PRESETS: { name: string; baseUrl: string; model: string }[] = [
-  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
-  { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-  { name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
-  { name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', model: 'deepseek-ai/DeepSeek-V3' },
+/** 常用 OpenAI 兼容 AI 服务预设：只帮助填写 BaseURL，不替用户决定模型。 */
+const AI_PRESETS: { name: string; baseUrl: string }[] = [
+  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1' },
+  { name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+  { name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1' },
 ];
 
 /** 设置面板（右侧滑入，对齐设计稿 settings） */
@@ -78,10 +78,11 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [aiBusy, setAiBusy] = useState(false);
   /** AI 测试连接：用当前已填配置发一条极短消息 */
   const handleTestAi = async () => {
-    const baseUrl = aiBaseUrl || DEFAULT_AI_BASE_URL;
+    const baseUrl = aiBaseUrl.trim() || DEFAULT_AI_BASE_URL;
     const apiKey = aiApiKey;
-    const model = aiModel || DEFAULT_AI_MODEL;
-    if (!apiKey) { setAiResult({ ok: false, message: '请先填写 API Key' }); return; }
+    const model = aiModel.trim();
+    if (!apiKey.trim()) { setAiResult({ ok: false, message: '请先填写 API Key' }); return; }
+    if (!model) { setAiResult({ ok: false, message: '请先填写模型名' }); return; }
     setAiBusy(true);
     try {
       await testAiConnection({ baseUrl, apiKey, model });
@@ -93,11 +94,10 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
     }
   };
 
-  /** 点击常用服务预设：填入 BaseURL 与默认模型（API Key 由用户自行填写） */
-  const applyAiPreset = (p: { name: string; baseUrl: string; model: string }) => {
+  /** 点击常用服务预设：只填入 BaseURL（API Key 与模型均由用户自行填写） */
+  const applyAiPreset = (p: { name: string; baseUrl: string }) => {
     setAiBaseUrl(p.baseUrl);
-    setAiModel(p.model);
-    onChange({ aiBaseUrl: p.baseUrl, aiModel: p.model });
+    onChange({ aiBaseUrl: p.baseUrl });
     setAiResult(null);
   };
 
@@ -752,7 +752,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </p>
               </div>
 
-              {/* 常用服务预设：点击自动填入 BaseURL 与默认模型 */}
+              {/* 常用服务预设：只填入 BaseURL，模型名由用户自行填写 */}
               <div style={{ marginBottom: 16 }}>
                 <label style={labelStyle}>常用服务</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
@@ -763,7 +763,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                         key={p.name}
                         type="button"
                         onClick={() => applyAiPreset(p)}
-                        title={`${p.baseUrl} · ${p.model}`}
+                        title={p.baseUrl}
                         aria-pressed={active}
                         style={{
                           display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -784,7 +784,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   })}
                 </div>
                 <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted-foreground)' }}>
-                  点击填入接口地址与模型，再自行填写 API Key 即可。
+                  点击填入接口地址，再自行填写 API Key 与模型名即可。
                 </div>
               </div>
 
@@ -820,7 +820,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 <input
                   type="text"
                   value={aiModel}
-                  placeholder={DEFAULT_AI_MODEL}
+                  placeholder="例如：deepseek-chat、gpt-4o-mini"
                   autoComplete="off"
                   onChange={(e) => { setAiModel(e.target.value); onChange({ aiModel: e.target.value.trim() }); }}
                   style={{ ...inputStyle, marginTop: 8 }}
