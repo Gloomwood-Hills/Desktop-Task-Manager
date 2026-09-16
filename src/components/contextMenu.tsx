@@ -13,6 +13,8 @@ export interface ContextMenuState {
   folderId?: string | null;
   /** 该任务是否设置了重复规则（决定是否显示"结束重复"） */
   canStopRepeat?: boolean;
+  /** 该任务当前是否已完成（决定菜单显示「完成」还是「撤销完成」） */
+  taskCompleted?: boolean;
 }
 
 interface ContextMenuProps {
@@ -90,7 +92,7 @@ export default function ContextMenu({
     {
       key: 'complete',
       icon: <CheckCircle2 style={iconStyle} />,
-      label: '完成',
+      label: state.taskCompleted ? '撤销完成' : '完成',
       hint: 'Space',
       visible: isTaskContext,
       action: () => state.taskId && onToggleComplete(state.taskId),
@@ -100,7 +102,8 @@ export default function ContextMenu({
       icon: <Repeat style={iconStyle} />,
       label: '结束重复',
       hint: '',
-      visible: isTaskContext && !!state.canStopRepeat,
+      // 已完成实例上「结束重复」不会影响整个系列，故不显示，避免误导
+      visible: isTaskContext && !!state.canStopRepeat && !state.taskCompleted,
       action: () => state.taskId && onStopRepeat(state.taskId),
     },
   ];
@@ -232,8 +235,6 @@ export default function ContextMenu({
           border: '1px solid var(--border)',
           borderRadius: 12,
           boxShadow: '0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
         }}
       >
         {groups.map((group, gi) => (

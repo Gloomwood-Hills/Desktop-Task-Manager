@@ -230,6 +230,28 @@ export class TaskRepository {
     return result.rowsAffected ?? 0;
   }
 
+  /**
+   * 读取同一重复系列下所有未删除任务的 id（含已完成的历史实例）。
+   * 供「删除重复任务 = 整系列删除」使用：先取到 id 再逐个按子树软删，子任务不会遗漏。
+   */
+  async getIdsBySeries(seriesId: string): Promise<string[]> {
+    const rows = await this.db.select<{ id: string }[]>(
+      `SELECT id FROM Task WHERE repeatSeriesId = ? AND deleted = 0`,
+      [seriesId]
+    );
+    return rows.map((r) => r.id);
+  }
+
+  /** 撤销整系列删除：仅把 deleted 置回 0，保留完成态（用于撤销「删除重复系列」） */
+  async undeleteSeries(seriesId: string): Promise<number> {
+    const now = Date.now();
+    const result = await this.db.execute(
+      `UPDATE Task SET deleted = 0, updatedAt = ? WHERE repeatSeriesId = ? AND deleted = 1`,
+      [now, seriesId]
+    );
+    return result.rowsAffected ?? 0;
+  }
+
   async restore(id: string): Promise<boolean> {
     const now = Date.now();
     const result = await this.db.execute(

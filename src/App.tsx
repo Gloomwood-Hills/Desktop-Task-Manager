@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { fadeThrough, toastUp, sharedAxis, DUR } from './components/utils/motion';
+import { glassSurface } from './components/utils/glass';
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -36,18 +37,20 @@ type DialogState =
   | { type: 'add-subtask'; taskId: string; folderId: string | null }
   | null;
 
-/** 可撤销的最近一次操作：任务完成、任务恢复、任务删除 */
+/** 可撤销的最近一次操作：任务完成、任务恢复、任务删除、结束重复 */
 type LastAction =
   | { kind: 'completed'; taskId: string }
   | { kind: 'restored'; taskId: string }
-  | { kind: 'deleted'; taskId: string }
+  | { kind: 'deleted'; taskId: string; seriesId?: string }
+  /** 结束重复：记录被清除的重复规则，使「撤销」能重新武装该系列 */
+  | { kind: 'stoppedRepeat'; taskId: string; repeatRule: TaskRepeatRule; repeatIntervalDays: number | null }
   | null;
 
 function App() {
   const {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, windowState, loading, error,
     refresh, setTheme, updateSettings, saveWindowState, createTask, toggleCompleted, updateTask,
-    deleteTask, restoreTask, stopRepeat, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
+    deleteTask, restoreTask, restoreSeries, stopRepeat, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   } = useTaskData();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -204,11 +207,28 @@ function App() {
 
   const handleDeleteTask = async (id: string) => {
     const task = findTaskAnywhere(id);
+    // 重复任务：一次点击删除整个系列；记录 seriesId 使「撤销」能整体恢复
+    const seriesId = task?.repeatSeriesId ?? undefined;
     await deleteTask(id);
     if (task) {
-      setLastAction({ kind: 'deleted', taskId: id });
-      setToast(`已删除 "${task.title}"`);
+      setLastAction({ kind: 'deleted', taskId: id, seriesId });
+      setToast(seriesId ? `已删除重复系列 "${task.title}"` : `已删除 "${task.title}"`);
     }
+  };
+
+  /** 右键 / 长按任务 → 打开任务菜单：附带完成态与「是否可结束重复」，供菜单项文案与显隐判断。
+   * 已完成任务同样可走此菜单（用于撤销完成 / 删除），因此从「已完成」区域也要能打开。 */
+  const openTaskMenu = (e: React.MouseEvent, taskId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const t = findTaskAnywhere(taskId);
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      taskId,
+      canStopRepeat: !!t?.repeatRule,
+      taskCompleted: !!t?.completed,
+    });
   };
 
   /** 取消删除（恢复已删除任务），并在"已删除"列表实时移除 */
@@ -221,14 +241,22 @@ function App() {
 
   const handleUndo = async () => {
     if (!lastAction) return;
-    const { kind, taskId } = lastAction;
     setLastAction(null);
-    if (kind === 'completed') {
-      await toggleCompleted(taskId); // 撤销完成：恢复未完成
-    } else if (kind === 'restored') {
-      await toggleCompleted(taskId); // 撤销恢复：重新标记完成
-    } else {
-      await restoreTask(taskId); // 撤销删除：恢复任务到原位置
+    if (lastAction.kind === 'completed') {
+      await toggleCompleted(lastAction.taskId); // 撤销完成：恢复未完成
+    } else if (lastAction.kind === 'restored') {
+      await toggleCompleted(lastAction.taskId); // 撤销恢复：重新标记完成
+    } else if (lastAction.kind === 'stoppedRepeat') {
+      // 撤销「结束重复」：先恢复重复规则（重新武装系列），再撤销完成
+      await updateTask(lastAction.taskId, {
+        repeatRule: lastAction.repeatRule,
+        repeatIntervalDays: lastAction.repeatIntervalDays,
+      });
+      await toggleCompleted(lastAction.taskId);
+    } else if (lastAction.kind === 'deleted') {
+      // 撤销删除：重复系列整体恢复（保留完成态），普通任务恢复原任务
+      if (lastAction.seriesId) await restoreSeries(lastAction.seriesId);
+      else await restoreTask(lastAction.taskId);
     }
     setToast(null);
   };
@@ -394,11 +422,11 @@ function App() {
     sidebarHideTimer.current = window.setTimeout(() => setSidebarHover(false), 160);
   };
 
-  // ===== 移动端：左缘右滑唤起「分类」侧栏（替代桌面悬停） =====
-  // 为什么不再用「贴左缘的 28px 窄热区」：Android 手势导航会把屏幕最左侧约 24dp 的
-  // 横向滑动优先判定为「返回」并消费掉，导致贴边热区经常收不到完整的触摸序列。
-  // 因此改为监听主内容区「左侧 34% 起手」的横向手势（避开系统手势区，又足够宽），
-  // 横向位移占优且超过阈值即唤起；侧栏已开时向左滑即收起。
+  // ===== 移动端：从左向右滑唤起「分类」侧栏（替代桌面悬停） =====
+  // 屏幕上任意位置起手均可：横向位移占优且超过阈值即唤起；侧栏已开时向左滑即收起。
+  // 纵向占优的手势不拦截，交回原生滚动。
+  // 注意：不再使用「贴左缘的窄热区」——Android 手势导航会把最左侧约 24dp 的横向滑动
+  // 优先判定为「返回」并消费掉，贴边热区经常收不到完整触摸序列，故改为整屏监听。
   const contentRef = useRef<HTMLDivElement | null>(null);
   const sidebarOpenRef = useRef(false);
   sidebarOpenRef.current = showSidebar;
@@ -442,9 +470,8 @@ function App() {
         decided = true;
         // 纵向占优 → 交回原生滚动，本次跟踪放弃
         if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
-        if (sidebarOpenRef.current) mode = 'close';
-        else if (startX <= window.innerWidth * 0.34) mode = 'open';
-        else { tracking = false; return; }
+        // 侧栏已开 → 只接受向左滑（关闭）；未开 → 任意位置向右滑都可唤起
+        mode = sidebarOpenRef.current ? 'close' : 'open';
       }
       if (mode === 'open' && dx > 46) { setSidebarHover(true); tracking = false; }
       else if (mode === 'close' && dx < -46) { closeSidebar(); tracking = false; }
@@ -1021,13 +1048,10 @@ function App() {
         // 移动端系统栏避让由原生层（MainActivity 按 WindowInsets 内缩）统一处理，
         // CSS 不再依赖 env(safe-area-inset-*)（部分 WebView/鸿蒙返回 0），避免双重留白。
         paddingTop: isMobile ? 12 : 0,
-        background: glassEnabled
-          ? `color-mix(in srgb, var(--background) ${transparency}%, transparent)`
-          : 'var(--background)',
-        ...(glassEnabled ? {
-          WebkitBackdropFilter: 'saturate(180%) blur(40px)',
-          backdropFilter: 'saturate(180%) blur(40px)',
-        } : {}),
+        // 毛玻璃底：移动端由 glassSurface 自动降级为不透明底（全屏模糊是掉帧主因）
+        ...(glassEnabled
+          ? glassSurface('var(--background)', transparency, 40, 1.8, 100)
+          : { background: 'var(--background)' }),
         boxShadow: isMobile
           ? 'none'
           : 'var(--shadow-xl), 0 0 0 0.5px color-mix(in srgb, var(--border) 40%, transparent)',
@@ -1037,26 +1061,6 @@ function App() {
           : '0.5px solid color-mix(in srgb, var(--border) 30%, transparent)',
       }}
     >
-        {/* 移动端左缘把手：点按即可唤出「分类」侧栏（做手势之外的显式入口）。
-            横向滑动手势由 <main> 上的原生监听处理；贴边滑动易被系统返回手势抢占，
-            故此处退化为「点按打开」，并避开顶栏与底部区域。 */}
-        {isMobile && !showSidebar && (
-          <div
-            onClick={() => setSidebarHover(true)}
-            role="button"
-            aria-label="打开分类栏"
-            style={{
-              position: 'absolute', left: 0, top: 92, bottom: 120, width: 16,
-              zIndex: 56, display: 'flex', alignItems: 'center', cursor: 'pointer',
-            }}
-          >
-            <span style={{
-              display: 'block', width: 4, height: 46, borderRadius: 999, marginLeft: 2,
-              background: 'color-mix(in srgb, var(--primary) 50%, transparent)',
-              boxShadow: '0 0 0 1px color-mix(in srgb, var(--background) 65%, transparent)',
-            }} />
-          </div>
-        )}
         <TopBar
           viewMode={viewMode}
           onChangeViewMode={changeViewMode}
@@ -1156,12 +1160,7 @@ function App() {
                 onToggleFolder={(id) => setExpandedFolders((s) => toggleSet(s, id))}
                 onToggleTaskExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
                 onToggleCompleted={handleToggleCompleted}
-                onContextMenuTask={(e, taskId) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const t = findTaskAnywhere(taskId);
-                  setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
-                }}
+                onContextMenuTask={openTaskMenu}
                 onContextMenuFolder={(e, folderId) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1177,6 +1176,7 @@ function App() {
                 expanded={completedExpanded}
                 onToggleExpanded={() => setCompletedExpanded(!completedExpanded)}
                 onRestore={handleRestore}
+                onContextMenuTask={openTaskMenu}
               />
             </motion.div>
           )}
@@ -1194,12 +1194,7 @@ function App() {
                   setCaptureFolder(null);
                   setCaptureOpen(true);
                 }}
-                onContextMenuTask={(e, taskId) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const t = findTaskAnywhere(taskId);
-                  setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
-                }}
+                onContextMenuTask={openTaskMenu}
               />
             </motion.div>
           )}
@@ -1214,12 +1209,7 @@ function App() {
                 folderMap={new Map(allFolders.map((f) => [f.id, f.name]))}
                 onDateChange={setCalendarDate}
                 onToggleComplete={handleToggleCompleted}
-                onContextMenuTask={(e, taskId) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const t = findTaskAnywhere(taskId);
-                  setContextMenu({ x: e.clientX, y: e.clientY, taskId, canStopRepeat: !!t?.repeatRule });
-                }}
+                onContextMenuTask={openTaskMenu}
               />
             </motion.div>
           )}
@@ -1254,9 +1244,10 @@ function App() {
             onMouseLeave={handleSidebarLeave}
             style={{
               position: 'absolute', left: 0, top: 0, bottom: 0,
+              // 容器宽度只是鼠标命中区（可见把手是下方固定 10px 的细条，与宽度无关），
+              // 因此不做 width 过渡 —— 过渡 width 会逐帧触发布局，是打开/关闭时的掉帧源。
               width: showSidebar ? 178 : 10,
               zIndex: 60,
-              transition: 'width 0.15s ease',
             }}
           >
             {/* 边缘细条（可见把手）：悬停/固定时高亮 */}
@@ -1316,9 +1307,18 @@ function App() {
         onToggleComplete={handleToggleCompleted}
         onDeleteTask={handleDeleteTask}
         onStopRepeat={async (taskId) => {
-          // 结束重复：清除重复规则 + 标记已完成（移入"已完成"区），原子操作
+          // 结束重复：清除重复规则 + 标记已完成。记录原规则，令 Toast「撤销」可还原重复
+          const t = findTaskAnywhere(taskId);
+          const prevRule = t?.repeatRule ?? null;
+          const prevInterval = t?.repeatIntervalDays ?? null;
           await stopRepeat(taskId);
-          setToast('已结束重复');
+          if (prevRule) {
+            setLastAction({ kind: 'stoppedRepeat', taskId, repeatRule: prevRule, repeatIntervalDays: prevInterval });
+            setToast(`已结束重复 "${t?.title ?? ''}"`);
+          } else {
+            setLastAction(null);
+            setToast('已结束重复');
+          }
         }}
         onCreateFolder={(parentId) => {
           setDialog({ type: 'create-folder', parentId });

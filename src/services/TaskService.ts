@@ -136,6 +136,16 @@ export class TaskService {
   }
 
   async deleteTask(id: string): Promise<boolean> {
+    const task = await this.taskRepository.getById(id);
+    // 重复任务：一次点击删除整个系列 —— 含已完成的历史实例与自动生成的下一实例。
+    // 逐个按子树软删（而非单条 SQL），保证系列成员的子任务一并带走，不会留下孤儿。
+    if (task?.repeatSeriesId) {
+      const ids = await this.taskRepository.getIdsBySeries(task.repeatSeriesId);
+      for (const rid of ids) {
+        await this.taskRepository.softDeleteWithDescendants(rid);
+      }
+      return ids.length > 0;
+    }
     return this.taskRepository.softDeleteWithDescendants(id);
   }
 
@@ -159,6 +169,11 @@ export class TaskService {
       await this.cleanupUndoSeries(task);
     }
     return ok;
+  }
+
+  /** 撤销「删除重复系列」：恢复该系列全部被删实例并保留其完成态，不触发系列清理 */
+  async restoreSeries(seriesId: string): Promise<number> {
+    return this.taskRepository.undeleteSeries(seriesId);
   }
 
   async toggleTaskCompleted(id: string): Promise<Task | null> {

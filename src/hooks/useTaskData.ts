@@ -39,6 +39,8 @@ export interface UseTaskData {
   ) => Promise<Task | null>;
   deleteTask: (id: string) => Promise<boolean>;
   restoreTask: (id: string) => Promise<boolean>;
+  /** 撤销「删除重复系列」：恢复该系列全部被删实例（保留完成态），返回恢复条数 */
+  restoreSeries: (seriesId: string) => Promise<number>;
   /** 结束重复：清除重复规则并标记已完成（移入"已完成"区） */
   stopRepeat: (id: string) => Promise<Task | null>;
   /** 手动排序：按给定顺序持久化任务顺序 */
@@ -248,6 +250,13 @@ export function useTaskData(): UseTaskData {
     return ok;
   }, [refresh]);
 
+  const restoreSeries = useCallback(async (seriesId: string): Promise<number> => {
+    if (!taskServiceRef.current) return 0;
+    const n = await taskServiceRef.current.restoreSeries(seriesId);
+    await afterMutation();
+    return n;
+  }, [refresh]);
+
   const stopRepeat = useCallback(async (id: string): Promise<Task | null> => {
     if (!taskServiceRef.current) return null;
     const task = await taskServiceRef.current.stopRepeat(id);
@@ -293,6 +302,6 @@ export function useTaskData(): UseTaskData {
   return {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, windowState, loading, error,
     refresh, setTheme, updateSettings, saveWindowState, createTask, toggleCompleted, updateTask,
-    deleteTask, restoreTask, stopRepeat, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
+    deleteTask, restoreTask, restoreSeries, stopRepeat, reorderTasks, reorderFolders, createFolder, renameFolder, deleteFolder,
   };
 }

@@ -8,14 +8,22 @@ interface CompletedSectionProps {
   expanded: boolean;
   onToggleExpanded: () => void;
   onRestore: (id: string) => void;
+  /** 右键 / 长按已完成任务 → 打开任务菜单（撤销完成 / 删除） */
+  onContextMenuTask?: (e: React.MouseEvent, taskId: string) => void;
 }
 
-/** 单条已完成任务行（可点击恢复） */
-function Row({ task, onRestore, showBranch }: { task: Task; onRestore: (id: string) => void; showBranch?: boolean }) {
+/** 单条已完成任务行（左键点击恢复；右键/长按打开菜单，可撤销完成或删除） */
+function Row({ task, onRestore, onContextMenuTask, showBranch }: {
+  task: Task;
+  onRestore: (id: string) => void;
+  onContextMenuTask?: (e: React.MouseEvent, taskId: string) => void;
+  showBranch?: boolean;
+}) {
   return (
     <div
       onClick={() => onRestore(task.id)}
-      title="点击恢复任务"
+      onContextMenu={onContextMenuTask ? (e) => onContextMenuTask(e, task.id) : undefined}
+      title="点击恢复任务；右键 / 长按可撤销完成或删除"
       style={{
         position: 'relative',
         display: 'flex',
@@ -75,7 +83,7 @@ function Row({ task, onRestore, showBranch }: { task: Task; onRestore: (id: stri
  * 排序：所有项（单任务 + 重复系列聚类）统一按 completedAt 降序混合排列，
  * 重复系列聚类取该系列中最新一条的 completedAt 作为排序依据，
  * 使"结束重复"刚完成的任务与其他已完成任务按时间自然穿插，而非统一堆在底部。 */
-export default function CompletedSection({ tasks, expanded, onToggleExpanded, onRestore }: CompletedSectionProps) {
+export default function CompletedSection({ tasks, expanded, onToggleExpanded, onRestore, onContextMenuTask }: CompletedSectionProps) {
   const [openSeries, setOpenSeries] = useState<Set<string>>(new Set());
 
   // 按重复系列聚类
@@ -150,7 +158,7 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
           {/* 混合渲染：单任务 + 重复系列聚类，按 completedAt 降序穿插排列 */}
           {items.map((item) => {
             if (item.kind === 'single') {
-              return <Row key={item.task.id} task={item.task} onRestore={onRestore} />;
+              return <Row key={item.task.id} task={item.task} onRestore={onRestore} onContextMenuTask={onContextMenuTask} />;
             }
             const { seriesId, group } = item;
             const first = group[0];
@@ -160,6 +168,7 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
                 {/* 聚类头 */}
                 <div
                   onClick={() => toggleSeries(seriesId)}
+                  onContextMenu={onContextMenuTask ? (e) => onContextMenuTask(e, first.id) : undefined}
                   style={{
                     position: 'relative',
                     display: 'flex',
@@ -206,7 +215,7 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
                 {open && group.map((task) => (
                   <div key={task.id} style={{ marginLeft: 20, position: 'relative' }}>
                     <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.35 }} />
-                    <Row task={task} onRestore={onRestore} showBranch={false} />
+                    <Row task={task} onRestore={onRestore} onContextMenuTask={onContextMenuTask} showBranch={false} />
                   </div>
                 ))}
               </div>
