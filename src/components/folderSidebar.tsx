@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, FolderPlus, LayoutList, Inbox } from 'lucide-react';
 import { FolderNode } from '../data/types';
 import { compareByName } from '../data/utils';
+import { glassSurface } from './utils/glass';
 
 /** 侧栏选中值：null=全部 / 'unclassified'=未分类 / 其它=文件夹 id */
 export type SidebarSelection = string | 'unclassified' | null;
@@ -115,9 +116,7 @@ export default function FolderSidebar({
         overflowY: 'auto',
         overscrollBehavior: 'contain',
         touchAction: 'pan-y',
-        background: 'color-mix(in srgb, var(--background) 88%, transparent)',
-        WebkitBackdropFilter: 'blur(30px) saturate(1.6)',
-        backdropFilter: 'blur(30px) saturate(1.6)',
+        ...glassSurface('var(--background)', 88, 30, 1.6),
         boxShadow: 'var(--shadow-lg), 0 0 0 0.5px color-mix(in srgb, var(--border) 50%, transparent)',
         borderRadius: 12,
       }}

@@ -6,6 +6,7 @@ import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime } from '
 import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
 import { ReminderCalendar } from './quickCapture';
 import { containerTransform } from './utils/motion';
+import { glassSurface, glassBlur } from './utils/glass';
 
 interface EditTaskDialogProps {
   task: Task;
@@ -124,9 +125,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
 
   const panelBox: React.CSSProperties = {
     borderRadius: 14,
-    background: 'rgba(255,255,255,0.78)',
-    backdropFilter: 'blur(40px) saturate(1.8)',
-    WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+    ...glassSurface('#ffffff', 78, 40),
     boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
     padding: 6,
   };
@@ -137,7 +136,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: s.dialogTop,
     }}>
       {/* Scrim */}
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(8px)' }} onClick={onClose} />
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', ...glassBlur(8) }} onClick={onClose} />
 
       {/* 弹窗 */}
       <div style={{
@@ -147,9 +146,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
         maxHeight: `calc(100vh - ${s.dialogTop * 2}px)`,
         overflowY: 'auto',
         borderRadius: 'calc(var(--radius)*1.2)',
-        background: 'rgba(255,255,255,0.82)',
-        backdropFilter: 'blur(40px) saturate(1.8)',
-        WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+        ...glassSurface('#ffffff', 82, 40),
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
         color: 'var(--foreground)',
       }}>

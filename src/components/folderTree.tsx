@@ -5,6 +5,7 @@ import { FolderNode, TaskWithSubtasks, SortType } from '../data/types';
 import { compareByName } from '../data/utils';
 import TaskItem, { Highlight } from './taskItem';
 import { listItem } from './utils/motion';
+import { glassSurface } from './utils/glass';
 
 interface FolderTreeProps {
   folders: FolderNode[];
@@ -264,7 +265,10 @@ export default function FolderTree({
     return (
       <motion.div
         key={task.id}
-        layout
+        // 只用 position 布局动画：完整 layout 会通过 scale 模拟「尺寸变化」，
+        // 展开子任务/详情时会把卡片内的文字一起拉伸，出现撕裂重影。
+        // position 只平滑移动，本身不缩放内容，改由自然回流承担高度变化。
+        layout="position"
         initial="initial"
         animate="animate"
         exit="exit"
@@ -460,8 +464,7 @@ export default function FolderTree({
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
-      WebkitBackdropFilter: 'blur(10px)',
-      backdropFilter: 'blur(10px)',
+      ...glassSurface('var(--background)', 92, 10, 1),
     }}>
       {drag?.kind === 'folder'
         ? <FolderIcon style={{ width: 13, height: 13, color: 'var(--primary)', flexShrink: 0 }} />

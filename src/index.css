@@ -276,7 +276,7 @@ body {
   color: var(--text-600);
   cursor: pointer;
   font-family: var(--font-sans);
-  transition: all .14s ease;
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease;
   user-select: none;
 }
 .qc-scope .mini-chip:hover { border-color: var(--brand-200); color: var(--primary); }

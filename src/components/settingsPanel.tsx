@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { X, Check, Cloud, BookOpen, ChevronDown } from 'lucide-react';
 import { Settings, SortType, SyncPolicy, DEFAULT_WEBDAV_URL } from '../data/types';
+import { glassSurface } from './utils/glass';
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, testAiConnection } from '../services/aiClient';
 import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from '../data/sync';
 import type { SyncSettings, SyncLogEntry } from '../data/sync';
@@ -321,9 +322,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
           maxWidth: '92%',
           display: 'flex',
           flexDirection: 'column',
-          background: 'color-mix(in srgb, var(--background) 82%, transparent)',
-          WebkitBackdropFilter: 'saturate(180%) blur(60px)',
-          backdropFilter: 'saturate(180%) blur(60px)',
+          ...glassSurface('var(--background)', 82, 60),
           borderRadius: '16px 0 0 16px',
           boxShadow: '-4px 0 32px rgba(0,0,0,0.12), -1px 0 0 color-mix(in srgb, var(--border) 50%, transparent)',
           color: 'var(--foreground)',

@@ -9,6 +9,7 @@ import { GeneratedSubtask } from '../services/aiClient';
 import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime, formatCompletedAt } from './utils/formatDate';
 import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
 import { containerTransform } from './utils/motion';
+import { glassSurface, glassBlur } from './utils/glass';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
@@ -525,7 +526,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       paddingTop: 40,
     }}>
       {/* Scrim */}
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(8px)' }} onClick={onClose} />
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.25)', ...glassBlur(8) }} onClick={onClose} />
 
       {/* Popup */}
       <motion.div
@@ -538,9 +539,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
           width: 620,
         maxWidth: 'calc(100% - 32px)',
         borderRadius: 'calc(var(--radius)*1.2)',
-        background: 'color-mix(in srgb, var(--background) 82%, transparent)',
-        backdropFilter: 'blur(40px) saturate(1.8)',
-        WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+        ...glassSurface('var(--background)', 82, 40),
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
         maxHeight: 'calc(100vh - 80px)',
         overflowY: 'auto',
@@ -578,8 +577,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             {folderOpen && (
               <motion.div variants={containerTransform} initial="initial" animate="animate" exit="exit" style={{ paddingTop: 10 }}>
                 <div style={{
-                  borderRadius: 14, background: 'color-mix(in srgb, var(--background) 78%, transparent)', backdropFilter: 'blur(40px) saturate(1.8)',
-                  WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+                  borderRadius: 14, ...glassSurface('var(--background)', 78, 40),
                   boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
                   padding: 6, display: 'inline-flex', flexDirection: 'column',
                 }}>

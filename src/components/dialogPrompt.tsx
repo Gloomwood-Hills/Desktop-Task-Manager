@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { glassBlur } from './utils/glass';
 
 interface PromptDialogProps {
   title: string;
@@ -32,7 +33,7 @@ export function PromptDialog({
     <div style={{
       position: 'fixed', inset: 0, zIndex: 300,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)',
+      background: 'rgba(0,0,0,0.25)', ...glassBlur(6),
     }}>
       <div style={{
         width: 320, maxWidth: 'calc(100% - 48px)',
@@ -117,7 +118,7 @@ export function ConfirmDialog({
     <div style={{
       position: 'fixed', inset: 0, zIndex: 300,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)',
+      background: 'rgba(0,0,0,0.25)', ...glassBlur(6),
     }}>
       <div style={{
         width: 320, maxWidth: 'calc(100% - 48px)',
