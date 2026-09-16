@@ -507,14 +507,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
         val ymd = formatDeadlineYMD(deadline)
         views.setTextViewText(viewId, if (rel.isNotEmpty()) "$rel $ymd" else ymd)
         val remain = deadline - System.currentTimeMillis()
-        val day = 24 * 3600 * 1000L
-        val color = when {
-          remain <= day -> 0xFFFF3333.toInt()
-          remain <= 3 * day -> 0xFFFF5A2E.toInt()
-          remain <= 7 * day -> 0xFFFF9500.toInt()
-          else -> if (dark) 0xFFF2F2F7.toInt() else 0xFF1D1D1F.toInt()
-        }
-        views.setTextColor(viewId, color)
+        views.setTextColor(viewId, deadlineUrgencyColor(remain, dark))
         views.setViewVisibility(viewId, View.VISIBLE)
       } else if (item.startDate != null) {
         val fmt = SimpleDateFormat(if (hasExplicitTime(item.startDate)) "MM-dd HH:mm" else "MM-dd", Locale.getDefault())
@@ -525,6 +518,29 @@ class TaskWidgetProvider : AppWidgetProvider() {
         views.setViewVisibility(viewId, View.GONE)
       }
     }
+
+    /** 截止时间紧迫度配色（与 App 端 taskItem.deadlineColor 保持一致）：
+     * ≥7 天 = 主题正文色（浅色=黑 / 深色=白）；7~5 天 #0064d6；5~3 天 #007aff→#2e8dff；
+     * 3~1 天 #2e8dff；剩余 24 小时以内（含逾期）#ff453a。 */
+    private fun deadlineUrgencyColor(remainMs: Long, dark: Boolean): Int {
+      val day = 24 * 3600 * 1000L
+      val d = remainMs.toDouble() / day.toDouble()
+      val rgb = when {
+        d >= 7 -> if (dark) intArrayOf(255, 255, 255) else intArrayOf(0, 0, 0)
+        d >= 5 -> intArrayOf(0x00, 0x64, 0xd6)
+        d >= 3 -> lerpRgb(intArrayOf(0x00, 0x7a, 0xff), intArrayOf(0x2e, 0x8d, 0xff), (5 - d) / 2.0)
+        d >= 1 -> intArrayOf(0x2e, 0x8d, 0xff)
+        else -> intArrayOf(0xff, 0x45, 0x3a)
+      }
+      return (0xFF shl 24) or (rgb[0] shl 16) or (rgb[1] shl 8) or rgb[2]
+    }
+
+    /** sRGB 线性插值（k ∈ [0,1]），与 App 端色阶计算保持一致 */
+    private fun lerpRgb(a: IntArray, b: IntArray, k: Double): IntArray = intArrayOf(
+      Math.round(a[0] + (b[0] - a[0]) * k).toInt(),
+      Math.round(a[1] + (b[1] - a[1]) * k).toInt(),
+      Math.round(a[2] + (b[2] - a[2]) * k).toInt(),
+    )
 
     /** 相对标签：明天/后天/本周x/下周x；超出范围返回空串（仅年月日） */
     private fun formatDeadlineRel(deadline: Long): String {

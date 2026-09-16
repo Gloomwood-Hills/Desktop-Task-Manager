@@ -35,25 +35,34 @@ export function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** 截止时间颜色：渐变开启时按剩余天数从主题远端色（深色=白 / 浅色=黑）→#FF3333 线性插值（剩余1天/逾期为 #FF3333）；关闭时直接红色 */
+/** 截止时间颜色，按剩余天数分档（与设计稿品牌色阶一致）：
+ * ≥7 天 = 主题正文色（浅色=黑 / 深色=白）；7~5 天 `#0064d6`；5~3 天 `#007aff`→`#2e8dff` 渐变；
+ * 3~1 天 `#2e8dff`；剩余 24 小时以内（含逾期）`#ff453a`。关闭渐变时直接 `#ff453a`。 */
 function deadlineColor(deadline: number, gradient: boolean, dark: boolean): { bg: string; color: string } {
   if (!gradient) {
     return {
-      bg: 'color-mix(in srgb, #FF3333 16%, transparent)',
-      color: '#FF3333',
+      bg: 'color-mix(in srgb, #ff453a 16%, transparent)',
+      color: '#ff453a',
     };
   }
-  const now = Date.now();
+  type Rgb = [number, number, number];
+  const lerp = (a: Rgb, b: Rgb, k: number): Rgb => [
+    Math.round(a[0] + (b[0] - a[0]) * k),
+    Math.round(a[1] + (b[1] - a[1]) * k),
+    Math.round(a[2] + (b[2] - a[2]) * k),
+  ];
+  const toHex = (c: Rgb) => `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+
   const day = 24 * 60 * 60 * 1000;
-  const remain = deadline - now;
-  let t: number; // 0=远端（深色白/浅色黑），1=#FF3333
-  if (remain <= day) t = 1;
-  else if (remain >= 7 * day) t = 0;
-  else t = (7 * day - remain) / (6 * day);
-  const from = dark ? [255, 255, 255] : [0, 0, 0]; // 深色模式白起步，浅色模式黑起步
-  const to = [255, 51, 51]; // #FF3333
-  const channel = (i: number) => Math.round(from[i] + (to[i] - from[i]) * t);
-  const color = `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
+  const d = (deadline - Date.now()) / day; // 剩余天数
+  let rgb: Rgb;
+  if (d >= 7) rgb = dark ? [255, 255, 255] : [0, 0, 0];
+  else if (d >= 5) rgb = [0x00, 0x64, 0xd6];
+  else if (d >= 3) rgb = lerp([0x00, 0x7a, 0xff], [0x2e, 0x8d, 0xff], (5 - d) / 2);
+  else if (d >= 1) rgb = [0x2e, 0x8d, 0xff];
+  else rgb = [0xff, 0x45, 0x3a];
+
+  const color = toHex(rgb);
   return {
     bg: `color-mix(in srgb, ${color} 16%, transparent)`,
     color,
