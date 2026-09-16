@@ -260,9 +260,10 @@ class TaskWidgetProvider : AppWidgetProvider() {
       // 空列表占位
       views.setViewVisibility(R.id.widget_empty, if (total == 0) View.VISIBLE else View.GONE)
 
-      // 刷新：重新拉取数据；新增：打开小部件新建任务界面；整卡点击：打开应用主窗口
+      // 刷新：重新拉取数据；新增与解析输入：打开支持自然语言解析的小部件输入页；整卡点击：打开应用主窗口
       views.setOnClickPendingIntent(R.id.btn_refresh, refreshPending(context, widgetId))
       views.setOnClickPendingIntent(R.id.btn_add, openAddTaskPending(context))
+      views.setOnClickPendingIntent(R.id.btn_quick_add, quickCommandPending(context))
 
       // 上/下翻页
       views.setOnClickPendingIntent(R.id.btn_up, scrollPending(context, widgetId, -perPage))
@@ -421,6 +422,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
       val brand = if (dark) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()
       views.setTextColor(R.id.widget_title, title)
       views.setTextColor(R.id.widget_count, brand)
+      views.setTextColor(R.id.btn_quick_add_text, muted)
       views.setTextColor(R.id.widget_page, muted)
       views.setTextColor(R.id.widget_empty, muted)
     }

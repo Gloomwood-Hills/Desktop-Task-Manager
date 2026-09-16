@@ -91,7 +91,7 @@ function MobileTaskRow({ task, depth, expanded, expandedTasks, onToggleExpanded,
       finishGesture(state.startOffset + dx);
       return;
     }
-    if (state.axis === null && Math.abs(dx) < 8 && Math.abs(dy) < 8) onOpenTask();
+    // 任务详情仅由行末的“>”按钮打开，避免轻触任务时误进入详情。
   };
 
   return (
@@ -132,7 +132,13 @@ function MobileTaskRow({ task, depth, expanded, expandedTasks, onToggleExpanded,
             </button>}
           </div>
         </div>
-        <span className="mobile-task-detail-hint" aria-hidden="true">›</span>
+        <button
+          type="button"
+          className="mobile-task-detail-hint"
+          aria-label={`查看任务详情：${task.title}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => { event.stopPropagation(); onOpenTask(); }}
+        >›</button>
       </div>
       <AnimatePresence initial={false}>
         {revealed && (

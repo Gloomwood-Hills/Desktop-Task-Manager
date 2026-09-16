@@ -91,6 +91,38 @@
         android:layout_marginTop="10dp"
         android:background="#1A8E8E93" />
 
+    <!-- 保留任务解析输入入口：点击后打开独立输入页，支持自然语言日期解析。 -->
+    <LinearLayout
+        android:id="@+id/btn_quick_add"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/widget_input_pill"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_plus" />
+
+        <TextView
+            android:id="@+id/btn_quick_add_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:text="@string/widget_task_quick_add"
+            android:textColor="#8E8E93"
+            android:textSize="12.5sp" />
+    </LinearLayout>
+
     <!-- ===== 任务行 × 6（weight 等分填满剩余高度；小尺寸由 Provider 隐藏多余行） ===== -->
     <LinearLayout
         android:id="@+id/slot_1"

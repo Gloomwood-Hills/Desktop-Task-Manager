@@ -480,6 +480,45 @@ function App() {
     if (isMobile) setFolderSidebarPinned(false);
   };
 
+  // Android 系统返回键回调：弹窗/抽屉打开时先关闭当前层，主视图才交给 Activity 退出。
+  useEffect(() => {
+    if (!isMobile) return undefined;
+    type BackHandlerWindow = Window & { __dtmHandleBack?: () => boolean };
+    const target = window as BackHandlerWindow;
+    const previous = target.__dtmHandleBack;
+    const handler = () => {
+      if (captureOpen || aiCreateDraft) {
+        setPrefillDate(null);
+        setCaptureFolder(null);
+        setCaptureOpen(false);
+        setAiCreateDraft(null);
+        return true;
+      }
+      if (editingTask || aiEditDraft) {
+        setEditingTask(null);
+        setAiEditDraft(null);
+        return true;
+      }
+      if (mobileTask) {
+        setMobileTask(null);
+        return true;
+      }
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        return true;
+      }
+      if (showSidebar) {
+        closeSidebar();
+        return true;
+      }
+      return false;
+    };
+    target.__dtmHandleBack = handler;
+    return () => {
+      if (target.__dtmHandleBack === handler) target.__dtmHandleBack = previous;
+    };
+  }, [captureOpen, aiCreateDraft, editingTask, aiEditDraft, mobileTask, settingsOpen, showSidebar]);
+
   /** 侧栏遮罩上的左滑起手 X（用于滑动手势关闭） */
   const scrimTouchX = useRef<number | null>(null);
 

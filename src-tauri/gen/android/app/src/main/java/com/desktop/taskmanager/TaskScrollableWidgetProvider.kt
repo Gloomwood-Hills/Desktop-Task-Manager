@@ -70,6 +70,7 @@ class TaskScrollableWidgetProvider : AppWidgetProvider() {
 
         views.setOnClickPendingIntent(R.id.scroll_btn_refresh, refreshPending(context, widgetId))
         views.setOnClickPendingIntent(R.id.scroll_btn_add, addPending(context))
+        views.setOnClickPendingIntent(R.id.scroll_btn_quick_add, commandPending(context))
         manager.updateAppWidget(widgetId, views)
         manager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
       }
@@ -102,6 +103,7 @@ class TaskScrollableWidgetProvider : AppWidgetProvider() {
       }
       views.setInt(R.id.scroll_widget_root, "setBackgroundResource", bg)
       views.setTextColor(R.id.scroll_widget_title, if (dark) 0xFFFFFFFF.toInt() else 0xFF1D1D1F.toInt())
+      views.setTextColor(R.id.scroll_btn_quick_add_text, if (dark) 0xFFA1A1A6.toInt() else 0xFF8E8E93.toInt())
     }
 
     private fun refreshPending(context: Context, widgetId: Int): PendingIntent {
@@ -124,6 +126,19 @@ class TaskScrollableWidgetProvider : AppWidgetProvider() {
       return PendingIntent.getActivity(
         context,
         10033,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+    }
+
+    private fun commandPending(context: Context): PendingIntent {
+      val intent = Intent(context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        putExtra(TaskWidgetProvider.EXTRA_OPEN_COMMAND, true)
+      }
+      return PendingIntent.getActivity(
+        context,
+        10034,
         intent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
       )

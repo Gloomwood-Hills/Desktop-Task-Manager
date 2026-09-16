@@ -60,6 +60,21 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  /**
+   * Android 返回键优先交给前端关闭当前抽屉/弹窗；主视图没有可关闭内容时再退出 Activity。
+   * 这样新建任务等底部面板不会吞掉系统返回键，也不需要用户寻找遮罩上的关闭区域。
+   */
+  override fun onBackPressed() {
+    val web = activeWeb
+    if (web == null) {
+      super.onBackPressed()
+      return
+    }
+    web.evaluateJavascript("(window.__dtmHandleBack && window.__dtmHandleBack()) || false") { result ->
+      if (result != "true") super.onBackPressed()
+    }
+  }
+
   override fun onResume() {
     super.onResume()
     refreshWidget()

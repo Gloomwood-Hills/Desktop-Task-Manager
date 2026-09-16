@@ -33,8 +33,7 @@ export default function CommandBubble({ onCommand, focusSignal }: CommandBubbleP
         ref={inputRef}
         type="text"
         value={value}
-        list="dtm-command-suggestions"
-        placeholder="试试：把XX设为每天重复 / 把XX提前1天提醒 / 明天下午去游泳"
+        placeholder="输入自然语言命令…"
         aria-label="自然语言命令"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
@@ -59,16 +58,6 @@ export default function CommandBubble({ onCommand, focusSignal }: CommandBubbleP
           transition: 'border-color 0.15s ease, width 0.15s ease',
         }}
       />
-      <datalist id="dtm-command-suggestions">
-        <option value="完成任务 " />
-        <option value="撤销完成任务 " />
-        <option value="把任务设为重要" />
-        <option value="把任务移到工作分类" />
-        <option value="搜索 " />
-        <option value="打开日历视图" />
-        <option value="展开全部" />
-        <option value="取消提醒 " />
-      </datalist>
     </div>
   );
 }

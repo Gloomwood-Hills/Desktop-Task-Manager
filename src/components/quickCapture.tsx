@@ -329,19 +329,6 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
   /** AI 生成参数：子任务个数 + 补充要求 */
   const [subtaskCount, setSubtaskCount] = useState<number | null>(null);
   const [subtaskHint, setSubtaskHint] = useState('');
-  /** 首屏只保留标题与创建动作，其余字段按需展开。 */
-  const [advancedOpen, setAdvancedOpen] = useState(() => Boolean(
-    initialDate !== undefined
-      || initialFolderId !== null
-      || initialPriority === 'important'
-      || initialRemark?.trim()
-      || initialRepeatRule
-      || initialRepeatIntervalDays
-      || initialReminderOffsets?.length
-      || initialSubtasks?.length
-      || initialDeadline !== undefined,
-  ));
-
   // 扁平化文件夹用于选择器（含"未分类"顶层项）
   const flatFolders: { id: string | null; name: string; depth: number }[] = [
     { id: null, name: '未分类', depth: 0 },
@@ -579,7 +566,8 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
         borderRadius: isMobile ? '22px 22px 0 0' : 'calc(var(--radius)*1.2)',
         ...glassSurface('var(--background)', 82, 40),
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
-        maxHeight: isMobile ? 'calc(100vh - 8px)' : 'calc(100vh - 80px)',
+        // 移动端保留顶部空白作为可点击遮罩，表单内容在面板内部滚动，避免覆盖整个屏幕后无法退出。
+        maxHeight: isMobile ? 'calc(100vh - 56px)' : 'calc(100vh - 80px)',
         overflowY: 'auto',
         color: 'var(--foreground)',
       }}>
@@ -598,16 +586,6 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                 autoFocus
               />
             </div>
-            <button
-              type="button"
-              className="qc-more-toggle"
-              onClick={() => setAdvancedOpen((v) => !v)}
-              aria-expanded={advancedOpen}
-            >
-              {advancedOpen ? '收起更多选项' : '更多选项（分类、提醒、备注、子任务）'}
-              <ChevronDown style={{ width: 13, height: 13, transform: advancedOpen ? 'rotate(180deg)' : undefined, transition: 'transform 180ms ease' }} />
-            </button>
-            {advancedOpen && (
             <div className="qc-advanced">
             {/* 顶部选项行：文件夹 / 重要（提醒设置位于下方时间卡片，分类旁不再放提醒气泡） */}
             <div className="opt-row">
@@ -989,7 +967,6 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             )}
 
             </div>
-            )}
             <div className="qc-action-bar">
               <button className="create-btn" disabled={!title.trim()} onClick={handleCreate}>
                 创建任务

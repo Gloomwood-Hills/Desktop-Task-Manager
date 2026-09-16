@@ -61,6 +61,38 @@
             android:src="@drawable/ic_add_circle" />
     </LinearLayout>
 
+    <!-- 与兼容版保持一致：点击输入入口打开支持自然语言解析的任务输入页。 -->
+    <LinearLayout
+        android:id="@+id/scroll_btn_quick_add"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/widget_input_pill"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_plus" />
+
+        <TextView
+            android:id="@+id/scroll_btn_quick_add_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:text="@string/widget_task_quick_add"
+            android:textColor="#8E8E93"
+            android:textSize="12.5sp" />
+    </LinearLayout>
+
     <ListView
         android:id="@+id/widget_list"
         android:layout_width="match_parent"
