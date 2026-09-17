@@ -235,8 +235,10 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-/* ===== QuickCapture（对齐设计稿 quick-capture / modeTime） ===== */
-.qc-scope .qc-body { padding: 18px 22px 22px; }
+/* ===== QuickCapture（稳定内容区 + 固定操作区） ===== */
+.qc-scope { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.qc-scope .qc-body { display: flex; flex: 1; min-height: 0; flex-direction: column; padding: 18px 22px 22px; }
+.qc-scope .qc-content { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 2px 4px 0; }
 .qc-scope .qc-advanced { display: flex; flex-direction: column; gap: 14px; animation: qc-expand .18s var(--ease-standard) both; }
 .qc-scope .qc-more-toggle {
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
@@ -247,10 +249,13 @@ select:focus-visible {
 }
 .qc-scope .qc-more-toggle:hover { color: var(--primary); }
 .qc-scope .qc-action-bar {
-  position: sticky; bottom: -1px; z-index: 8; margin-top: 2px; padding: 12px 0 2px;
+  position: relative; z-index: 8; flex: 0 0 auto; margin-top: 2px; padding: 12px 0 2px;
   border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   background: linear-gradient(to bottom, color-mix(in srgb, var(--background) 0%, transparent), var(--background) 36%);
 }
+.qc-scope .qc-section-heading { display: flex; align-items: baseline; gap: 8px; margin: 0 0 2px; }
+.qc-scope .qc-section-heading span { color: var(--foreground); font-size: 12px; font-weight: 750; }
+.qc-scope .qc-section-heading small { color: var(--muted-foreground); font-size: 10.5px; font-weight: 500; }
 @keyframes qc-expand { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
 .qc-scope .opt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
 .qc-scope .opt-row > .chip { min-width: 0; }
@@ -473,6 +478,7 @@ input.pw-mask {
 .qc-scope .create-btn:disabled { opacity: .42; cursor: not-allowed; }
 
 @media (max-width: 640px) {
+  .mobile-form-sheet .qc-scope { height: 100%; }
   .qc-scope .qc-body { padding: 14px 16px 18px; }
   .qc-scope .qc-advanced { gap: 16px; }
   .qc-scope .opt-row { gap: 8px; }
@@ -485,7 +491,10 @@ input.pw-mask {
   .qc-scope .mini-chips.verse { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .qc-scope .mini-chips.verse .mini-chip { width: 100%; justify-content: center; padding-left: 6px; padding-right: 6px; }
   .qc-scope .qc-action-bar { padding-top: 10px; }
-  .qc-scope .create-btn { height: 44px; }
+  .qc-scope .create-btn { height: 48px; }
+  .qc-scope .qc-subtask-mode-row button { min-height: 44px; }
+  .qc-scope .qc-subtask-actions > button,
+  .qc-scope .qc-subtask-actions > input { min-height: 44px; }
 }
 
 @media (max-width: 380px) {
@@ -556,10 +565,10 @@ input.pw-mask {
 .mobile-task-actions { position: absolute; inset: 0 0 0 auto; width: 116px; display: flex; align-items: stretch; justify-content: flex-end; background: color-mix(in srgb, var(--primary) 14%, var(--background)); }
 .mobile-task-actions button { width: 84px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; background: var(--primary); color: var(--primary-foreground); font: 600 11px var(--font-sans); }
 .mobile-task-actions svg { width: 17px; height: 17px; }
-.mobile-task-row { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 7px 9px; border: 0; outline: none; border-radius: 13px; background: color-mix(in srgb, var(--background) 94%, var(--accent)); touch-action: pan-y; will-change: transform; transition: transform 180ms var(--ease-standard), background-color var(--dur-short) var(--ease-standard); }
-.mobile-task-row.is-dragging { transition: none; }
+.mobile-task-row { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 7px 9px; border: 0; outline: none; border-radius: 13px; background: color-mix(in srgb, var(--background) 94%, var(--accent)); touch-action: pan-y; transition: transform 180ms var(--ease-standard), background-color var(--dur-short) var(--ease-standard); }
+.mobile-task-row.is-dragging { transition: none; will-change: transform; }
 .mobile-task-row:active { background: color-mix(in srgb, var(--accent) 72%, var(--background)); }
-.mobile-task-check { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--primary); cursor: pointer; flex-shrink: 0; }
+.mobile-task-check { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--primary); cursor: pointer; flex-shrink: 0; }
 .mobile-task-check::before { content: ''; width: 20px; height: 20px; border: 1.6px solid var(--muted-foreground); border-radius: 50%; }
 .mobile-task-check.is-important::before { border-color: #ff6b3d; }
 .mobile-task-check.is-complete::before { display: none; }
@@ -575,7 +584,7 @@ input.pw-mask {
 .mobile-task-deadline svg { width: 13px; height: 13px; }
 .mobile-subtask-toggle { display: inline-flex; align-items: center; gap: 2px; min-height: 28px; padding: 0 5px; border: 0; border-radius: 8px; background: transparent; color: var(--primary); font: 600 11px var(--font-sans); }
 .mobile-subtask-toggle svg { width: 14px; height: 14px; }
-.mobile-task-detail-hint { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 40px; padding: 0; border: 0; outline: none; border-radius: 10px; background: transparent; color: var(--icon-muted); font: 24px/1 var(--font-sans); flex-shrink: 0; cursor: pointer; }
+.mobile-task-detail-hint { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; padding: 0; border: 0; outline: none; border-radius: 10px; background: transparent; color: var(--icon-muted); font: 24px/1 var(--font-sans); flex-shrink: 0; cursor: pointer; }
 .mobile-task-detail-hint:active, .mobile-task-detail-hint:focus-visible { background: color-mix(in srgb, var(--primary) 10%, transparent); color: var(--primary); }
 .mobile-task-close-actions { position: absolute; right: 5px; top: 50%; z-index: 2; width: 24px; height: 24px; transform: translateY(-50%); border: 0; border-radius: 8px; background: color-mix(in srgb, var(--background) 75%, transparent); color: var(--primary-foreground); font-size: 18px; line-height: 1; }
 .mobile-folder-section { display: flex; flex-direction: column; gap: 3px; }

@@ -539,6 +539,12 @@ function App() {
         tracking = false;
         return;
       }
+      // 抽屉只通过顶部菜单按钮打开；全局右滑不再抢占列表滚动或输入控件。
+      // 抽屉打开后仍保留向左滑关闭，符合移动端的可发现性与可撤销性。
+      if (!sidebarOpenRef.current) {
+        tracking = false;
+        return;
+      }
       const t = e.touches[0];
       startX = t.clientX;
       startY = t.clientY;
@@ -557,11 +563,10 @@ function App() {
         decided = true;
         // 纵向占优 → 交回原生滚动，本次跟踪放弃
         if (Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
-        // 侧栏已开 → 只接受向左滑（关闭）；未开 → 任意位置向右滑都可唤起
-        mode = sidebarOpenRef.current ? 'close' : 'open';
+        // 侧栏已开时只接受向左滑关闭。
+        mode = 'close';
       }
-      if (mode === 'open' && dx > 46) { setSidebarHover(true); tracking = false; }
-      else if (mode === 'close' && dx < -46) { closeSidebar(); tracking = false; }
+      if (mode === 'close' && dx < -46) { closeSidebar(); tracking = false; }
     };
     const onEnd = () => { tracking = false; decided = false; mode = null; };
 

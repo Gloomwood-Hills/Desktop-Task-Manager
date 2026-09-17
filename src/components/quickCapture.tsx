@@ -562,17 +562,21 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
         style={{
           position: 'relative',
           width: isMobile ? '100%' : 620,
-        maxWidth: isMobile ? '100%' : 'calc(100% - 32px)',
-        borderRadius: isMobile ? '22px 22px 0 0' : 'calc(var(--radius)*1.2)',
-        ...glassSurface('var(--background)', 82, 40),
-        boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
-        // 移动端保留顶部空白作为可点击遮罩，表单内容在面板内部滚动，避免覆盖整个屏幕后无法退出。
-        maxHeight: isMobile ? 'calc(100vh - 56px)' : 'calc(100vh - 80px)',
-        overflowY: 'auto',
-        color: 'var(--foreground)',
+          maxWidth: isMobile ? '100%' : 'calc(100% - 32px)',
+          borderRadius: isMobile ? '22px 22px 0 0' : 'calc(var(--radius)*1.2)',
+          ...glassSurface('var(--background)', 82, 40),
+          boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
+          // 内容独立滚动，底部操作区始终可见；移动端顶部保留可点击遮罩。
+          height: isMobile ? 'calc(100vh - 56px)' : 'auto',
+          maxHeight: isMobile ? 'calc(100vh - 56px)' : 'calc(100vh - 80px)',
+          overflow: isMobile ? 'hidden' : 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          color: 'var(--foreground)',
       }}>
         <div className="qc-scope">
           <div className="qc-body">
+            <div className="qc-content">
             {/* 首屏输入：标题回车可直接创建，减少首次使用的认知负担 */}
             <div className="task-input">
               <Plus />
@@ -643,6 +647,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
 
             {/* 子任务区（置顶于时间区域上方）：一键生成仅在配置 AI 后浮现；手动添加始终可用 */}
             <div className="qc-subtask-section" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="qc-section-heading"><span>子任务</span><small>可选 · 可手动调整</small></div>
               {/* AI 规划行：仅配置 AI 后浮现；默认仅生成建议，不覆盖用户已编辑内容 */}
               {aiEnabled && onGenerateSubtasks && (
                 <div className="qc-subtask-ai" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -968,8 +973,9 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             )}
 
             </div>
+            </div>
             <div className="qc-action-bar">
-              <button className="create-btn" disabled={!title.trim()} onClick={handleCreate}>
+              <button type="button" className="create-btn" disabled={!title.trim()} onClick={handleCreate} aria-label="创建任务">
                 创建任务
               </button>
             </div>
