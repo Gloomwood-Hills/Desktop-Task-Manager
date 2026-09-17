@@ -236,6 +236,7 @@ select:focus-visible {
 }
 
 /* ===== QuickCapture（稳定内容区 + 固定操作区） ===== */
+.qc-scope { --qc-control-radius: 10px; }
 .qc-scope { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .qc-scope .qc-body { display: flex; flex: 1; min-height: 0; flex-direction: column; padding: 18px 22px 22px; }
 .qc-scope .qc-content { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 2px 4px 0; }
@@ -257,8 +258,9 @@ select:focus-visible {
 .qc-scope .qc-section-heading span { color: var(--foreground); font-size: 12px; font-weight: 750; }
 .qc-scope .qc-section-heading small { color: var(--muted-foreground); font-size: 10.5px; font-weight: 500; }
 @keyframes qc-expand { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
-.qc-scope .opt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.qc-scope .opt-row { display: grid; grid-template-columns: auto auto; justify-content: space-between; gap: 10px; align-items: center; margin-top: 12px; }
 .qc-scope .opt-row > .chip { min-width: 0; }
+.qc-scope .opt-row > .chip:first-child { max-width: min(100%, 230px); }
 .qc-scope .opt-row > .chip:first-child span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qc-scope .opt-row > .chip:nth-child(2) { margin-left: 0 !important; white-space: nowrap; }
 .qc-scope .chip {
@@ -266,7 +268,7 @@ select:focus-visible {
   align-items: center;
   gap: 5px;
   padding: 6px 11px;
-  border-radius: 10px;
+  border-radius: var(--qc-control-radius);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -277,6 +279,10 @@ select:focus-visible {
   transition: transform var(--dur-short) var(--ease-standard), background-color var(--dur-short) var(--ease-standard), border-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard);
   user-select: none;
 }
+.qc-scope button,
+.qc-scope input,
+.qc-scope textarea,
+.qc-scope select { border-radius: var(--qc-control-radius) !important; }
 .qc-scope .chip svg { width: 13px; height: 13px; flex-shrink: 0; }
 .qc-scope .chip.active {
   background: var(--brand-50);
@@ -416,7 +422,7 @@ select:focus-visible {
   height: 50px;
   padding: 0 14px;
   border: 1px solid var(--input);
-  border-radius: 10px;
+  border-radius: var(--qc-control-radius);
   background: var(--background);
   box-shadow: 0 2px 10px rgba(0,0,0,.04);
   margin-top: 16px;
@@ -481,8 +487,8 @@ input.pw-mask {
   .mobile-form-sheet .qc-scope { height: 100%; }
   .qc-scope .qc-body { padding: 14px 16px 18px; }
   .qc-scope .qc-advanced { gap: 16px; }
-  .qc-scope .opt-row { gap: 8px; }
-  .qc-scope .chip { min-height: 40px; padding: 7px 10px; }
+  .qc-scope .opt-row { gap: 8px; margin-top: 10px; }
+  .qc-scope .chip { min-height: 36px; padding: 5px 9px; font-size: 12px; }
   .qc-scope .qc-subtask-actions { grid-template-columns: minmax(0, 1fr) 62px; }
   .qc-scope .qc-subtask-actions > input:last-child { grid-column: 1 / -1; }
   .qc-scope .field-card { padding: 13px; }
@@ -498,7 +504,7 @@ input.pw-mask {
 }
 
 @media (max-width: 380px) {
-  .qc-scope .opt-row { grid-template-columns: minmax(0, 1fr) 100px; }
+  .qc-scope .opt-row { grid-template-columns: minmax(0, 1fr) auto; }
   .qc-scope .chip { padding-left: 8px; padding-right: 8px; }
   .qc-scope .qc-subtask-mode-row { gap: 5px !important; }
   .qc-scope .qc-subtask-mode-row button { font-size: 10.5px !important; }
