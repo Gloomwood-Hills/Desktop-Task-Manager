@@ -756,7 +756,7 @@ function App() {
     }
     // 编辑列表中删除的直属子任务同步软删除；其下级子树由服务层一并处理。
     for (const child of existingChildren) {
-      if (!retainedIds.has(child.id) && !nextSubtasks.some((sub) => sub.id === child.id)) {
+      if (!retainedIds.has(child.id)) {
         await deleteTask(child.id);
       }
     }
