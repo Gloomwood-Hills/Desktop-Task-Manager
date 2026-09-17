@@ -7,9 +7,13 @@ export function mapBooleanFields<T extends object>(
   const result = { ...row };
 
   for (const key of booleanFields) {
-    if (result[key] === 1) {
+    // SQLite drivers may expose INTEGER booleans as numbers or as strings
+    // (Android builds have returned both forms).  Normalize both so a string
+    // value of "0" cannot be treated as truthy by the React view layer.
+    const value = result[key];
+    if (value === true || value === 1 || value === '1') {
       result[key] = true as unknown as T[keyof T];
-    } else if (result[key] === 0) {
+    } else if (value === false || value === 0 || value === '0') {
       result[key] = false as unknown as T[keyof T];
     }
   }
