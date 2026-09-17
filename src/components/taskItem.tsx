@@ -349,7 +349,9 @@ export default function TaskItem({
           alignItems: 'flex-start',
           gap: 10,
           padding: '8px 8px 4px',
-          opacity: task.startDate !== null && task.startDate > Date.now() ? 0.65 : 1,
+          // 活动任务保持完整对比度；未来开始时间只在详情/日期信息中表达，
+          // 不再降低整行透明度，避免导入后的标题、备注和勾选框看起来像已禁用。
+          opacity: 1,
           borderRadius: 'calc(var(--radius) * 0.5)',
           cursor: hasDetails ? 'pointer' : 'default',
           transition: 'background-color 0.15s ease',
