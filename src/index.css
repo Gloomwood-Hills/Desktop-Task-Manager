@@ -152,6 +152,23 @@ html.mobile #root { border-radius: 0; }
 }
 
 .dark {
+  /* 深色模式也覆盖被组件直接引用的色阶变量，避免 #6e6e73/#8e8e93 等浅色主题灰色继续作为文字颜色。 */
+  --background-100: #242426;
+  --background-200: #2c2c2e;
+  --background-300: #3a3a3c;
+  --background-400: #48484a;
+  --background-500: #636366;
+  --background-600: #8e8e93;
+  --text-300: #b8b8c0;
+  --text-400: #a1a1aa;
+  --text-500: #c7c7cc;
+  --text-600: #d1d1d6;
+  --text-700: #e3e3e8;
+  --text-800: #f5f5f7;
+  --text-900: #ffffff;
+  --icon-400: #b8b8c0;
+  --icon-500: #a1a1aa;
+  --icon-600: #c7c7cc;
   --background: var(--background-900);
   --foreground: var(--text-50);
   --card: var(--background-800);
@@ -170,8 +187,8 @@ html.mobile #root { border-radius: 0; }
   --destructive-foreground: var(--state-error-foreground);
   --success: var(--state-success-dark);
   --success-foreground: var(--state-success-foreground);
-  --border: var(--background-700);
-  --input: var(--background-700);
+  --border: var(--background-300);
+  --input: var(--background-400);
   --ring: var(--brand-400);
   --icon: var(--icon-50);
   --icon-muted: var(--icon-500);
@@ -301,7 +318,7 @@ select:focus-visible {
   margin-bottom: 9px;
 }
 .qc-scope .field-card .card-head svg { width: 13px; height: 13px; color: var(--primary); }
-.qc-scope .field-card .card-head .t { font-size: 12px; font-weight: 700; color: var(--text-700); }
+.qc-scope .field-card .card-head .t { font-size: 12px; font-weight: 700; color: var(--foreground); }
 .qc-scope .field-card .card-head .badge {
   margin-left: auto;
   font-size: 10.5px;
@@ -324,7 +341,7 @@ select:focus-visible {
   background: var(--background);
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-600);
+  color: var(--foreground);
   cursor: pointer;
   font-family: var(--font-sans);
   transition: background-color .14s ease, border-color .14s ease, color .14s ease;
@@ -333,7 +350,7 @@ select:focus-visible {
 .qc-scope .mini-chip:hover { border-color: var(--brand-200); color: var(--primary); }
 .qc-scope .mini-chip.active { background: var(--brand-50); border-color: var(--brand-200); color: var(--primary); }
 .qc-scope .mini-chip:disabled { opacity: .42; cursor: not-allowed; background: var(--muted); color: var(--muted-foreground); border-color: var(--border); }
-.qc-scope .mini-chip .off-hint { font-weight: 500; font-size: 10px; color: var(--text-300); }
+.qc-scope .mini-chip .off-hint { font-weight: 500; font-size: 10px; color: var(--muted-foreground); }
 
 .qc-scope .custom-time {
   display: flex;
@@ -359,14 +376,14 @@ select:focus-visible {
   border-top: 1px dashed var(--border);
   padding-top: 12px;
 }
-.qc-scope .preview-box .pv-title { font-size: 11.5px; font-weight: 700; color: var(--text-500); margin-bottom: 6px; }
+.qc-scope .preview-box .pv-title { font-size: 11.5px; font-weight: 700; color: var(--foreground); margin-bottom: 6px; }
 .qc-scope .pv-list { display: flex; flex-direction: column; gap: 6px; }
 .qc-scope .pv-item {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--text-600);
+  color: var(--foreground);
   background: var(--brand-50);
   border: 1px solid var(--brand-200);
   border-radius: 10px;
@@ -377,15 +394,15 @@ select:focus-visible {
   margin-left: auto;
   border: none;
   background: transparent;
-  color: var(--text-300);
+  color: var(--muted-foreground);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
   padding: 0 2px;
 }
 .qc-scope .pv-item .remove:hover { color: var(--state-error); }
-.qc-scope .pv-item .tag { margin-left: 6px; font-size: 10.5px; color: var(--text-400); font-weight: 500; }
-.qc-scope .empty-hint { font-size: 11.5px; color: var(--text-300); }
+.qc-scope .pv-item .tag { margin-left: 6px; font-size: 10.5px; color: var(--muted-foreground); font-weight: 500; }
+.qc-scope .empty-hint { font-size: 11.5px; color: var(--muted-foreground); }
 
 .qc-scope .task-input {
   display: flex;
@@ -406,7 +423,7 @@ select:focus-visible {
   border: none; outline: none; background: transparent; flex: 1;
   font-size: 13.5px; color: var(--foreground); font-family: var(--font-sans);
 }
-.qc-scope .task-input input::placeholder { color: var(--text-300); }
+.qc-scope .task-input input::placeholder { color: var(--muted-foreground); }
 
 /* 设置面板的密码/密钥类输入框：用 text 类型规避 Android WebView 对 password 字段禁用粘贴，
    再用 -webkit-text-security 将明文显示为圆点，保持密码观感。 */
@@ -419,12 +436,12 @@ input.pw-mask {
 .qc-scope .dy-col { flex: 1 1 200px; min-width: 200px; }
 .qc-scope .dy-head {
   display: flex; align-items: center; gap: 6px;
-  font-size: 11.5px; font-weight: 700; color: var(--text-500);
+  font-size: 11.5px; font-weight: 700; color: var(--foreground);
   padding-bottom: 6px; border-bottom: 1px solid var(--border);
 }
 .qc-scope .mini-chips.verse { display: grid; grid-template-columns: repeat(2, auto); gap: 6px; margin-top: 8px; }
 .qc-scope .mini-chips.verse .mini-chip { justify-content: flex-start; }
-.qc-scope .rem-indicator { margin-top: 8px; font-size: 10.5px; color: var(--text-400); white-space: nowrap; }
+.qc-scope .rem-indicator { margin-top: 8px; font-size: 10.5px; color: var(--muted-foreground); white-space: nowrap; }
 /* 多选提醒时刻列表 */
 .qc-scope .rm-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .qc-scope .rm-chip {
@@ -434,7 +451,7 @@ input.pw-mask {
 }
 .qc-scope .rm-chip:hover { border-color: var(--brand-400); }
 .qc-scope .rm-chip .rm-time { font-weight: 600; white-space: nowrap; }
-.qc-scope .rm-chip button { border: none; background: transparent; color: var(--text-300); cursor: pointer; display: flex; padding: 0; border-radius: 4px; }
+.qc-scope .rm-chip button { border: none; background: transparent; color: var(--muted-foreground); cursor: pointer; display: flex; padding: 0; border-radius: 4px; }
 .qc-scope .rm-chip button:hover { color: var(--state-error); }
 .qc-scope .rm-chip button svg { width: 12px; height: 12px; }
 
@@ -629,18 +646,18 @@ input.pw-mask {
   background: var(--background-100); border: 1px solid var(--border);
   flex-wrap: nowrap; box-sizing: border-box;
 }
-.qc-scope .time-bubble .tb-label { font-size: 11.5px; font-weight: 700; color: var(--text-500); white-space: nowrap; flex-shrink: 0; }
+.qc-scope .time-bubble .tb-label { font-size: 11.5px; font-weight: 700; color: var(--foreground); white-space: nowrap; flex-shrink: 0; }
 .qc-scope .time-bubble input[type="time"] {
   height: 26px; padding: 0 8px; border: 1px solid var(--input); border-radius: 8px;
   background: var(--background); color: inherit; font-size: 11.5px; outline: none; font-family: var(--font-sans);
   flex: 1; min-width: 72px; width: 100%; box-sizing: border-box;
 }
 .qc-scope .time-bubble button {
-  border: none; background: transparent; color: var(--text-400); cursor: pointer;
+  border: none; background: transparent; color: var(--muted-foreground); cursor: pointer;
   display: flex; align-items: center; justify-content: center; padding: 2px; border-radius: 6px;
   flex-shrink: 0;
 }
-.qc-scope .time-bubble button:hover { background: var(--background-200); color: var(--text-600); }
+.qc-scope .time-bubble button:hover { background: var(--background-200); color: var(--foreground); }
 .qc-scope .time-bubble button svg { width: 13px; height: 13px; }
 .qc-scope .dl-dot, .qc-scope .rm-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .qc-scope .dl-dot { background: var(--brand-700); }
@@ -652,13 +669,13 @@ input.pw-mask {
   padding-top: 10px;
   border-top: 1px dashed var(--border);
 }
-.qc-scope .cal-label { font-size: 11.5px; font-weight: 700; color: var(--text-500); margin-bottom: 6px; }
+.qc-scope .cal-label { font-size: 11.5px; font-weight: 700; color: var(--foreground); margin-bottom: 6px; }
 .qc-scope .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.qc-scope .cal-dow { font-size: 9.5px; font-weight: 600; color: var(--text-400); text-align: center; padding: 2px 0; }
+.qc-scope .cal-dow { font-size: 9.5px; font-weight: 600; color: var(--muted-foreground); text-align: center; padding: 2px 0; }
 .qc-scope .cal-day {
   display: flex; align-items: center; justify-content: center;
   height: 26px; font-size: 11px; font-weight: 600;
-  color: var(--text-600); border-radius: 7px; cursor: pointer; user-select: none;
+  color: var(--foreground); border-radius: 7px; cursor: pointer; user-select: none;
 }
 .qc-scope .cal-day:hover { background: var(--brand-50); color: var(--primary); }
 .qc-scope .cal-day.empty { cursor: default; }

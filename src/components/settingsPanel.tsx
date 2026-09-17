@@ -769,13 +769,13 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                           display: 'inline-flex', alignItems: 'center', gap: 6,
                           padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
                           border: '1px solid var(--border)',
-                          background: active ? 'color-mix(in srgb, var(--brand-100) 26%, transparent)' : 'var(--background)',
-                          color: active ? 'var(--brand-800)' : 'var(--foreground)',
+                          background: active ? 'color-mix(in srgb, var(--primary) 18%, transparent)' : 'var(--background)',
+                          color: active ? 'var(--primary)' : 'var(--foreground)',
                           fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
                             transition: 'background-color 0.15s ease',
                         }}
                         onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--accent)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = active ? 'color-mix(in srgb, var(--brand-100) 26%, transparent)' : 'var(--background)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = active ? 'color-mix(in srgb, var(--primary) 18%, transparent)' : 'var(--background)'; }}
                       >
                         {p.name}
                         {active && <Check style={{ width: 12, height: 12 }} />}

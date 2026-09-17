@@ -126,7 +126,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
 
   const panelBox: React.CSSProperties = {
     borderRadius: 14,
-    ...glassSurface('#ffffff', 78, 40),
+    ...glassSurface('var(--popover)', 88, 40),
     boxShadow: 'var(--shadow-lg), 0 0 0 0.5px rgba(0,0,0,0.06)',
     padding: 6,
   };
@@ -147,7 +147,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
         maxHeight: isMobile ? 'calc(100vh - 8px)' : `calc(100vh - ${s.dialogTop * 2}px)`,
         overflowY: 'auto',
         borderRadius: isMobile ? '22px 22px 0 0' : 'calc(var(--radius)*1.2)',
-        ...glassSurface('#ffffff', 82, 40),
+        ...glassSurface('var(--popover)', 92, 40),
         boxShadow: 'var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06)',
         color: 'var(--foreground)',
       }}>

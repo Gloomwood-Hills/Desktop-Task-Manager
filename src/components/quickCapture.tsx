@@ -143,7 +143,7 @@ export function ReminderCalendar({
 }
 
 const calNavStyle: React.CSSProperties = {
-  width: 20, height: 20, border: 'none', background: 'transparent', color: 'var(--text-400)',
+  width: 20, height: 20, border: 'none', background: 'transparent', color: 'var(--muted-foreground)',
   cursor: 'pointer', borderRadius: 6, fontSize: 14, lineHeight: 1, padding: 0,
 };
 
@@ -246,7 +246,7 @@ function DualCalendar({
               border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
               padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-sans)',
               background: pickMode === 'deadline' ? 'var(--brand-700)' : 'transparent',
-              color: pickMode === 'deadline' ? '#fff' : 'var(--text-500)',
+              color: pickMode === 'deadline' ? '#fff' : 'var(--foreground)',
             }}
           >截止</button>
           <button
@@ -256,7 +256,7 @@ function DualCalendar({
               border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
               padding: '4px 10px', borderRadius: 6, fontFamily: 'var(--font-sans)',
               background: pickMode === 'reminder' ? 'var(--brand-400)' : 'transparent',
-              color: pickMode === 'reminder' ? '#fff' : 'var(--text-500)',
+              color: pickMode === 'reminder' ? '#fff' : 'var(--foreground)',
             }}
           >提醒</button>
         </div>
@@ -901,7 +901,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                 onPickReminder={handlePickReminderDay}
               />
 
-              <div style={{ fontSize: 10.5, color: 'var(--text-400)', marginTop: 8, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 10.5, color: 'var(--muted-foreground)', marginTop: 8, lineHeight: 1.5 }}>
                 切换「截止/提醒」模式后单击日期（桌面端也可右键直接设提醒）· 再点已选日期可取消
                 {!hasDeadline && <span> · 提前提醒需先设截止时间</span>}
               </div>
