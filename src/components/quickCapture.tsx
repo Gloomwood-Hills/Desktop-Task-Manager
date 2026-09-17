@@ -199,16 +199,17 @@ function parsePlusProperties(text: string): {
 }
 
 /**
- * 一键导入子任务：每行一条，格式为「- 标题 | 截止: 2026-10-01 18:00 | 备注: 执行说明」。
+ * 一键导入子任务：每行一条，格式为「- 标题 | 截止: YY-MM-DD HH:mm | 备注: 执行说明」。
  * 截止和备注均为可选；不识别的字段会被忽略，避免粘贴普通清单时整个导入失败。
  */
 function parseSubtaskImport(text: string, defaultHour: number, defaultMinute: number): GeneratedSubtask[] {
   const parseDeadline = (raw: string): number | null => {
     const value = raw.trim();
     if (!value) return null;
-    const m = value.match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*(?:日)?(?:[T\s]+(\d{1,2})(?::|点)(\d{1,2})?)?$/);
+    const m = value.match(/^(\d{2}|\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*(?:日)?(?:[T\s]+(\d{1,2})(?::|点)(\d{1,2})?)?$/);
     if (m) {
-      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), m[4] ? Number(m[4]) : defaultHour, m[5] ? Number(m[5]) : defaultMinute, 0, 0);
+      const year = m[1].length === 2 ? 2000 + Number(m[1]) : Number(m[1]);
+      const d = new Date(year, Number(m[2]) - 1, Number(m[3]), m[4] ? Number(m[4]) : defaultHour, m[5] ? Number(m[5]) : defaultMinute, 0, 0);
       return Number.isNaN(d.getTime()) ? null : d.getTime();
     }
     const ts = Date.parse(value.replace(/年|月/g, '-').replace(/日/g, '').replace(/点/g, ':'));
@@ -814,8 +815,8 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
               {subtaskImportHelpOpen && (
                 <div className="qc-subtask-import-help-panel">
                   <strong>一键导入格式</strong>
-                  <span>每行一条：<code>- 子任务标题 | 截止: 2026-10-01 18:00 | 备注: 执行说明</code></span>
-                  <span>截止和备注可省略；也支持 <code>1. 子任务标题</code> 这样的普通清单。</span>
+                  <span>每行一条：<code>- 子任务标题 | 截止: YY-MM-DD HH:mm | 备注: 执行说明</code></span>
+                  <span>截止支持两位或四位年份；截止和备注可省略，也支持 <code>1. 子任务标题</code> 普通清单。</span>
                 </div>
               )}
               {subtaskImportOpen && (
@@ -823,7 +824,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                   <textarea
                     value={subtaskImportText}
                     onChange={(e) => setSubtaskImportText(e.target.value)}
-                    placeholder={'- 准备资料 | 截止: 2026-10-01 18:00 | 备注: 整理所需文件\n- 完成初稿'}
+                    placeholder={'- 准备资料 | 截止: YY-MM-DD HH:mm | 备注: 整理所需文件\n- 完成初稿'}
                     aria-label="粘贴子任务文本"
                     rows={4}
                   />
