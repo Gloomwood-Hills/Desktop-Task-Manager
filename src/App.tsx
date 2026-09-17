@@ -439,6 +439,19 @@ function App() {
     return () => window.removeEventListener('open-command-bar', h);
   }, []);
 
+  // 移动端小部件「新建任务」统一打开当前 QuickCapture，避免落入旧版原生表单。
+  useEffect(() => {
+    const h = () => {
+      setAiCreateDraft(null);
+      setEditingTask(null);
+      setMobileTask(null);
+      setCaptureFolder(null);
+      setCaptureOpen(true);
+    };
+    window.addEventListener('open-quick-capture', h);
+    return () => window.removeEventListener('open-quick-capture', h);
+  }, []);
+
   // 小部件点击任务标题后，移动端打开对应的详情底部面板。
   useEffect(() => {
     if (!isMobile) return;

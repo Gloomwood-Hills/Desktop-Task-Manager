@@ -198,6 +198,40 @@ function parsePlusProperties(text: string): {
   return { cleanTitle: cleanTitle || text.trim(), repeatRule, repeatIntervalDays, reminderOffsets };
 }
 
+/**
+ * 一键导入子任务：每行一条，格式为「- 标题 | 截止: 2026-10-01 18:00 | 备注: 执行说明」。
+ * 截止和备注均为可选；不识别的字段会被忽略，避免粘贴普通清单时整个导入失败。
+ */
+function parseSubtaskImport(text: string, defaultHour: number, defaultMinute: number): GeneratedSubtask[] {
+  const parseDeadline = (raw: string): number | null => {
+    const value = raw.trim();
+    if (!value) return null;
+    const m = value.match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*(?:日)?(?:[T\s]+(\d{1,2})(?::|点)(\d{1,2})?)?$/);
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), m[4] ? Number(m[4]) : defaultHour, m[5] ? Number(m[5]) : defaultMinute, 0, 0);
+      return Number.isNaN(d.getTime()) ? null : d.getTime();
+    }
+    const ts = Date.parse(value.replace(/年|月/g, '-').replace(/日/g, '').replace(/点/g, ':'));
+    return Number.isNaN(ts) ? null : ts;
+  };
+
+  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const parts = line.replace(/^(?:[-*•]|\d+[.)、])\s*/, '').split('|').map((part) => part.trim()).filter(Boolean);
+    const title = parts.shift()?.trim() ?? '';
+    let deadline: number | null = null;
+    let remark = '';
+    parts.forEach((part) => {
+      const sep = part.match(/^([^:：]+)[:：]\s*(.*)$/);
+      if (!sep) return;
+      const key = sep[1].trim();
+      const value = sep[2].trim();
+      if (/截止|时间|deadline/i.test(key)) deadline = parseDeadline(value);
+      else if (/备注|说明|remark|note/i.test(key)) remark = value;
+    });
+    return { title, deadline, remark };
+  }).filter((item) => item.title.length > 0);
+}
+
 function startOfDay(ts: number): number {
   const d = new Date(ts);
   d.setHours(0, 0, 0, 0);
@@ -324,6 +358,9 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
   const [subtaskError, setSubtaskError] = useState<string | null>(null);
   /** AI 建议暂存区：用户确认后才合并到正式子任务列表，避免覆盖手动编辑。 */
   const [subtaskSuggestion, setSubtaskSuggestion] = useState<GeneratedSubtask[] | null>(null);
+  const [subtaskImportOpen, setSubtaskImportOpen] = useState(false);
+  const [subtaskImportHelpOpen, setSubtaskImportHelpOpen] = useState(false);
+  const [subtaskImportText, setSubtaskImportText] = useState('');
   const [subtaskMode, setSubtaskMode] = useState<SubtaskPlanMode>(initialSubtasks?.length ? 'optimize' : 'initial');
   const subtaskAbortRef = useRef<AbortController | null>(null);
   /** AI 生成参数：子任务个数 + 补充要求 */
@@ -494,6 +531,18 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
   const cancelSubtaskGeneration = () => {
     subtaskAbortRef.current?.abort();
     setSubtaskLoading(false);
+  };
+
+  const importSubtasks = () => {
+    const imported = parseSubtaskImport(subtaskImportText, defaultDeadlineHour, defaultDeadlineMinute);
+    if (imported.length === 0) {
+      setSubtaskError('没有识别到子任务，请按说明每行输入一条任务');
+      return;
+    }
+    setSubtasks((prev) => [...prev, ...imported]);
+    setSubtaskImportText('');
+    setSubtaskImportOpen(false);
+    setSubtaskError(null);
   };
 
   /** datetime-local → 时间戳 / null */
@@ -733,18 +782,57 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                 </div>
               )}
               {/* 手动添加入口：无论是否配置 AI 始终可用 */}
-              <button
-                type="button"
-                onClick={() => { setSubtasks((prev) => [...prev, { title: '', deadline: null, remark: '' }]); setSubtaskError(null); }}
-                style={{
-                  alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5,
-                  height: 32, padding: '0 12px', borderRadius: 999, cursor: 'pointer',
-                  border: '1px solid var(--border)', background: 'transparent',
-                  color: 'var(--muted-foreground)', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
-                }}
-              >
-                <Plus style={{ width: 13, height: 13 }} />添加子任务（手动）
-              </button>
+              <div className="qc-subtask-manual-actions">
+                <button
+                  type="button"
+                  onClick={() => { setSubtasks((prev) => [...prev, { title: '', deadline: null, remark: '' }]); setSubtaskError(null); }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    height: 32, padding: '0 12px', borderRadius: 999, cursor: 'pointer',
+                    border: '1px solid var(--border)', background: 'transparent',
+                    color: 'var(--muted-foreground)', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)',
+                  }}
+                >
+                  <Plus style={{ width: 13, height: 13 }} />添加子任务（手动）
+                </button>
+                <button
+                  type="button"
+                  className="qc-subtask-import-btn"
+                  onClick={() => setSubtaskImportOpen((open) => !open)}
+                  aria-expanded={subtaskImportOpen}
+                >
+                  一键导入
+                </button>
+                <button
+                  type="button"
+                  className="qc-subtask-import-help"
+                  onClick={() => setSubtaskImportHelpOpen((open) => !open)}
+                  aria-label="查看一键导入格式说明"
+                  aria-expanded={subtaskImportHelpOpen}
+                >ⓘ</button>
+              </div>
+              {subtaskImportHelpOpen && (
+                <div className="qc-subtask-import-help-panel">
+                  <strong>一键导入格式</strong>
+                  <span>每行一条：<code>- 子任务标题 | 截止: 2026-10-01 18:00 | 备注: 执行说明</code></span>
+                  <span>截止和备注可省略；也支持 <code>1. 子任务标题</code> 这样的普通清单。</span>
+                </div>
+              )}
+              {subtaskImportOpen && (
+                <div className="qc-subtask-import-panel">
+                  <textarea
+                    value={subtaskImportText}
+                    onChange={(e) => setSubtaskImportText(e.target.value)}
+                    placeholder={'- 准备资料 | 截止: 2026-10-01 18:00 | 备注: 整理所需文件\n- 完成初稿'}
+                    aria-label="粘贴子任务文本"
+                    rows={4}
+                  />
+                  <div className="qc-subtask-import-footer">
+                    <span>粘贴后按行生成，可继续编辑</span>
+                    <button type="button" onClick={importSubtasks} disabled={!subtaskImportText.trim()}>解析并加入</button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 子任务草稿预览（可编辑、可增删、可清空） */}
@@ -818,6 +906,8 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                 </div>
               </div>
             )}
+
+            <div className="qc-section-divider" aria-hidden="true" />
 
             {/* 截止时间 & 提醒：共用以太历（左键=截止 / 右键=提醒），气泡分栏标明 */}
             <div className="field-card qc-deadline-card">

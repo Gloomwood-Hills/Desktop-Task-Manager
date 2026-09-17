@@ -120,8 +120,10 @@ class TaskScrollableWidgetProvider : AppWidgetProvider() {
     }
 
     private fun addPending(context: Context): PendingIntent {
-      val intent = Intent(context, WidgetAddTaskActivity::class.java).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      val intent = Intent(context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        putExtra(TaskWidgetProvider.EXTRA_OPEN_QUICK_CAPTURE, true)
+        data = Uri.parse("desktop-task-manager://widget-new-task-scroll")
       }
       return PendingIntent.getActivity(
         context,

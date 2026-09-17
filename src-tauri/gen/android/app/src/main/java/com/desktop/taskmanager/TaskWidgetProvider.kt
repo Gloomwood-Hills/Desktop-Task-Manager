@@ -131,6 +131,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
     const val EXTRA_SCROLL_DELTA = "extra_scroll_delta"
     const val EXTRA_FOCUS_TITLE = "extra_focus_title"
     const val EXTRA_OPEN_COMMAND = "extra_open_command"
+    const val EXTRA_OPEN_QUICK_CAPTURE = "extra_open_quick_capture"
     const val SCROLL_PREFS = "widget_scroll"
 
     /** 串行 IO 线程：所有小部件的 DB 读/写都走这里，避免在主线程查库导致卡顿/ANR */
@@ -341,11 +342,11 @@ class TaskWidgetProvider : AppWidgetProvider() {
     }
 
     private fun openAddTaskPending(context: Context): PendingIntent {
-      val intent = Intent(context, WidgetAddTaskActivity::class.java).apply {
-        // 仅 NEW_TASK：作为独立任务从桌面打开，退出后回到桌面（不去应用到主窗口）
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-        // 打开后自动聚焦标题输入，用户可直接输入并自然语言解析
-        putExtra(EXTRA_FOCUS_TITLE, true)
+      val intent = Intent(context, MainActivity::class.java).apply {
+        // 小部件新建任务统一进入 WebView 的 QuickCapture，避免继续打开旧版原生表单。
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        putExtra(EXTRA_OPEN_QUICK_CAPTURE, true)
+        data = Uri.parse("desktop-task-manager://widget-new-task")
       }
       return PendingIntent.getActivity(context, 2, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }

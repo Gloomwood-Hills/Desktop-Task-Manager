@@ -45,6 +45,9 @@ class MainActivity : TauriActivity() {
     if (intent.getBooleanExtra(TaskWidgetProvider.EXTRA_OPEN_COMMAND, false)) {
       postFocusCommand()
     }
+    if (intent.getBooleanExtra(TaskWidgetProvider.EXTRA_OPEN_QUICK_CAPTURE, false)) {
+      postOpenQuickCapture()
+    }
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -57,6 +60,9 @@ class MainActivity : TauriActivity() {
     // 应用已在后台/前台，WebView 就绪 → 立即派发聚焦命令框事件
     if (intent.getBooleanExtra(TaskWidgetProvider.EXTRA_OPEN_COMMAND, false)) {
       dispatchFocusCommand()
+    }
+    if (intent.getBooleanExtra(TaskWidgetProvider.EXTRA_OPEN_QUICK_CAPTURE, false)) {
+      dispatchOpenQuickCapture()
     }
   }
 
@@ -100,6 +106,21 @@ class MainActivity : TauriActivity() {
         null
       )
     }
+  }
+
+  /** 向前端派发小部件新建任务事件，打开当前版本 QuickCapture。 */
+  private fun dispatchOpenQuickCapture() {
+    runCatching {
+      activeWeb?.evaluateJavascript(
+        "window.dispatchEvent(new Event('open-quick-capture'))",
+        null
+      )
+    }
+  }
+
+  /** 冷启动时等待 WebView 与 React 监听器就绪后再打开当前新建任务视图。 */
+  private fun postOpenQuickCapture() {
+    activeWeb?.postDelayed({ dispatchOpenQuickCapture() }, 900)
   }
 
   /** 向前端派发任务定位事件，手机端打开底部详情面板。 */
