@@ -504,7 +504,7 @@ input.pw-mask {
 }
 
 @media (max-width: 380px) {
-  .qc-scope .opt-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .qc-scope .opt-row { grid-template-columns: auto auto; }
   .qc-scope .chip { padding-left: 8px; padding-right: 8px; }
   .qc-scope .qc-subtask-mode-row { gap: 5px !important; }
   .qc-scope .qc-subtask-mode-row button { font-size: 10.5px !important; }
