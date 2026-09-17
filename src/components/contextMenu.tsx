@@ -1,5 +1,5 @@
 import {
-  Pencil, Trash2, FolderPlus, Edit3, FolderMinus, ListPlus,
+  Pencil, Trash2, FolderPlus, Edit3, FolderMinus,
   Plus, RefreshCw, Settings, Power, CheckCircle2, Repeat,
 } from 'lucide-react';
 import { isMobile } from '../data/platform';
@@ -21,7 +21,6 @@ interface ContextMenuProps {
   state: ContextMenuState | null;
   onClose: () => void;
   onEditTask: (taskId: string) => void;
-  onAddSubtask: (taskId: string) => void;
   onToggleComplete: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onCreateFolder: (parentId: string | null) => void;
@@ -49,7 +48,7 @@ interface MenuItem {
 
 /** 右键菜单（对齐设计稿 context-menu，Task 12） */
 export default function ContextMenu({
-  state, onClose, onEditTask, onAddSubtask, onToggleComplete,
+  state, onClose, onEditTask, onToggleComplete,
   onDeleteTask, onCreateFolder, onRenameFolder, onDeleteFolder, onNewTask, onNewTaskInFolder,
   onRefresh, onOpenSettings, onExit, onStopRepeat,
 }: ContextMenuProps) {
@@ -80,14 +79,6 @@ export default function ContextMenu({
       hint: 'Enter',
       visible: isTaskContext,
       action: () => state.taskId && onEditTask(state.taskId),
-    },
-    {
-      key: 'add-subtask',
-      icon: <ListPlus style={iconStyle} />,
-      label: '添加子任务',
-      hint: '',
-      visible: isTaskContext,
-      action: () => state.taskId && onAddSubtask(state.taskId),
     },
     {
       key: 'complete',

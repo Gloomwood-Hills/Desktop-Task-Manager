@@ -37,7 +37,6 @@ type DialogState =
   | { type: 'create-folder'; parentId: string | null }
   | { type: 'rename-folder'; folderId: string; defaultValue: string }
   | { type: 'delete-folder'; folderId: string; name: string }
-  | { type: 'add-subtask'; taskId: string; folderId: string | null }
   | null;
 
 /** 可撤销的最近一次操作：任务完成、任务恢复、任务删除、结束重复 */
@@ -80,8 +79,8 @@ function App() {
   const [aiEditDraft, setAiEditDraft] = useState<null | { task: Task; taskId: string; updates: Partial<Task> }>(null);
   const [pinned, setPinned] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
-  /** 编辑中的任务（右键菜单 → 编辑） */
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  /** 编辑中的任务（右键菜单/移动端编辑 → 复用 QuickCapture 预填视图） */
+  const [editingTask, setEditingTask] = useState<TaskWithSubtasks | null>(null);
   /** 移动端任务详情底部面板 */
   const [mobileTask, setMobileTask] = useState<TaskWithSubtasks | null>(null);
   /** 顶栏同步按钮状态：进行中禁用点击并旋转图标 */
@@ -208,6 +207,21 @@ function App() {
     if (active) return active;
     const completed = completedTasks.find((task) => task.id === id);
     return completed ? { ...completed, subtasks: [] } : undefined;
+  };
+
+  /** 返回当前任务以上的父任务链，供编辑子任务时注入 AI 提示词。 */
+  const getParentTaskContext = (task: Task): string | undefined => {
+    const chain: string[] = [];
+    const seen = new Set<string>();
+    let parentId = task.parentId;
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = findTaskAnywhere(parentId);
+      if (!parent) break;
+      chain.unshift(parent.title);
+      parentId = parent.parentId;
+    }
+    return chain.length > 0 ? chain.join(' > ') : undefined;
   };
 
   /** 切换完成/撤销完成：按当前状态给出正确 toast 与撤销动作（月视图面板也可点已完成任务撤销） */
@@ -697,6 +711,59 @@ function App() {
     setAiCreateDraft(null);
   };
 
+  /** 编辑视图保存：更新当前任务，并按预填列表同步直属子任务。 */
+  const handleEditTask = async (
+    task: TaskWithSubtasks,
+    title: string,
+    folderId: string | null,
+    options: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null; subtasks?: GeneratedSubtask[] },
+  ) => {
+    await updateTask(task.id, {
+      title: title.trim(),
+      folderId,
+      priority: options.priority ?? 'normal',
+      deadline: options.deadline ?? null,
+      remark: options.remark ?? '',
+      reminderOffsets: options.reminderOffsets ?? [],
+      reminderTimes: options.reminderTimes ?? [],
+      repeatRule: options.repeatRule ?? null,
+      repeatIntervalDays: options.repeatIntervalDays ?? null,
+    });
+
+    const existingChildren = task.subtasks ?? [];
+    if (task.folderId !== folderId) {
+      const descendants: TaskWithSubtasks[] = [];
+      const collect = (items: TaskWithSubtasks[]) => items.forEach((item) => {
+        descendants.push(item);
+        collect(item.subtasks ?? []);
+      });
+      collect(existingChildren);
+      for (const descendant of descendants) await updateTask(descendant.id, { folderId });
+    }
+    const existingById = new Map(existingChildren.map((child) => [child.id, child]));
+    const retainedIds = new Set<string>();
+    const nextSubtasks = options.subtasks ?? [];
+    for (const sub of nextSubtasks) {
+      const subTitle = sub.title.trim();
+      if (!subTitle) continue;
+      const existing = sub.id ? existingById.get(sub.id) : undefined;
+      if (existing) {
+        retainedIds.add(existing.id);
+        await updateTask(existing.id, { title: subTitle, folderId, deadline: sub.deadline ?? null, remark: sub.remark ?? '' });
+      } else {
+        await createTask(subTitle, folderId, { parentId: task.id, deadline: sub.deadline ?? null, remark: sub.remark ?? '' });
+      }
+    }
+    // 编辑列表中删除的直属子任务同步软删除；其下级子树由服务层一并处理。
+    for (const child of existingChildren) {
+      if (!retainedIds.has(child.id) && !nextSubtasks.some((sub) => sub.id === child.id)) {
+        await deleteTask(child.id);
+      }
+    }
+    setEditingTask(null);
+    setToast(`已更新任务及 ${nextSubtasks.filter((s) => s.title.trim()).length} 个子任务`);
+  };
+
   // ===== 自然语言命令（视图切换条旁的命令气泡） =====
 
   /** 在活动任务中按标题模糊匹配最佳任务 */
@@ -1172,6 +1239,10 @@ function App() {
   // 外观设置：毛玻璃 + 透明度（设置面板持久化后生效）
   const glassEnabled = settings?.glassEffect ?? true;
   const transparency = Math.round((settings?.transparency ?? 0.8) * 100);
+  const editingSubtasks: GeneratedSubtask[] | undefined = editingTask
+    ? editingTask.subtasks.map((sub) => ({ id: sub.id, title: sub.title, deadline: sub.deadline, remark: sub.remark }))
+    : undefined;
+  const editingParentContext = editingTask ? getParentTaskContext(editingTask) : undefined;
 
   return (
     <div
@@ -1483,12 +1554,8 @@ function App() {
         state={contextMenu}
         onClose={() => setContextMenu(null)}
         onEditTask={(taskId) => {
-          const task = findTaskAnywhere(taskId);
+          const task = findTaskWithSubtasksAnywhere(taskId);
           if (task) setEditingTask(task);
-        }}
-        onAddSubtask={(taskId) => {
-          const task = findTaskAnywhere(taskId);
-          setDialog({ type: 'add-subtask', taskId, folderId: task?.folderId ?? null });
         }}
         onToggleComplete={handleToggleCompleted}
         onDeleteTask={handleDeleteTask}
@@ -1539,45 +1606,49 @@ function App() {
       />
 
       <AnimatePresence>
-        {(captureOpen || aiCreateDraft) && (
+        {(captureOpen || aiCreateDraft || editingTask) && (
           <QuickCapture
-            key="quick-capture"
+            key={editingTask ? `edit-task-${editingTask.id}` : 'quick-capture'}
             folders={folderTree}
             onClose={() => {
               setPrefillDate(null);
               setCaptureFolder(null);
               setCaptureOpen(false);
               setAiCreateDraft(null);
+              setEditingTask(null);
             }}
-            onCreate={handleCreateTask}
+            onCreate={(title, folderId, options) => editingTask
+              ? handleEditTask(editingTask, title, folderId, options)
+              : handleCreateTask(title, folderId, options)}
             initialDate={prefillDate ?? undefined}
-            initialFolderId={aiCreateDraft ? aiCreateDraft.folderId : captureFolder}
-            initialTitle={aiCreateDraft?.title}
-            initialDeadline={aiCreateDraft?.deadline}
-            initialPriority={aiCreateDraft?.priority}
-            initialRemark={aiCreateDraft?.remark}
-            initialRepeatRule={aiCreateDraft?.repeatRule}
-            initialRepeatIntervalDays={aiCreateDraft?.repeatIntervalDays}
-            initialReminderOffsets={aiCreateDraft?.reminderOffsets}
-            initialSubtasks={aiCreateDraft?.subtasks}
+            initialFolderId={editingTask ? editingTask.folderId : aiCreateDraft ? aiCreateDraft.folderId : captureFolder}
+            initialTitle={editingTask?.title ?? aiCreateDraft?.title}
+            initialDeadline={editingTask ? editingTask.deadline : aiCreateDraft?.deadline}
+            initialPriority={editingTask ? editingTask.priority : aiCreateDraft?.priority}
+            initialRemark={editingTask?.remark ?? aiCreateDraft?.remark}
+            initialRepeatRule={editingTask ? editingTask.repeatRule : aiCreateDraft?.repeatRule}
+            initialRepeatIntervalDays={editingTask ? editingTask.repeatIntervalDays : aiCreateDraft?.repeatIntervalDays}
+            initialReminderOffsets={editingTask ? editingTask.reminderOffsets : aiCreateDraft?.reminderOffsets}
+            initialReminderTimes={editingTask ? editingTask.reminderTimes : undefined}
+            initialSubtasks={editingTask ? editingSubtasks : aiCreateDraft?.subtasks}
+            parentContext={editingParentContext}
             defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
             defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
             aiEnabled={aiEnabled}
-              onGenerateSubtasks={async (title, deadline, opts) => {
+            onGenerateSubtasks={async (title, deadline, opts) => {
               if (!aiConfig.apiKey || !aiConfig.model) throw new Error('请在 设置 → AI 中填写 API Key 与模型名');
-              return generateSubtasks(aiConfig, { title, deadline, now: Date.now(), count: opts?.count, hint: opts?.hint, mode: opts?.mode, existingSubtasks: opts?.existingSubtasks, signal: opts?.signal });
+              return generateSubtasks(aiConfig, { title, deadline, now: Date.now(), count: opts?.count, hint: opts?.hint, mode: opts?.mode, existingSubtasks: opts?.existingSubtasks, parentContext: opts?.parentContext, signal: opts?.signal });
             }}
           />
         )}
 
-        {/* 编辑任务弹窗（右键编辑 / AI 编辑预填） */}
-        {(editingTask || aiEditDraft) && (
+        {/* AI 命令编辑仍使用专用确认弹窗；手动编辑已统一进入 QuickCapture 预填视图。 */}
+        {aiEditDraft && (
           <EditTaskDialog
             key="edit-task"
-            task={aiEditDraft ? aiEditDraft.task : editingTask!}
+            task={aiEditDraft.task}
             onSave={async (updates) => {
-              if (aiEditDraft) await updateTask(aiEditDraft.taskId, updates);
-              else if (editingTask) await updateTask(editingTask.id, updates);
+              await updateTask(aiEditDraft.taskId, updates);
             }}
             onClose={() => { setEditingTask(null); setAiEditDraft(null); }}
             defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
@@ -1656,21 +1727,6 @@ function App() {
           onCancel={() => setDialog(null)}
         />
       )}
-      {dialog?.type === 'add-subtask' && (
-        <PromptDialog
-          title="添加子任务"
-          placeholder="子任务名称"
-          confirmText="添加"
-          onConfirm={async (name) => {
-            // 子任务继承父任务所在文件夹；完成后自动展开父任务便于查看
-            await createTask(name, dialog.folderId, { parentId: dialog.taskId });
-            setExpandedTasks((s) => new Set(s).add(dialog.taskId));
-            setDialog(null);
-          }}
-          onCancel={() => setDialog(null)}
-        />
-      )}
-
       {/* Undo Toast */}
       <AnimatePresence>
         {toast && (

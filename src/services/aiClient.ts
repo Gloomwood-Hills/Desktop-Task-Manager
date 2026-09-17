@@ -22,6 +22,8 @@ export function aiConfigured(config: Pick<AiConfig, 'baseUrl' | 'apiKey' | 'mode
 
 /** 生成的子任务条目（时间戳：可为 null；remark：AI 生成时强制 20~50 字执行说明） */
 export interface GeneratedSubtask {
+  /** 编辑已有任务时保留对应数据库子任务 ID；AI/导入新条目没有该字段。 */
+  id?: string;
   title: string;
   deadline: number | null;
   remark?: string;
@@ -253,11 +255,12 @@ function clampTs(v: number | null, lo: number, hi: number | null): number | null
  * 温度 0（快速应答/确定性输出）；时间强约束到 [新建时间, 父截止] 之间。 */
 export async function generateSubtasks(
   config: AiConfig,
-  opts: { title: string; deadline: number | null; now: number; count?: number | null; hint?: string; mode?: SubtaskPlanMode; existingSubtasks?: GeneratedSubtask[]; signal?: AbortSignal },
+  opts: { title: string; deadline: number | null; now: number; count?: number | null; hint?: string; mode?: SubtaskPlanMode; existingSubtasks?: GeneratedSubtask[]; parentContext?: string; signal?: AbortSignal },
 ): Promise<GeneratedSubtask[]> {
   const mode = opts.mode ?? 'initial';
   const existing = opts.existingSubtasks ?? [];
-  const cacheKey = JSON.stringify({ model: config.model, title: opts.title, deadline: opts.deadline, count: opts.count ?? null, hint: opts.hint ?? '', mode, existing });
+  const parentContext = opts.parentContext?.trim() ?? '';
+  const cacheKey = JSON.stringify({ model: config.model, title: opts.title, deadline: opts.deadline, count: opts.count ?? null, hint: opts.hint ?? '', mode, existing, parentContext });
   const cached = subtaskCache.get(cacheKey);
   if (cached) return cached.map((x) => ({ ...x }));
   const countText = opts.count && opts.count > 0 ? `${opts.count} 个` : mode === 'extend' ? '1~3 个' : '3~5 个';
@@ -274,7 +277,8 @@ export async function generateSubtasks(
   const existingText = existing.length > 0
     ? `\n现有子任务（已由用户编辑，请认真参考）：\n${existing.map((s, i) => `${i + 1}. ${s.title}${s.deadline ? `｜截止 ${fmtLocal(s.deadline)}` : ''}${s.remark ? `｜${s.remark}` : ''}`).join('\n')}`
     : '';
-  const user = `任务：${opts.title}\n${rangeText}\n${modeText}\n请生成 ${countText} 个有先后顺序的子任务。${existingText}\n${opts.hint?.trim() ? `补充要求：${opts.hint.trim()}` : ''}`;
+  const parentText = parentContext ? `\n父任务上下文（从上到下）：${parentContext}\n当前任务是上述层级中的直接子任务，请确保新生成的步骤都归属于当前任务，不要把父任务重复生成。` : '';
+  const user = `任务：${opts.title}${parentText}\n${rangeText}\n${modeText}\n请生成 ${countText} 个有先后顺序的子任务。${existingText}\n${opts.hint?.trim() ? `补充要求：${opts.hint.trim()}` : ''}`;
   const { content } = await chatCompletion(config, [
     { role: 'system', content: SUBTASK_SYSTEM },
     { role: 'user', content: user },

@@ -19,7 +19,7 @@ interface QuickCaptureProps {
     title: string,
     folderId: string | null,
     options: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null; subtasks?: GeneratedSubtask[] }
-  ) => void;
+  ) => void | Promise<void>;
   /** 预填的默认截止日期（归一化为当天 00:00）；不传时保持原有行为 */
   initialDate?: number;
   /** 预选的默认文件夹（如右键文件夹 → 新建任务）；null/不传时默认未分类 */
@@ -30,7 +30,9 @@ interface QuickCaptureProps {
   /** 已配置 AI（设置 → AI）：启用「一键生成子任务」按钮 */
   aiEnabled?: boolean;
   /** 一键生成子任务回调（App 注入，读取 AI 配置调用 aiClient）；opts 携带个数/补充要求 */
-  onGenerateSubtasks?: (title: string, deadline: number | null, opts?: { count?: number | null; hint?: string; mode?: SubtaskPlanMode; existingSubtasks?: GeneratedSubtask[]; signal?: AbortSignal }) => Promise<GeneratedSubtask[]>;
+  onGenerateSubtasks?: (title: string, deadline: number | null, opts?: { count?: number | null; hint?: string; mode?: SubtaskPlanMode; existingSubtasks?: GeneratedSubtask[]; parentContext?: string; signal?: AbortSignal }) => Promise<GeneratedSubtask[]>;
+  /** 编辑子任务时传入祖先任务链，确保 AI 了解当前任务所处层级。 */
+  parentContext?: string;
   /** AI 预填：任务标题（AI 已解析好，直接填入） */
   initialTitle?: string;
   /** AI 预填：截止时间戳 */
@@ -45,6 +47,8 @@ interface QuickCaptureProps {
   initialRepeatIntervalDays?: number | null;
   /** AI 预填：提前提醒偏移 */
   initialReminderOffsets?: string[];
+  /** 编辑预填：自定义绝对提醒时刻 */
+  initialReminderTimes?: number[];
   /** AI 预填：子任务（含截止与备注） */
   initialSubtasks?: GeneratedSubtask[];
 }
@@ -335,7 +339,7 @@ function DualCalendar({
 }
 
 /** 新建任务弹窗（Quick Capture，对齐设计稿 side-0 quick-capture / modeTime 三列布局） */
-export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0, aiEnabled = false, onGenerateSubtasks, initialTitle, initialDeadline, initialPriority, initialRemark, initialRepeatRule, initialRepeatIntervalDays, initialReminderOffsets, initialSubtasks }: QuickCaptureProps) {
+export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0, aiEnabled = false, onGenerateSubtasks, parentContext, initialTitle, initialDeadline, initialPriority, initialRemark, initialRepeatRule, initialRepeatIntervalDays, initialReminderOffsets, initialReminderTimes, initialSubtasks }: QuickCaptureProps) {
   const [title, setTitle] = useState(initialTitle ?? '');
   const [remark, setRemark] = useState(initialRemark ?? '');
   const [folderId, setFolderId] = useState<string | null>(initialFolderId);
@@ -347,7 +351,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
   /** 提前提醒偏移多选（'1d'/'3d'/'6h'），依赖截止时间 */
   const [reminderOffsets, setReminderOffsets] = useState<string[]>(initialReminderOffsets ?? []);
   /** 多选提醒时刻（绝对毫秒时间戳）：日历右键可设置任意多个，每个时刻对应一个独立气泡分别设置 */
-  const [reminderTimes, setReminderTimes] = useState<number[]>([]);
+  const [reminderTimes, setReminderTimes] = useState<number[]>(initialReminderTimes ?? []);
   /** 时刻气泡：左键设置截止后浮现，供填写具体截止时刻 */
   const [deadlineEditOpen, setDeadlineEditOpen] = useState(false);
   const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(initialRepeatRule ?? null);
@@ -508,6 +512,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
         hint: subtaskHint,
         mode: subtaskMode,
         existingSubtasks: subtasks,
+        parentContext,
         signal: controller.signal,
       });
       setSubtaskSuggestion(subs);
@@ -556,7 +561,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!title.trim()) return;
     // 强约束：子任务时间必须在 [新建时间, 父任务截止] 之间
     for (const s of subtasks) {
@@ -571,7 +576,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
     }
     // 互斥：设了多选提醒时刻则不携带偏移（单任务只需一种提醒配置）；无截止时间不保留偏移
     const customTimes = reminderTimes.length > 0;
-    onCreate(resolvedTitle, folderId, {
+    await onCreate(resolvedTitle, folderId, {
       priority: important ? 'important' : 'normal',
       deadline: effectiveDeadline,
       remark: remark.trim(),
@@ -579,7 +584,8 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       reminderTimes: customTimes ? reminderTimes : [],
       repeatRule: effectiveDeadline ? repeatRule : null,
       repeatIntervalDays: effectiveDeadline && repeatRule === 'custom' ? repeatIntervalDays : null,
-      subtasks: subtasks.length > 0 ? subtasks : undefined,
+      // 编辑模式下空数组表示用户明确移除了全部子任务；新建模式下同样安全地表示无子任务。
+      subtasks,
     });
   };
 
