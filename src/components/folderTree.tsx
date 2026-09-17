@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, GripVertical } from 'lucide-react';
 import { FolderNode, TaskWithSubtasks, SortType } from '../data/types';
 import { compareByName } from '../data/utils';
@@ -317,9 +317,7 @@ export default function FolderTree({
         {showEndIndicator && (
           <div style={{ ...insertLineStyle, left: 0, right: 0, bottom: -1, top: undefined }} />
         )}
-        <AnimatePresence initial={false}>
-          {tasks.map((task) => renderTask(task, containerKey, ids))}
-        </AnimatePresence>
+        {tasks.map((task) => renderTask(task, containerKey, ids))}
       </div>
     );
   };
@@ -477,13 +475,11 @@ export default function FolderTree({
   if (mergedOuter) {
     return (
       <>
-        <AnimatePresence initial={false}>
-          {mergedOuter.map((item) => (
-            item.kind === 'task'
-              ? renderTask(item.task, 'task:root', rootIds)
-              : renderFolder(item.folder, 'folder:root', rootFolderIds)
-          ))}
-        </AnimatePresence>
+        {mergedOuter.map((item) => (
+          item.kind === 'task'
+            ? renderTask(item.task, 'task:root', rootIds)
+            : renderFolder(item.folder, 'folder:root', rootFolderIds)
+        ))}
         {renderGhost()}
       </>
     );

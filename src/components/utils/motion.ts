@@ -49,11 +49,14 @@ export const sharedAxis: Variants = {
   exit: { opacity: 0, x: -10, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
 };
 
-/** 列表项增删：淡入 + 上移（配合 layout 实现平滑补位） */
+/**
+ * 列表项增删：仅做轻微位移，保持任务内容始终完全不透明。
+ * 任务导入/编辑会短时间内多次刷新列表，opacity 动画可能被中断并留下半透明行。
+ */
 export const listItem: Variants = {
-  initial: { opacity: 0, y: -4 },
-  animate: { opacity: 1, y: 0, transition: { duration: DUR.short, ease: EASE.standardDecelerate } },
-  exit: { opacity: 0, y: -4, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
+  initial: { y: -4 },
+  animate: { y: 0, transition: { duration: DUR.short, ease: EASE.standardDecelerate } },
+  exit: { y: -4, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
 };
 
 /** Toast 提示：底部滑入上移 + 淡入淡出 */

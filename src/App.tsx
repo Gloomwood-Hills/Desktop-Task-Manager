@@ -760,6 +760,9 @@ function App() {
         await deleteTask(child.id);
       }
     }
+    // 以上操作会分别刷新；最后再拉取一次完整快照，确保分类树、未分类列表
+    // 与整棵子任务树来自同一数据库状态。
+    await refresh();
     setEditingTask(null);
     setToast(`已更新任务及 ${nextSubtasks.filter((s) => s.title.trim()).length} 个子任务`);
   };

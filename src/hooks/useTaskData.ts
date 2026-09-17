@@ -69,16 +69,18 @@ export function useTaskData(): UseTaskData {
   const windowStateServiceRef = useRef<WindowStateService | null>(null);
   /** 排序等设置经 ref 供 refresh 读取，避免刷新时重建服务 */
   const settingsRef = useRef<Settings | null>(null);
+  /** 只允许最后一次刷新写入 React 状态，避免较慢的旧查询覆盖新结果。 */
+  const refreshVersionRef = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!folderServiceRef.current || !taskServiceRef.current) return;
+    const refreshVersion = ++refreshVersionRef.current;
     try {
       const [folders, tasks, completed] = await Promise.all([
         folderServiceRef.current.getAllFolders(),
         taskServiceRef.current.getAllTasks(),
         taskServiceRef.current.getCompletedTasks(),
       ]);
-      setAllFolders(folders);
       // 构建完整树后过滤根级已完成任务；
       // 子任务保留在父任务下（划线样式），保证父任务进度统计 x/y 正确
       const fullTree = buildFolderTree(folders, tasks);
@@ -113,14 +115,21 @@ export function useTaskData(): UseTaskData {
         tasks: annotate(n.tasks),
         children: (n.children ?? []).map(annotateFolder),
       });
-      setFolderTree(cleanTree.map(sortFolderNode).map(annotateFolder));
       // 未分类任务（folderId 为 null）：顶层显示，与文件夹同级
       const unclassifiedTree = buildTaskTree(tasks.filter((t) => t.folderId === null))
         .filter((t) => !t.completed);
+
+      // 编辑任务会连续触发多次刷新。若期间又有更新，只提交最新快照，
+      // 防止文件夹树和未分类列表被不同时间点的查询结果交叉覆盖。
+      if (refreshVersion !== refreshVersionRef.current) return;
+      setAllFolders(folders);
+      setFolderTree(cleanTree.map(sortFolderNode).map(annotateFolder));
       setUnclassifiedTasks(annotate(sortTaskList(unclassifiedTree)));
       setCompletedTasks(annotate(completed as TaskWithSubtasks[]));
     } catch (e) {
-      setError((e as Error).message);
+      if (refreshVersion === refreshVersionRef.current) {
+        setError((e as Error).message);
+      }
     }
   }, []);
 
