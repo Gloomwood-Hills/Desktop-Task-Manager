@@ -220,7 +220,7 @@ select:focus-visible {
 
 /* ===== QuickCapture（对齐设计稿 quick-capture / modeTime） ===== */
 .qc-scope .qc-body { padding: 18px 22px 22px; }
-.qc-scope .qc-advanced { display: flex; flex-direction: column; gap: 0; animation: qc-expand .18s var(--ease-standard) both; }
+.qc-scope .qc-advanced { display: flex; flex-direction: column; gap: 14px; animation: qc-expand .18s var(--ease-standard) both; }
 .qc-scope .qc-more-toggle {
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
   align-self: flex-start; margin: 8px 0 2px; padding: 4px 2px;
@@ -230,11 +230,15 @@ select:focus-visible {
 }
 .qc-scope .qc-more-toggle:hover { color: var(--primary); }
 .qc-scope .qc-action-bar {
-  position: sticky; bottom: -1px; z-index: 8; padding: 8px 0 2px;
+  position: sticky; bottom: -1px; z-index: 8; margin-top: 2px; padding: 12px 0 2px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   background: linear-gradient(to bottom, color-mix(in srgb, var(--background) 0%, transparent), var(--background) 36%);
 }
 @keyframes qc-expand { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
-.qc-scope .opt-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.qc-scope .opt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.qc-scope .opt-row > .chip { min-width: 0; }
+.qc-scope .opt-row > .chip:first-child span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qc-scope .opt-row > .chip:nth-child(2) { margin-left: 0 !important; white-space: nowrap; }
 .qc-scope .chip {
   display: inline-flex;
   align-items: center;
@@ -272,6 +276,24 @@ select:focus-visible {
   padding: 12px;
   box-shadow: 0 4px 14px rgba(0,0,0,.05);
 }
+.qc-scope .qc-subtask-section,
+.qc-scope .qc-deadline-card {
+  margin-top: 0 !important;
+}
+.qc-scope .qc-subtask-section {
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+}
+.qc-scope .qc-subtask-ai { gap: 10px !important; }
+.qc-scope .qc-subtask-mode-row { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px !important; }
+.qc-scope .qc-subtask-mode-row button { width: 100%; min-width: 0; padding-left: 6px !important; padding-right: 6px !important; white-space: nowrap; }
+.qc-scope .qc-subtask-actions { display: grid !important; grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1.6fr); gap: 8px !important; width: 100%; }
+.qc-scope .qc-subtask-actions > button:first-child { width: 100%; min-width: 0; padding-left: 10px !important; padding-right: 10px !important; white-space: nowrap; }
+.qc-scope .qc-subtask-actions > input { width: 100% !important; min-width: 0 !important; }
+.qc-scope .qc-subtask-suggestion,
+.qc-scope .qc-subtask-preview { margin-top: 0 !important; }
+.qc-scope .qc-remark-field,
+.qc-scope .qc-repeat-row { margin-top: 0 !important; }
 .qc-scope .field-card .card-head {
   display: flex;
   align-items: center;
@@ -432,6 +454,29 @@ input.pw-mask {
 }
 .qc-scope .create-btn:hover { filter: brightness(.96); box-shadow: 0 5px 14px color-mix(in srgb, var(--primary) 22%, transparent); }
 .qc-scope .create-btn:disabled { opacity: .42; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .qc-scope .qc-body { padding: 14px 16px 18px; }
+  .qc-scope .qc-advanced { gap: 16px; }
+  .qc-scope .opt-row { gap: 8px; }
+  .qc-scope .chip { min-height: 40px; padding: 7px 10px; }
+  .qc-scope .qc-subtask-actions { grid-template-columns: minmax(0, 1fr) 62px; }
+  .qc-scope .qc-subtask-actions > input:last-child { grid-column: 1 / -1; }
+  .qc-scope .field-card { padding: 13px; }
+  .qc-scope .dy-cols { gap: 14px; }
+  .qc-scope .dy-col { flex: 1 1 160px; min-width: 0; }
+  .qc-scope .mini-chips.verse { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qc-scope .mini-chips.verse .mini-chip { width: 100%; justify-content: center; padding-left: 6px; padding-right: 6px; }
+  .qc-scope .qc-action-bar { padding-top: 10px; }
+  .qc-scope .create-btn { height: 44px; }
+}
+
+@media (max-width: 380px) {
+  .qc-scope .opt-row { grid-template-columns: minmax(0, 1fr) 100px; }
+  .qc-scope .chip { padding-left: 8px; padding-right: 8px; }
+  .qc-scope .qc-subtask-mode-row { gap: 5px !important; }
+  .qc-scope .qc-subtask-mode-row button { font-size: 10.5px !important; }
+}
 
 /* ===== 手机端专属界面 ===== */
 .mobile-topbar {

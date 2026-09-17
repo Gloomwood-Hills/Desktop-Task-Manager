@@ -642,11 +642,11 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             )}
 
             {/* 子任务区（置顶于时间区域上方）：一键生成仅在配置 AI 后浮现；手动添加始终可用 */}
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="qc-subtask-section" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* AI 规划行：仅配置 AI 后浮现；默认仅生成建议，不覆盖用户已编辑内容 */}
               {aiEnabled && onGenerateSubtasks && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <div className="qc-subtask-ai" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="qc-subtask-mode-row" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {([
                       ['initial', '首次拆分'],
                       ['extend', '补充后续'],
@@ -661,7 +661,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                       >{label}</button>
                     ))}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div className="qc-subtask-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     disabled={!title.trim() || subtaskLoading}
@@ -714,7 +714,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
                 <p style={{ fontSize: 11.5, color: 'var(--state-error)', margin: '0 2px' }}>{subtaskError}</p>
               )}
               {subtaskSuggestion && subtaskSuggestion.length > 0 && (
-                <div style={{ padding: '9px 10px', borderRadius: 10, background: 'color-mix(in srgb, var(--primary) 7%, var(--muted))', border: '1px solid color-mix(in srgb, var(--primary) 22%, transparent)' }}>
+                <div className="qc-subtask-suggestion" style={{ padding: '9px 10px', borderRadius: 10, background: 'color-mix(in srgb, var(--primary) 7%, var(--muted))', border: '1px solid color-mix(in srgb, var(--primary) 22%, transparent)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--primary)' }}>AI 建议（{subtaskSuggestion.length} 项）</span>
                     <div style={{ display: 'flex', gap: 5 }}>
@@ -744,7 +744,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
 
             {/* 子任务草稿预览（可编辑、可增删、可清空） */}
             {subtasks.length > 0 && (
-              <div style={{
+              <div className="qc-subtask-preview" style={{
                 marginTop: 10, padding: '10px 12px', borderRadius: 12,
                 background: 'var(--muted)', border: '1px solid var(--border)',
               }}>
@@ -815,7 +815,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             )}
 
             {/* 截止时间 & 提醒：共用以太历（左键=截止 / 右键=提醒），气泡分栏标明 */}
-            <div className="field-card">
+            <div className="field-card qc-deadline-card">
               <div className="card-head">
                 <CalendarDays />
                 <span className="t">截止时间 & 提醒</span>
@@ -909,6 +909,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
 
             {/* 备注 */}
             <textarea
+              className="qc-remark-field"
               value={remark}
               onChange={(e) => setRemark(e.target.value)}
               placeholder="备注（可选）"
@@ -922,7 +923,7 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
             />
 
             {/* 重复规则（需先有截止时间） */}
-            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="qc-repeat-row" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>重复</span>
               <select
                 value={repeatRule ?? ''}
