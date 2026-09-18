@@ -196,7 +196,7 @@ function SubtaskRow({
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   return (
-    <div>
+    <div data-no-task-drag>
       <div
         style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px' }}
         onContextMenu={(e) => onContextMenu(e, task.id)}
@@ -204,6 +204,7 @@ function SubtaskRow({
         <div style={{ position: 'absolute', left: -12, top: 14, width: 12, height: 1, background: 'var(--border)', opacity: 0.4 }} />
         {/* 复选框 */}
         <div
+          data-no-task-drag
           onClick={() => onToggleCompleted(task.id)}
           style={{
             width: 15, height: 15, borderRadius: '50%',
@@ -257,6 +258,7 @@ function SubtaskRow({
         {hasChildren && (
           <>
             <span
+              data-no-task-drag
               onClick={(e) => { e.stopPropagation(); onToggleExpanded(task.id); }}
               style={{ display: 'inline-flex', cursor: 'pointer', flexShrink: 0 }}
             >
@@ -369,6 +371,7 @@ export default function TaskItem({
       >
         {/* 复选框 */}
         <div
+          data-no-task-drag
           onClick={(e) => { e.stopPropagation(); onToggleCompleted(task.id); }}
           onMouseOver={(e) => {
             if (!task.completed) {
@@ -448,6 +451,7 @@ export default function TaskItem({
             {/* 子任务展开 */}
             {hasChildren && (
               <span
+                data-no-task-drag
                 onClick={(e) => { e.stopPropagation(); onToggleExpanded(task.id); }}
                 style={{ display: 'inline-flex', cursor: 'pointer', flexShrink: 0 }}
               >

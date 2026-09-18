@@ -240,6 +240,11 @@ export default function FolderTree({
   /** pointercancel / 窗口失焦不执行放置，仅撤销拖拽并恢复完整不透明度。 */
   const handlePointerCancel = () => clearDragState();
 
+  /** 鼠标离开 WebView 后无法在应用内形成有效落点，立即取消，避免在桌面上松开后状态悬挂。 */
+  const handleWindowMouseOut = (e: MouseEvent) => {
+    if (e.relatedTarget === null) clearDragState();
+  };
+
   useEffect(() => () => {
     dragCleanupRef.current?.();
     document.removeEventListener('click', suppressClickAfterDrag, true);
@@ -259,11 +264,10 @@ export default function FolderTree({
     if (e.pointerType !== 'mouse') return;
     if (e.button !== 0) return;
     if (kind === 'folder' && !manualSort) return;
+    // 勾选框、详情键、子任务展开键和整块子任务区域只执行自身操作，不启动父任务拖拽。
+    if ((e.target as HTMLElement).closest('button, input, textarea, select, a, [data-no-task-drag]')) return;
     e.preventDefault();
     if (dragRef.current) clearDragState();
-    // Pointer capture 能让鼠标移出任务行后仍收到松开事件；窗口失焦作为系统级兜底。
-    const captureTarget = e.currentTarget as HTMLElement;
-    try { captureTarget.setPointerCapture(e.pointerId); } catch { /* WebView 不支持时由 window 监听兜底 */ }
     const state: DragState = {
       kind, id, containerKey, containerIds, label,
       startX: e.clientX, startY: e.clientY, moved: false,
@@ -275,21 +279,14 @@ export default function FolderTree({
     window.addEventListener('mouseup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerCancel);
     window.addEventListener('blur', handlePointerCancel);
-    const pointerId = e.pointerId;
-    const handleLostPointerCapture = () => {
-      if (dragRef.current?.id === id) handlePointerCancel();
-    };
-    captureTarget.addEventListener('lostpointercapture', handleLostPointerCapture);
+    window.addEventListener('mouseout', handleWindowMouseOut);
     dragCleanupRef.current = () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('mouseup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerCancel);
       window.removeEventListener('blur', handlePointerCancel);
-      captureTarget.removeEventListener('lostpointercapture', handleLostPointerCapture);
-      try {
-        if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId);
-      } catch { /* 元素卸载后无需额外处理 */ }
+      window.removeEventListener('mouseout', handleWindowMouseOut);
     };
   };
 
@@ -329,7 +326,8 @@ export default function FolderTree({
         style={{
           position: 'relative',
           cursor: isDragging && drag?.moved ? 'grabbing' : (manualSort ? 'grab' : undefined),
-          opacity: isDragging && drag?.moved ? 0.35 : undefined,
+          // 拖动状态不降低内容透明度，避免任何异常结束路径留下“已禁用”错觉。
+          opacity: 1,
         }}
       >
         {isTarget && (
@@ -400,7 +398,7 @@ export default function FolderTree({
             padding: '7px 8px',
             borderRadius: 'calc(var(--radius) * 0.55)',
             cursor: isDragging && drag?.moved ? 'grabbing' : (manualSort ? 'grab' : 'pointer'),
-            opacity: isDragging && drag?.moved ? 0.35 : undefined,
+            opacity: 1,
             transition: 'background-color 0.15s ease',
             userSelect: 'none',
             background: isMoveTarget ? 'color-mix(in srgb, var(--primary) 16%, transparent)' : undefined,
