@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, AlignLeft, Tag, Check } from 'lucide-react';
 import { TaskWithSubtasks } from '../data/types';
 import { generateRepeatOccurrences } from './utils/repeatUtils';
 import { panelSpring } from './utils/motion';
+import { dedupeDayEntries } from './utils/dayEntries';
 
 export interface DayViewProps {
   /** 当天活动任务（顶层，含子任务） */
@@ -378,7 +379,11 @@ export default function DayView({
     };
     const active = collect(tasks);
     const done = collect(completedTasks);
-    return [...active, ...done].sort((a, b) => {
+
+    // App 侧为月/日视图提供的是展平列表，但每个父任务对象仍保留 subtasks 树。
+    // 因此同一子任务可能先随父任务递归收集（带 parentTitle），随后又作为展平项再次收集。
+    // 按任务 ID 去重，并优先保留带父任务归属信息的条目。
+    return dedupeDayEntries([...active, ...done]).sort((a, b) => {
       const da = a.task.deadline ?? Number.POSITIVE_INFINITY;
       const db = b.task.deadline ?? Number.POSITIVE_INFINITY;
       if (da !== db) return da - db;
