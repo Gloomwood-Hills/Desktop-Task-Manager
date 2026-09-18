@@ -112,7 +112,14 @@ function RepeatBadge({ rule, intervalDays, count }: { rule: string | null; inter
 }
 
 /** 日期徽章（开始 + 截止，含颜色渐变提醒）；已过期/累计完成次数标签与截止时间同一行 */
-function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task & { repeatCount?: number }; deadlineGradient?: boolean; dark?: boolean }) {
+function DateBadge({
+  task, deadlineGradient = true, dark = false, compact = false,
+}: {
+  task: Task & { repeatCount?: number };
+  deadlineGradient?: boolean;
+  dark?: boolean;
+  compact?: boolean;
+}) {
   const showStart = task.startDate !== null;
   const showDeadline = task.deadline !== null;
 
@@ -125,7 +132,7 @@ function DateBadge({ task, deadlineGradient = true, dark = false }: { task: Task
   const deadlineStyle = task.deadline !== null ? deadlineColor(task.deadline, deadlineGradient, dark) : null;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 14 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: compact ? 0 : 14, flexWrap: 'wrap' }}>
       {showStart && (
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -173,7 +180,7 @@ function formatCreatedAt(ts: number): string {
 
 /** 递归子任务行：复选框 + 标题 + 子任务展开/折叠 + 嵌套层级（TR-7.1 无限层级） */
 function SubtaskRow({
-  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery,
+  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient, dark,
 }: {
   task: TaskWithSubtasks;
   expandedSet: Set<string>;
@@ -181,6 +188,8 @@ function SubtaskRow({
   onToggleCompleted: (id: string) => void;
   onContextMenu: (e: React.MouseEvent, taskId: string) => void;
   searchQuery: string;
+  deadlineGradient: boolean;
+  dark: boolean;
 }) {
   const expanded = expandedSet.has(task.id);
   const hasChildren = task.subtasks.length > 0;
@@ -219,20 +228,22 @@ function SubtaskRow({
             </motion.span>
           )}
         </div>
-        <span
-          style={{
-            fontSize: 12.5,
-            color: task.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
-            textDecoration: task.completed ? 'line-through' : 'none',
-            flex: 1, minWidth: 0,
-            whiteSpace: 'normal',
-            wordBreak: 'break-word',
-            overflowWrap: 'anywhere',
-            lineHeight: 1.3,
-          }}
-        >
-          <Highlight text={task.title} query={searchQuery} />
-        </span>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <span
+            style={{
+              fontSize: 12.5,
+              color: task.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
+              textDecoration: task.completed ? 'line-through' : 'none',
+              whiteSpace: 'normal',
+              wordBreak: 'break-word',
+              overflowWrap: 'anywhere',
+              lineHeight: 1.3,
+            }}
+          >
+            <Highlight text={task.title} query={searchQuery} />
+          </span>
+          <DateBadge task={task} deadlineGradient={deadlineGradient} dark={dark} compact />
+        </div>
         <button
           type="button"
           aria-label={detailsOpen ? '收起任务详情' : '查看任务详情'}
@@ -242,17 +253,6 @@ function SubtaskRow({
         >
           <Info style={{ width: 13, height: 13 }} />
         </button>
-        {task.deadline !== null && (
-          <span
-            title={formatDeadline(task.deadline)}
-            style={{ fontSize: 11, color: 'var(--muted-foreground)', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 3 }}
-          >
-            <Clock style={{ width: 11, height: 11, color: 'var(--icon-muted)' }} />
-            {formatDeadline(task.deadline)}
-          </span>
-        )}
-        {isTaskExpired(task) && <ExpiredBadge />}
-        {task.repeatSeriesId !== null && <RepeatBadge rule={task.repeatRule} intervalDays={task.repeatIntervalDays} count={task.repeatCount ?? 0} />}
         {/* 子任务展开/折叠 + 进度 */}
         {hasChildren && (
           <>
@@ -287,6 +287,8 @@ function SubtaskRow({
             onToggleCompleted={onToggleCompleted}
             onContextMenu={onContextMenu}
             searchQuery={searchQuery}
+            deadlineGradient={deadlineGradient}
+            dark={dark}
           />
         </div>
       )}
@@ -296,7 +298,7 @@ function SubtaskRow({
 
 /** 递归子任务列表 */
 function SubtaskList({
-  tasks, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery,
+  tasks, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient, dark,
 }: {
   tasks: TaskWithSubtasks[];
   expandedSet: Set<string>;
@@ -304,6 +306,8 @@ function SubtaskList({
   onToggleCompleted: (id: string) => void;
   onContextMenu: (e: React.MouseEvent, taskId: string) => void;
   searchQuery: string;
+  deadlineGradient: boolean;
+  dark: boolean;
 }) {
   return (
     <>
@@ -316,6 +320,8 @@ function SubtaskList({
           onToggleCompleted={onToggleCompleted}
           onContextMenu={onContextMenu}
           searchQuery={searchQuery}
+          deadlineGradient={deadlineGradient}
+          dark={dark}
         />
       ))}
     </>
@@ -512,6 +518,8 @@ export default function TaskItem({
             onToggleCompleted={onToggleCompleted}
             onContextMenu={onContextMenu}
             searchQuery={searchQuery}
+            deadlineGradient={deadlineGradient}
+            dark={dark}
           />
         </div>
       )}
