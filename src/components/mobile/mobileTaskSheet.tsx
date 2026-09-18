@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlignLeft, CalendarDays, Check, Clock3, Folder, History, Pencil, Repeat2, X } from 'lucide-react';
+import { AlignLeft, CalendarDays, Check, Clock3, Copy, Folder, History, Pencil, Repeat2, X } from 'lucide-react';
 import { TaskWithSubtasks } from '../../data/types';
 import { formatDeadline, formatStartDate } from '../utils/formatDate';
 import { panelSpring } from '../utils/motion';
@@ -10,6 +10,7 @@ interface MobileTaskSheetProps {
   onClose: () => void;
   onToggleCompleted: (id: string) => void;
   onEdit: (task: TaskWithSubtasks) => void;
+  onCopy: (task: TaskWithSubtasks) => void;
 }
 
 function createdAtLabel(timestamp: number) {
@@ -18,7 +19,7 @@ function createdAtLabel(timestamp: number) {
 }
 
 /** 手机任务详情底部面板：把备注、时间和操作集中到拇指可达区域。 */
-export default function MobileTaskSheet({ task, onClose, onToggleCompleted, onEdit }: MobileTaskSheetProps) {
+export default function MobileTaskSheet({ task, onClose, onToggleCompleted, onEdit, onCopy }: MobileTaskSheetProps) {
   useEffect(() => {
     if (!task) return undefined;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
@@ -47,6 +48,7 @@ export default function MobileTaskSheet({ task, onClose, onToggleCompleted, onEd
                   <Check />{task.completed ? '恢复任务' : '完成任务'}
                 </button>
                 <button type="button" className="mobile-sheet-edit" onClick={() => onEdit(task)}><Pencil />编辑</button>
+                <button type="button" className="mobile-sheet-copy" onClick={() => onCopy(task)}><Copy />复制</button>
               </div>
               <div className="mobile-detail-grid">
                 <div><Folder /><span>分类</span><strong>{task.folderId ? '已分类' : '未分类'}</strong></div>

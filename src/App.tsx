@@ -14,6 +14,7 @@ import CompletedSection from './components/completedSection';
 import CalendarView from './components/calendarView';
 import DayView from './components/dayView';
 import ContextMenu, { ContextMenuState } from './components/contextMenu';
+import { copyText, formatTaskClipboardText } from './components/utils/clipboard';
 import QuickCapture from './components/quickCapture';
 import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
@@ -273,6 +274,17 @@ function App() {
       canStopRepeat: !!t?.repeatRule,
       taskCompleted: !!t?.completed,
     });
+  };
+
+  /** 从任意主视图直接复制任务标题与备注，无需进入编辑页。 */
+  const handleCopyTask = async (taskId: string) => {
+    const task = findTaskAnywhere(taskId);
+    if (!task) {
+      setToast('未找到任务，复制失败');
+      return;
+    }
+    const copied = await copyText(formatTaskClipboardText(task));
+    setToast(copied ? `已复制“${task.title}”及备注` : '无法访问剪贴板，请检查系统权限');
   };
 
   /** 取消删除（恢复已删除任务），并在"已删除"列表实时移除 */
@@ -1560,6 +1572,7 @@ function App() {
           const task = findTaskWithSubtasksAnywhere(taskId);
           if (task) setEditingTask(task);
         }}
+        onCopyTask={(taskId) => { void handleCopyTask(taskId); }}
         onToggleComplete={handleToggleCompleted}
         onDeleteTask={handleDeleteTask}
         onStopRepeat={async (taskId) => {
@@ -1606,6 +1619,7 @@ function App() {
         onClose={() => setMobileTask(null)}
         onToggleCompleted={(id) => { void handleToggleCompleted(id); setMobileTask(null); }}
         onEdit={(task) => { setMobileTask(null); setEditingTask(task); }}
+        onCopy={(task) => { void handleCopyTask(task.id); }}
       />
 
       <AnimatePresence>

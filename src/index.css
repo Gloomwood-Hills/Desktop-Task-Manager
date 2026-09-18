@@ -636,7 +636,7 @@ input.pw-mask {
 .mobile-sheet-status-row button { min-height: 42px; padding: 0 14px; border-radius: 11px; font: 600 12px var(--font-sans); }
 .mobile-sheet-status-row svg { width: 16px; height: 16px; }
 .mobile-sheet-complete { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; border: 0; background: var(--primary); color: var(--primary-foreground); }
-.mobile-sheet-edit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); background: transparent; color: var(--foreground); }
+.mobile-sheet-edit, .mobile-sheet-copy { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); background: transparent; color: var(--foreground); }
 .mobile-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .mobile-detail-grid > div { display: grid; grid-template-columns: 17px 1fr; column-gap: 6px; row-gap: 2px; padding: 9px 10px; border-radius: 11px; background: color-mix(in srgb, var(--accent) 58%, transparent); }
 .mobile-detail-grid svg { grid-row: span 2; width: 16px; height: 16px; color: var(--primary); }
