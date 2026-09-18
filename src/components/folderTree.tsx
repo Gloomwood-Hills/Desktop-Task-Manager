@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, GripVertical } from 'lucide-react';
 import { FolderNode, TaskWithSubtasks, SortType } from '../data/types';
@@ -94,6 +94,8 @@ export default function FolderTree({
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const dropRef = useRef<DropTarget | null>(null);
+  /** 保存当前一次拖拽注册的监听器清理函数，防止跨多次拖拽累积旧监听器。 */
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const rootIds = rootTasks.map((t) => t.id);
   const rootFolderIds = folders.map((f) => f.id);
@@ -171,9 +173,28 @@ export default function FolderTree({
     return null;
   };
 
+  /** 清除拖拽视觉状态；无效放置、取消、窗口失焦都走同一出口。 */
+  const clearDragState = (keepClickSuppression = false) => {
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = null;
+    dragRef.current = null;
+    dropRef.current = null;
+    setDrag(null);
+    setDrop(null);
+    setGhost(null);
+    if (!keepClickSuppression) {
+      document.removeEventListener('click', suppressClickAfterDrag, true);
+    }
+  };
+
   const handlePointerMove = (e: PointerEvent) => {
     const state = dragRef.current;
     if (!state) return;
+    // WebView 偶尔会漏发窗口外的 pointerup；指针重新进入时若左键已松开，立即复位。
+    if ((e.buttons & 1) === 0) {
+      clearDragState();
+      return;
+    }
     if (!state.moved) {
       if (Math.hypot(e.clientX - state.startX, e.clientY - state.startY) < DRAG_THRESHOLD) return;
       state.moved = true;
@@ -188,7 +209,6 @@ export default function FolderTree({
   const handlePointerUp = () => {
     const state = dragRef.current;
     if (!state) return;
-    dragRef.current = null;
     const target = dropRef.current;
     if (state.moved && target) {
       // 拖任务到文件夹 header：移入该文件夹（子任务随迁由上层处理）
@@ -213,11 +233,17 @@ export default function FolderTree({
         }
       }
     }
-    setDrag(null);
-    setDrop(null);
-    setGhost(null);
-    dropRef.current = null;
+    // 正常拖动后保留一次 click 抑制，避免 pointerup 后误触详情；该 click 会自行移除监听。
+    clearDragState(state.moved);
   };
+
+  /** pointercancel / 窗口失焦不执行放置，仅撤销拖拽并恢复完整不透明度。 */
+  const handlePointerCancel = () => clearDragState();
+
+  useEffect(() => () => {
+    dragCleanupRef.current?.();
+    document.removeEventListener('click', suppressClickAfterDrag, true);
+  }, []);
 
   /** 开始拖动（仅鼠标左键）。任务始终可拖（用于移动到文件夹）；文件夹重排仅手动排序模式。
    * 触屏（pointerType ≠ mouse）不启动拖动：让出触摸手势给列表原生滚动，
@@ -234,6 +260,10 @@ export default function FolderTree({
     if (e.button !== 0) return;
     if (kind === 'folder' && !manualSort) return;
     e.preventDefault();
+    if (dragRef.current) clearDragState();
+    // Pointer capture 能让鼠标移出任务行后仍收到松开事件；窗口失焦作为系统级兜底。
+    const captureTarget = e.currentTarget as HTMLElement;
+    try { captureTarget.setPointerCapture(e.pointerId); } catch { /* WebView 不支持时由 window 监听兜底 */ }
     const state: DragState = {
       kind, id, containerKey, containerIds, label,
       startX: e.clientX, startY: e.clientY, moved: false,
@@ -242,7 +272,25 @@ export default function FolderTree({
     setDrag(state);
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-    window.addEventListener('pointercancel', handlePointerUp);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
+    window.addEventListener('blur', handlePointerCancel);
+    const pointerId = e.pointerId;
+    const handleLostPointerCapture = () => {
+      if (dragRef.current?.id === id) handlePointerCancel();
+    };
+    captureTarget.addEventListener('lostpointercapture', handleLostPointerCapture);
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
+      window.removeEventListener('blur', handlePointerCancel);
+      captureTarget.removeEventListener('lostpointercapture', handleLostPointerCapture);
+      try {
+        if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId);
+      } catch { /* 元素卸载后无需额外处理 */ }
+    };
   };
 
   /** 插入指示线（2.5px 高亮条） */
