@@ -28,6 +28,7 @@ import { applyDefaultDeadlineTime, formatDeadline } from './components/utils/for
 import { getDatabase } from './data';
 import { TaskService, FOLDER_NAME_MAX } from './services';
 import { generateSubtasks, aiRunCommand, toTimestamp, DEFAULT_AI_BASE_URL } from './services/aiClient';
+import { buildReminderNotification, REMINDER_POLL_INTERVAL_MS } from './services/reminderNotifications';
 import type { AiToolCall, GeneratedSubtask } from './services/aiClient';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy, TaskRepeatRule } from './data/types';
 import { isMobile } from './data/platform';
@@ -84,6 +85,8 @@ function App() {
   const [editingTask, setEditingTask] = useState<TaskWithSubtasks | null>(null);
   /** 移动端任务详情底部面板 */
   const [mobileTask, setMobileTask] = useState<TaskWithSubtasks | null>(null);
+  /** 系统通知不可用时的提示节流，避免每次轮询都重复弹出。 */
+  const reminderWarningAt = useRef(0);
   /** 顶栏同步按钮状态：进行中禁用点击并旋转图标 */
   const [syncBusy, setSyncBusy] = useState(false);
   /** 已删除任务查看弹窗 */
@@ -664,39 +667,89 @@ function App() {
     return () => { stopAutoSync(); };
   }, []);
 
-  // ===== 任务提醒轮询（30s）：提醒时间到且未完成 → 发系统/手机通知并标记已触发 =====
+  /** 从设置页由用户主动触发授权与测试，避免 Android/WebView 拒绝后台权限请求。 */
+  const handleTestNotification = async (): Promise<{ ok: boolean; message: string }> => {
+    try {
+      let granted = await isPermissionGranted();
+      if (!granted) {
+        const permission = await requestPermission();
+        granted = permission === 'granted';
+      }
+      if (!granted) {
+        return { ok: false, message: '系统通知权限未授予，请在系统设置中允许通知后重试' };
+      }
+      sendNotification({ title: '任务提醒已开启', body: '这是一条测试通知；到点任务会以相同方式提醒。' });
+      return { ok: true, message: '测试通知已发送，请检查系统通知中心' };
+    } catch (error) {
+      return { ok: false, message: `无法发送系统通知：${error instanceof Error ? error.message : String(error)}` };
+    }
+  };
+
+  // ===== 任务提醒轮询：提醒时间到且未完成 → 发送系统通知，成功后才标记已触发 =====
   useEffect(() => {
     let cancelled = false;
+    let checking = false;
+    const warn = (message: string) => {
+      const now = Date.now();
+      if (now - reminderWarningAt.current < 60_000) return;
+      reminderWarningAt.current = now;
+      setToast(message);
+    };
     const check = async () => {
+      if (cancelled || checking || !settingsLatest.current?.reminderEnabled) return;
+      checking = true;
       try {
         const db = await getDatabase();
         const svc = new TaskService(db);
         const due = await svc.getDueReminders(Date.now());
         if (due.length === 0) return;
-        // 通知权限：Android 需 POST_NOTIFICATIONS；桌面直接发
-        let granted = true;
+        // 仅检查权限：权限弹窗必须由设置页中的用户点击触发，后台轮询不得假定已授权。
+        let granted = false;
         try {
           granted = await isPermissionGranted();
-          if (!granted) {
-            const p: unknown = await requestPermission();
-            granted = p === 'granted' || p === true;
-          }
-        } catch { granted = true; }
+        } catch {
+          warn('无法检查系统通知权限，请在“设置 > 提醒”中测试通知');
+          return;
+        }
+        if (!granted) {
+          warn('提醒待授权：请在“设置 > 提醒”中授权并测试通知');
+          return;
+        }
         for (const item of due) {
           if (cancelled) return;
-          if (granted) {
-            try {
-              await sendNotification({ title: '任务提醒', body: item.task.title });
-            } catch { /* 忽略发送失败 */ }
+          try {
+            sendNotification(buildReminderNotification(item.task));
+            // 仅当调用系统通知成功后才记为已触发；失败时保留任务，下一轮可重试。
+            await svc.markReminderFired(item.task.id, item.offsetKey, item.reminderTime);
+            if (settingsLatest.current?.autoPin && !isMobile) {
+              try {
+                const window = getCurrentWindow();
+                await window.show();
+                await window.setFocus();
+              } catch { /* 通知已送达；窗口置前失败不影响提醒记录 */ }
+            }
+          } catch {
+            warn(`“${item.task.title}”的系统提醒发送失败，将自动重试`);
           }
-          await svc.markReminderFired(item.task.id, item.offsetKey, item.reminderTime);
         }
-      } catch { /* 忽略轮询错误 */ }
+      } catch {
+        warn('提醒检查失败，将在下一轮自动重试');
+      } finally {
+        checking = false;
+      }
     };
-    // 启动后立即检查一次，再每 30 秒轮询
-    check();
-    const timer = setInterval(check, 30_000);
-    return () => { cancelled = true; clearInterval(timer); };
+    // 启动、回到前台与定时轮询都检查，减少应用从后台恢复后的漏提醒窗口。
+    const checkWhenVisible = () => { if (!document.hidden) void check(); };
+    void check();
+    const timer = setInterval(() => { void check(); }, REMINDER_POLL_INTERVAL_MS);
+    window.addEventListener('focus', checkWhenVisible);
+    document.addEventListener('visibilitychange', checkWhenVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', checkWhenVisible);
+      document.removeEventListener('visibilitychange', checkWhenVisible);
+    };
   }, []);
 
   // ===== 任务提醒（Task 13）：到达提前提醒窗口触发 Windows 通知 + 可选自动置顶 =====
@@ -1698,6 +1751,7 @@ function App() {
             onThemeChange={(t) => setTheme(t)}
             settings={settings}
             onChange={updateSettings}
+            onTestNotification={handleTestNotification}
             onClose={() => setSettingsOpen(false)}
           />
         )}

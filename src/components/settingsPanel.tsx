@@ -15,6 +15,8 @@ interface SettingsPanelProps {
   onThemeChange: (theme: ThemeMode) => void;
   settings: Settings | null;
   onChange: (patch: Partial<Settings>) => void;
+  /** 用户点击后请求系统通知权限并发送测试通知。 */
+  onTestNotification: () => Promise<{ ok: boolean; message: string }>;
   onClose: () => void;
 }
 
@@ -47,7 +49,7 @@ const AI_PRESETS: { name: string; baseUrl: string }[] = [
 ];
 
 /** 设置面板（右侧滑入，对齐设计稿 settings） */
-export default function SettingsPanel({ theme, onThemeChange, settings, onChange, onClose }: SettingsPanelProps) {
+export default function SettingsPanel({ theme, onThemeChange, settings, onChange, onTestNotification, onClose }: SettingsPanelProps) {
   const [tab, setTab] = useState<TabId>('外观');
   // 从持久化设置初始化
   const [glassEffect, setGlassEffect] = useState(settings?.glassEffect ?? true);
@@ -59,6 +61,18 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const [autoStart, setAutoStart] = useState(settings?.autoStart ?? true);
   const [deadlineGradient, setDeadlineGradient] = useState(settings?.deadlineGradient ?? true);
   const [autoSync, setAutoSync] = useState(settings?.autoSync ?? true);
+  const [notificationBusy, setNotificationBusy] = useState(false);
+  const [notificationResult, setNotificationResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleTestNotification = async () => {
+    setNotificationBusy(true);
+    setNotificationResult(null);
+    try {
+      setNotificationResult(await onTestNotification());
+    } finally {
+      setNotificationBusy(false);
+    }
+  };
 
   // AI tab 本地受控状态（输入即时响应，持久化异步不阻塞键入）
   const [aiBaseUrl, setAiBaseUrl] = useState(settings?.aiBaseUrl ?? '');
@@ -525,6 +539,25 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <span style={switchTrack(winNotify)} />
                   <span style={{ ...switchThumb, transform: winNotify ? 'translateX(20px)' : 'none' }} />
                 </div>
+              </div>
+
+              <div style={{ margin: '-8px 0 20px' }}>
+                <button
+                  type="button"
+                  disabled={notificationBusy}
+                  onClick={() => { void handleTestNotification(); }}
+                  style={{
+                    minHeight: 36, padding: '0 12px', border: '1px solid var(--primary)', borderRadius: 9,
+                    background: 'color-mix(in srgb, var(--primary) 10%, transparent)', color: 'var(--primary)',
+                    font: '600 12px var(--font-sans)', cursor: notificationBusy ? 'wait' : 'pointer',
+                    opacity: notificationBusy ? 0.65 : 1,
+                  }}
+                >
+                  {notificationBusy ? '正在检查通知权限…' : '授权并发送测试通知'}
+                </button>
+                <p style={{ ...descStyle, marginTop: 7, color: notificationResult ? (notificationResult.ok ? 'var(--primary)' : 'var(--destructive)') : 'var(--muted-foreground)' }}>
+                  {notificationResult?.message ?? '首次使用请点击此按钮授权；若未弹出，请到系统设置中允许本应用通知。'}
+                </p>
               </div>
 
               <div style={rowStyle}>
