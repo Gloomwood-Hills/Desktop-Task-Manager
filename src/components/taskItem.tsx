@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronRight, Clock, Calendar, AlignLeft, History, 
 import { Task, TaskWithSubtasks } from '../data/types';
 import { formatDeadline, formatDeadlineRel, formatDeadlineYMD, formatStartDate } from './utils/formatDate';
 import { panelSpring } from './utils/motion';
+import { closestDeadlineSubtask } from './utils/subtaskPreview';
 
 interface TaskItemProps {
   task: TaskWithSubtasks;
@@ -180,7 +181,7 @@ function formatCreatedAt(ts: number): string {
 
 /** 递归子任务行：复选框 + 标题 + 子任务展开/折叠 + 嵌套层级（TR-7.1 无限层级） */
 function SubtaskRow({
-  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient, dark,
+  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient, dark, preview = false,
 }: {
   task: TaskWithSubtasks;
   expandedSet: Set<string>;
@@ -190,9 +191,11 @@ function SubtaskRow({
   searchQuery: string;
   deadlineGradient: boolean;
   dark: boolean;
+  /** 父任务收起时的默认预览：仅呈现这一条，不在此处继续展开它的后代。 */
+  preview?: boolean;
 }) {
   const expanded = expandedSet.has(task.id);
-  const hasChildren = task.subtasks.length > 0;
+  const hasChildren = !preview && task.subtasks.length > 0;
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   return (
@@ -340,6 +343,7 @@ export default function TaskItem({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const expanded = expandedSet.has(task.id);
   const hasChildren = task.subtasks.length > 0;
+  const previewSubtask = !expanded ? closestDeadlineSubtask(task.subtasks) : null;
   // 创建时间对所有任务都有意义，因此详情入口始终显示，即使没有备注和截止日期。
   const hasDetails = true;
 
@@ -508,6 +512,26 @@ export default function TaskItem({
             label="创建"
             value={formatCreatedAt(task.createdAt)}
           />
+        </div>
+      )}
+
+      {/* 收起时保留一条最临近截止的直属子任务，用户无需展开也能看到下一步及其日期标签。 */}
+      {hasChildren && !expanded && previewSubtask && (
+        <div data-no-task-drag style={{ marginLeft: 18, position: 'relative' }}>
+          <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.4 }} />
+          <div style={{ marginLeft: 18, paddingTop: 1 }}>
+            <SubtaskRow
+              task={previewSubtask}
+              expandedSet={expandedSet}
+              onToggleExpanded={onToggleExpanded}
+              onToggleCompleted={onToggleCompleted}
+              onContextMenu={onContextMenu}
+              searchQuery={searchQuery}
+              deadlineGradient={deadlineGradient}
+              dark={dark}
+              preview
+            />
+          </div>
         </div>
       )}
 
