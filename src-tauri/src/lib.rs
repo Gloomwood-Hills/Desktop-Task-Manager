@@ -1,5 +1,38 @@
 use tauri::{Emitter, Manager};
 
+// Windows 的便携版没有 MSIX 包身份。通知库会使用应用 ID 发送 toast，但必须先把
+// 此 ID 写入当前用户的 AppUserModelId 注册表项，系统设置才能将通知归属到本应用。
+// 仅写 HKCU，不需要管理员权限，也不会修改用户的全局通知开关。
+#[cfg(windows)]
+mod notification_identity {
+    use windows_registry::CURRENT_USER;
+
+    pub const APP_ID: &str = "com.desktop.taskmanager";
+    const DISPLAY_NAME: &str = "Desktop Task Manager";
+
+    pub fn ensure_registered() -> Result<(), String> {
+        let executable = std::env::current_exe()
+            .map_err(|error| format!("无法读取应用路径：{error}"))?;
+        let key = CURRENT_USER
+            .create(format!(r"SOFTWARE\Classes\AppUserModelId\{APP_ID}"))
+            .map_err(|error| format!("无法注册通知发送者：{error}"))?;
+
+        key.set_string("DisplayName", DISPLAY_NAME)
+            .map_err(|error| format!("无法写入通知名称：{error}"))?;
+        // 使用 exe 自带图标，便携版与安装版均可用；路径变化时会在下次启动自动刷新。
+        key.set_string("IconUri", executable.to_string_lossy())
+            .map_err(|error| format!("无法写入通知图标：{error}"))?;
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+mod notification_identity {
+    pub fn ensure_registered() -> Result<(), String> {
+        Ok(())
+    }
+}
+
 // 桌面专属能力（系统托盘 / 全局快捷键 / 开机自启动）在 Android 上无意义：
 // 其插件 crate 自身带 `#![cfg(not(any(target_os = "android", target_os = "ios")))]`，
 // 在 Android 上根本不编译，故 import 也按平台条件化，避免 Android 构建引用不存在的 crate。
@@ -18,6 +51,12 @@ mod webdav;
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+/// 前端在发送测试通知前再次确认身份已注册；Windows 设置页会在首次实际 toast 后显示它。
+#[tauri::command]
+fn ensure_notification_identity() -> Result<(), String> {
+    notification_identity::ensure_registered()
 }
 
 #[cfg(windows)]
@@ -101,6 +140,7 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             exit_app,
+            ensure_notification_identity,
             webdav::webdav_fetch,
             webdav::webdav_put,
             webdav::webdav_mkcol
@@ -130,6 +170,12 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            // 让 Windows 能将通知稳定归属为“Desktop Task Manager”。失败不阻止主程序启动，
+            // 但设置页的测试按钮会把具体错误反馈给用户。
+            if let Err(error) = notification_identity::ensure_registered() {
+                eprintln!("[notification] failed to register sender identity: {error}");
+            }
+
             // 确保数据库目录存在（sqlx 不会自动创建父目录，否则 Database.load 失败）。
             // Android 上同样需要：app_data_dir() 在移动端可用，保留。
             if let Ok(data_dir) = app.path().app_data_dir() {

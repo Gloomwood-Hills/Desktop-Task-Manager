@@ -670,6 +670,9 @@ function App() {
   /** 从设置页由用户主动触发授权与测试，避免 Android/WebView 拒绝后台权限请求。 */
   const handleTestNotification = async (): Promise<{ ok: boolean; message: string }> => {
     try {
+      // Windows 便携版也需要先注册稳定的通知发送者身份，否则系统会将 toast 归到
+      // PowerShell 或不显示在“通知发送者”列表中。Android/iOS 上该命令是安全空操作。
+      await invoke('ensure_notification_identity');
       let granted = await isPermissionGranted();
       if (!granted) {
         const permission = await requestPermission();
@@ -679,7 +682,7 @@ function App() {
         return { ok: false, message: '系统通知权限未授予，请在系统设置中允许通知后重试' };
       }
       sendNotification({ title: '任务提醒已开启', body: '这是一条测试通知；到点任务会以相同方式提醒。' });
-      return { ok: true, message: '测试通知已发送，请检查系统通知中心' };
+      return { ok: true, message: '测试通知已请求；Windows 收到首次通知后会在“通知发送者”中显示 Desktop Task Manager' };
     } catch (error) {
       return { ok: false, message: `无法发送系统通知：${error instanceof Error ? error.message : String(error)}` };
     }
