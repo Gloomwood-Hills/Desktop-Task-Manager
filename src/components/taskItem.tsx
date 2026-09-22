@@ -515,7 +515,7 @@ export default function TaskItem({
         </div>
       )}
 
-      {/* 收起时保留一条最临近截止的直属子任务，用户无需展开也能看到下一步及其日期标签。 */}
+      {/* 收起时保留一条最临近截止的未完成直属子任务，用户无需展开也能看到下一步及其日期标签。 */}
       {hasChildren && !expanded && previewSubtask && (
         <div data-no-task-drag style={{ marginLeft: 18, position: 'relative' }}>
           <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.4 }} />
