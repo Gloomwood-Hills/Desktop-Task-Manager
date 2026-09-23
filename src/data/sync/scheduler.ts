@@ -10,6 +10,7 @@ import { SettingsService } from '../../services/SettingsService';
 import { syncAuto } from './engine';
 import { SyncSettings } from './types';
 import { logSync } from './syncLog';
+import { setSyncUiState } from './status';
 
 const DEBOUNCE_MS = 30_000; // 变更防抖窗口
 const INTERVAL_MS = 60 * 60_000; // 定时兜底（60 分钟，原 10 分钟——流量限额改造降频）
@@ -26,6 +27,8 @@ export function configureAutoSync(enabled: boolean): void {
 
 /** 数据变更入口：若未启用或正在同步则忽略；防抖 30s 后触发 runSync（每次调用重置计时器） */
 export function notifyDataChanged(): void {
+  // 本地写入已完成；无论自动同步是否开启，都不能将它显示成“已同步”。
+  setSyncUiState({ kind: 'pending' });
   if (!autoSyncEnabled || syncing) return;
   if (debounceTimer !== null) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
@@ -60,6 +63,7 @@ export function stopAutoSync(): void {
 async function runSync(): Promise<void> {
   if (syncing || !autoSyncEnabled) return;
   syncing = true;
+  setSyncUiState({ kind: 'syncing' });
   try {
     const db = await getDatabase();
     const service = new SettingsService(db);
@@ -67,10 +71,12 @@ async function runSync(): Promise<void> {
     // 设置为空 / 自动同步关闭 / WebDAV 未配置 → 静默跳过（下轮自动重试）
     if (!settings || !settings.autoSync) {
       logSync('info', '自动同步', '已关闭或设置未就绪，跳过本轮');
+      setSyncUiState({ kind: 'idle' });
       return;
     }
     if (!settings.webdavUrl || !settings.webdavUsername || !settings.webdavPassword) {
       logSync('warn', '自动同步', '未配置坚果云账号/应用密码，跳过本轮（设置 → 同步 填写）');
+      setSyncUiState({ kind: 'idle' });
       return;
     }
 
@@ -86,8 +92,10 @@ async function runSync(): Promise<void> {
       // 静默失败：不弹窗，仅记录日志，下轮自动重试
       logSync('error', '自动同步', `失败：${result.message}`);
       console.error('[AutoSync] 同步失败（静默）:', result.message);
+      setSyncUiState({ kind: 'error', message: result.message });
     } else if (result.status === 'skipped') {
       logSync('info', '自动同步', '无变更，跳过（skipped）');
+      setSyncUiState({ kind: 'synced', at: Date.now() });
     } else {
       // merged / uploaded / downloaded → 记录成功同步时间与操作
       logSync('success', '自动同步', `成功：${result.message}`);
@@ -95,11 +103,13 @@ async function runSync(): Promise<void> {
         lastSyncedAt: Date.now(),
         lastSyncAction: result.status === 'uploaded' ? 'upload' : result.status === 'downloaded' ? 'download' : 'merged',
       });
+      setSyncUiState({ kind: 'synced', at: Date.now() });
     }
   } catch (error) {
     // 异常静默：不影响主流程，下轮自动重试
     logSync('error', '自动同步', `异常：${error instanceof Error ? error.message : String(error)}`);
     console.error('[AutoSync] 同步异常（静默）:', error);
+    setSyncUiState({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
   } finally {
     syncing = false;
   }

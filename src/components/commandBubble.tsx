@@ -28,7 +28,7 @@ export default function CommandBubble({ onCommand, focusSignal }: CommandBubbleP
   };
 
   return (
-    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 auto', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+    <div style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }}>
       <input
         ref={inputRef}
         type="text"
@@ -43,19 +43,20 @@ export default function CommandBubble({ onCommand, focusSignal }: CommandBubbleP
         onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
         onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--input)'; }}
         style={{
-          width: isMobile ? '100%' : 200,
-          maxWidth: isMobile ? '100%' : 'calc(100vw - 200px)',
-          height: 26,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          height: isMobile ? 38 : 36,
           padding: '0 12px',
           border: '1px solid var(--input)',
           borderRadius: 999,
           background: 'var(--background)',
           color: 'inherit',
-          fontSize: 12,
+          fontSize: 13,
           outline: 'none',
           fontFamily: 'var(--font-sans)',
           boxSizing: 'border-box',
-          transition: 'border-color 0.15s ease, width 0.15s ease',
+          transition: 'border-color 0.15s ease',
         }}
       />
     </div>

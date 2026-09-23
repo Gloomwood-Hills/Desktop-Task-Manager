@@ -3,7 +3,8 @@
   "identifier": "desktop",
   "description": "桌面端权限：含托盘/全局快捷键/开机自启动等桌面专属能力；仅作用于桌面平台",
   "windows": [
-    "main"
+    "main",
+    "task-context-menu"
   ],
   "platforms": ["windows", "macOS", "linux"],
   "permissions": [

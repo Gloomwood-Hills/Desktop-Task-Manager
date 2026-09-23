@@ -7,10 +7,13 @@ import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Paint
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.util.SizeF
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -23,7 +26,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
- * 桌面小部件：任务列表（静态兼容布局，最多 6 条）+ 刷新 + 新增。
+ * 桌面小部件：任务列表（静态兼容布局，最多 12 条）+ 刷新 + 新增。
  *
  * 为什么不用集合视图（真机定案，华为鸿蒙 5.x）：
  * 鸿蒙桌面既不派发集合视图（ListView）项上的每项 setOnClickPendingIntent，
@@ -65,11 +68,11 @@ class TaskWidgetProvider : AppWidgetProvider() {
           val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
           if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
             refreshAll(context, true)
-            TaskScrollableWidgetProvider.refreshAll(context)
           }
         }
         ACTION_TOGGLE_COMPLETE -> handleToggleComplete(context, intent)
         ACTION_SCROLL -> handleScroll(context, intent)
+        ACTION_TOGGLE_FILTER -> handleToggleFilter(context, intent)
       }
     }
   }
@@ -117,7 +120,6 @@ class TaskWidgetProvider : AppWidgetProvider() {
 
     // 写库后失效缓存并重绘（当前已在 io 线程，直接重绘）
     refreshAll(context, true)
-    TaskScrollableWidgetProvider.refreshAll(context)
   }
 
   companion object {
@@ -126,24 +128,39 @@ class TaskWidgetProvider : AppWidgetProvider() {
     const val ACTION_TOGGLE_COMPLETE = "com.desktop.taskmanager.WIDGET_TOGGLE_COMPLETE"
     const val ACTION_SCROLL = "com.desktop.taskmanager.WIDGET_SCROLL"
     const val ACTION_OPEN_TASK = "com.desktop.taskmanager.WIDGET_OPEN_TASK"
+    const val ACTION_TOGGLE_FILTER = "com.desktop.taskmanager.WIDGET_TOGGLE_FILTER"
     const val EXTRA_TASK_ID = "extra_task_id"
     const val EXTRA_TARGET_COMPLETED = "extra_target_completed"
     const val EXTRA_SCROLL_DELTA = "extra_scroll_delta"
+    const val EXTRA_FILTER_KIND = "extra_filter_kind"
     const val EXTRA_FOCUS_TITLE = "extra_focus_title"
     const val EXTRA_OPEN_COMMAND = "extra_open_command"
     const val EXTRA_OPEN_QUICK_CAPTURE = "extra_open_quick_capture"
     const val SCROLL_PREFS = "widget_scroll"
+    const val FILTER_PREFS = "widget_attention_filters"
 
     /** 串行 IO 线程：所有小部件的 DB 读/写都走这里，避免在主线程查库导致卡顿/ANR */
     private val io = Executors.newSingleThreadExecutor()
     /** 内存缓存：上次加载的任务列表；翻页/重绘直接用缓存，避免重复查库 */
     @Volatile private var cachedTasks: List<WidgetTaskItem>? = null
 
-    /** 静态任务行（weight 等分高度，最多 6 条）对应的视图 ID 组 */
-    private val SLOT_IDS = intArrayOf(R.id.slot_1, R.id.slot_2, R.id.slot_3, R.id.slot_4, R.id.slot_5, R.id.slot_6)
-    private val CHECK_IDS = intArrayOf(R.id.item_check_1, R.id.item_check_2, R.id.item_check_3, R.id.item_check_4, R.id.item_check_5, R.id.item_check_6)
-    private val TITLE_IDS = intArrayOf(R.id.item_title_1, R.id.item_title_2, R.id.item_title_3, R.id.item_title_4, R.id.item_title_5, R.id.item_title_6)
-    private val DL_IDS = intArrayOf(R.id.item_dl_1, R.id.item_dl_2, R.id.item_dl_3, R.id.item_dl_4, R.id.item_dl_5, R.id.item_dl_6)
+    /** 静态任务行对应的视图 ID 组；大尺寸桌面最多显示 12 条。 */
+    private val SLOT_IDS = intArrayOf(
+      R.id.slot_1, R.id.slot_2, R.id.slot_3, R.id.slot_4, R.id.slot_5, R.id.slot_6,
+      R.id.slot_7, R.id.slot_8, R.id.slot_9, R.id.slot_10, R.id.slot_11, R.id.slot_12,
+    )
+    private val CHECK_IDS = intArrayOf(
+      R.id.item_check_1, R.id.item_check_2, R.id.item_check_3, R.id.item_check_4, R.id.item_check_5, R.id.item_check_6,
+      R.id.item_check_7, R.id.item_check_8, R.id.item_check_9, R.id.item_check_10, R.id.item_check_11, R.id.item_check_12,
+    )
+    private val TITLE_IDS = intArrayOf(
+      R.id.item_title_1, R.id.item_title_2, R.id.item_title_3, R.id.item_title_4, R.id.item_title_5, R.id.item_title_6,
+      R.id.item_title_7, R.id.item_title_8, R.id.item_title_9, R.id.item_title_10, R.id.item_title_11, R.id.item_title_12,
+    )
+    private val DL_IDS = intArrayOf(
+      R.id.item_dl_1, R.id.item_dl_2, R.id.item_dl_3, R.id.item_dl_4, R.id.item_dl_5, R.id.item_dl_6,
+      R.id.item_dl_7, R.id.item_dl_8, R.id.item_dl_9, R.id.item_dl_10, R.id.item_dl_11, R.id.item_dl_12,
+    )
 
     /** 读取任务（优先缓存；无缓存才查库并填充） —— 调用需在 io 线程 */
     private fun loadTasksCached(context: Context): List<WidgetTaskItem> {
@@ -181,7 +198,6 @@ class TaskWidgetProvider : AppWidgetProvider() {
     fun requestRefresh(context: Context) {
       io.execute {
         refreshAll(context, true)
-        TaskScrollableWidgetProvider.refreshAll(context)
       }
     }
 
@@ -194,9 +210,18 @@ class TaskWidgetProvider : AppWidgetProvider() {
       val dark = ap.theme == "dark"
       applyAppearance(views, context, dark, ap.glass, ap.transparency)
 
-      // 静态渲染：未完成在前，按应用设置排序；上/下键按偏移分页（每页 = SLOT 行数）
-      val all = loadTasksCached(context)
-      val perPage = visibleSlots(manager, widgetId)
+      // 静态渲染：未完成在前，按截止时间排序；上/下键按当前可见行数分页。
+      val source = loadTasksCached(context)
+      val filter = readFilterState(context, widgetId)
+      val now = System.currentTimeMillis()
+      val overdueCount = source.count { it.deadline != null && it.deadline < now }
+      val importantCount = source.count { it.priority == "important" }
+      val all = source.filter { task ->
+        val overdue = task.deadline != null && task.deadline < now
+        val important = task.priority == "important"
+        (!overdue && !important) || (overdue && filter.showOverdue) || (important && filter.showImportant)
+      }
+      val perPage = visibleSlots(context, manager, widgetId)
       val total = all.size
       val pageCount = if (total == 0) 1 else ((total + perPage - 1) / perPage)
       val off = scrollOffset(context, widgetId)
@@ -206,6 +231,11 @@ class TaskWidgetProvider : AppWidgetProvider() {
       // 待办计数药丸（无任务时隐藏，保持标题栏干净）
       views.setTextViewText(R.id.widget_count, total.toString())
       views.setViewVisibility(R.id.widget_count, if (total == 0) View.GONE else View.VISIBLE)
+
+      bindFilterChip(views, R.id.widget_filter_overdue, "逾期 $overdueCount", filter.showOverdue, dark)
+      bindFilterChip(views, R.id.widget_filter_important, "重要 $importantCount", filter.showImportant, dark)
+      views.setOnClickPendingIntent(R.id.widget_filter_overdue, filterPending(context, widgetId, "overdue"))
+      views.setOnClickPendingIntent(R.id.widget_filter_important, filterPending(context, widgetId, "important"))
 
       // 页码指示；仅多页时显示翻页条，减少视觉噪音
       views.setTextViewText(R.id.widget_page, "第${start / perPage + 1}/$pageCount 页")
@@ -261,7 +291,8 @@ class TaskWidgetProvider : AppWidgetProvider() {
       // 空列表占位
       views.setViewVisibility(R.id.widget_empty, if (total == 0) View.VISIBLE else View.GONE)
 
-      // 刷新：重新拉取数据；新增与解析输入：打开支持自然语言解析的小部件输入页；整卡点击：打开应用主窗口
+      // 外观：独立设置页；刷新：重新拉取数据；新增与解析输入：打开自然语言输入页。
+      views.setOnClickPendingIntent(R.id.btn_appearance, openAppearancePending(context))
       views.setOnClickPendingIntent(R.id.btn_refresh, refreshPending(context, widgetId))
       views.setOnClickPendingIntent(R.id.btn_add, openAddTaskPending(context))
       views.setOnClickPendingIntent(R.id.btn_quick_add, quickCommandPending(context))
@@ -274,16 +305,26 @@ class TaskWidgetProvider : AppWidgetProvider() {
       manager.updateAppWidget(widgetId, views)
     }
 
-    /** 根据桌面分配给小部件的最小高度收敛行数，避免小尺寸下六行挤成一团。 */
-    private fun visibleSlots(manager: AppWidgetManager, widgetId: Int): Int {
-      val minHeight = manager.getAppWidgetOptions(widgetId)
-        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 180)
-      return when {
-        minHeight < 205 -> 3
-        minHeight < 260 -> 4
-        minHeight < 315 -> 5
-        else -> SLOT_IDS.size
+    /** 优先使用 Android 12+ 启动器给出的精确尺寸；旧启动器回退到横/竖屏高度范围。 */
+    private fun visibleSlots(context: Context, manager: AppWidgetManager, widgetId: Int): Int {
+      val options = manager.getAppWidgetOptions(widgetId)
+      val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
+      val maxHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+      val portrait = context.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+      val exactHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        @Suppress("DEPRECATION")
+        val sizes = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+        if (portrait) sizes?.maxOfOrNull { it.height.toInt() } else sizes?.minOfOrNull { it.height.toInt() }
+      } else null
+      val height = exactHeight?.takeIf { it > 0 } ?: if (portrait) {
+        maxHeight.takeIf { it > 0 } ?: minHeight.takeIf { it > 0 } ?: 180
+      } else {
+        minHeight.takeIf { it > 0 } ?: maxHeight.takeIf { it > 0 } ?: 180
       }
+      // 顶栏、输入筛选栏、翻页栏与内边距共预留约 130dp；任务条固定 48dp。
+      val slots = ((height - 130) / 48).coerceIn(1, SLOT_IDS.size)
+      Log.d(TAG, "widget=$widgetId exactHeight=$exactHeight minHeight=$minHeight maxHeight=$maxHeight portrait=$portrait rows=$slots")
+      return slots
     }
 
     private fun refreshPending(context: Context, widgetId: Int): PendingIntent {
@@ -320,12 +361,51 @@ class TaskWidgetProvider : AppWidgetProvider() {
       return PendingIntent.getBroadcast(context, widgetId * 10 + 2 + (if (delta > 0) 1 else 0), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
+    private fun filterPending(context: Context, widgetId: Int, kind: String): PendingIntent {
+      val intent = Intent(context, TaskWidgetProvider::class.java).apply {
+        action = ACTION_TOGGLE_FILTER
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+        putExtra(EXTRA_FILTER_KIND, kind)
+        data = Uri.parse("widget-filter://$widgetId/$kind")
+      }
+      val suffix = if (kind == "overdue") 7 else 8
+      return PendingIntent.getBroadcast(context, widgetId * 10 + suffix, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    private data class FilterState(val showOverdue: Boolean, val showImportant: Boolean)
+
+    private fun readFilterState(context: Context, widgetId: Int): FilterState {
+      val prefs = context.getSharedPreferences(FILTER_PREFS, Context.MODE_PRIVATE)
+      return FilterState(
+        prefs.getBoolean("overdue_$widgetId", true),
+        prefs.getBoolean("important_$widgetId", true),
+      )
+    }
+
+    private fun handleToggleFilter(context: Context, intent: Intent) {
+      val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+      val kind = intent.getStringExtra(EXTRA_FILTER_KIND) ?: return
+      if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID || kind !in setOf("overdue", "important")) return
+      val prefs = context.getSharedPreferences(FILTER_PREFS, Context.MODE_PRIVATE)
+      val key = "${kind}_$widgetId"
+      prefs.edit().putBoolean(key, !prefs.getBoolean(key, true)).apply()
+      context.getSharedPreferences(SCROLL_PREFS, Context.MODE_PRIVATE).edit().putInt("offset_$widgetId", 0).apply()
+      refreshAll(context, false)
+    }
+
+    private fun bindFilterChip(views: RemoteViews, viewId: Int, text: String, visible: Boolean, dark: Boolean) {
+      views.setTextViewText(viewId, text)
+      views.setInt(viewId, "setBackgroundResource", if (visible) R.drawable.widget_filter_active else R.drawable.widget_filter_inactive)
+      views.setTextColor(viewId, if (visible) (if (dark) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()) else (if (dark) 0xFFA1A1A6.toInt() else 0xFF8E8E93.toInt()))
+      views.setInt(viewId, "setPaintFlags", if (visible) 0 else Paint.STRIKE_THRU_TEXT_FLAG)
+    }
+
     /** 上/下翻页：调整该小部件的滚动偏移并重绘 */
     private fun handleScroll(context: Context, intent: Intent) {
       val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
       val delta = intent.getIntExtra(EXTRA_SCROLL_DELTA, 0)
       if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID || delta == 0) return
-      val perPage = visibleSlots(AppWidgetManager.getInstance(context), widgetId)
+      val perPage = visibleSlots(context, AppWidgetManager.getInstance(context), widgetId)
       val total = loadTasksCached(context).size
       val pageCount = if (total == 0) 1 else ((total + perPage - 1) / perPage)
       val current = scrollOffset(context, widgetId)
@@ -335,7 +415,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
       requestRefresh(context)
     }
 
-    /** 小部件滚动偏移（按任务起点索引计，0,6,12...） */
+    /** 小部件滚动偏移（按当前每页行数递增）。 */
     private fun scrollOffset(context: Context, widgetId: Int): Int {
       return context.getSharedPreferences(SCROLL_PREFS, Context.MODE_PRIVATE)
         .getInt("offset_$widgetId", 0).coerceAtLeast(0)
@@ -446,23 +526,15 @@ class TaskWidgetProvider : AppWidgetProvider() {
     private fun loadTasksFromDb(context: Context): List<WidgetTaskItem> {
       val db = WidgetDb.openReadOnly(context) ?: return emptyList()
       try {
-        var sortType = "deadline"
-        var importantTop = false
-        try {
-          db.rawQuery("SELECT sortType, importantTop FROM Settings WHERE id = 'default'", null).use { c ->
-            if (c.moveToFirst()) {
-              sortType = if (c.isNull(0)) "deadline" else c.getString(0)
-              importantTop = !c.isNull(1) && c.getInt(1) == 1
-            }
-          }
-        } catch (_: Exception) {
-        }
-
         val rows = mutableListOf<WidgetTaskItem>()
         db.rawQuery(
           """SELECT t.id, t.title, t.deadline, t.startDate, t.priority, f.name, t.completed, t.completedAt, t.createdAt
              FROM Task t LEFT JOIN Folder f ON t.folderId = f.id
-             WHERE t.deleted = 0 AND t.completed = 0""".trimMargin(),
+             WHERE t.deleted = 0 AND t.completed = 0
+               AND NOT EXISTS (
+                 SELECT 1 FROM Task child
+                 WHERE child.parentId = t.id AND child.deleted = 0
+               )""".trimMargin(),
           null
         ).use { c ->
           while (c.moveToNext()) {
@@ -482,12 +554,8 @@ class TaskWidgetProvider : AppWidgetProvider() {
           }
         }
 
-        val sortTaskList = { list: List<WidgetTaskItem> ->
-          if (!importantTop) sortCore(list, sortType)
-          else sortCore(list.filter { it.priority == "important" }, sortType) + sortCore(list.filter { it.priority != "important" }, sortType)
-        }
-        // 小部件不展示已完成任务（SQL 已过滤 completed=0），直接对未完成任务排序返回
-        return sortTaskList(rows)
+        // 小部件与应用统一：只按截止时间排序，不展示父任务。
+        return sortCore(rows, "deadline")
       } catch (e: Exception) {
         Log.e(TAG, "loadTasks failed: ${e.message}")
         return emptyList()
@@ -578,6 +646,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
       val day = 24 * 3600 * 1000L
       val d = remainMs.toDouble() / day.toDouble()
       val rgb = when {
+        d < 0 -> intArrayOf(228, 158, 0)
         d >= 7 -> if (dark) intArrayOf(255, 255, 255) else intArrayOf(0, 0, 0)
         d >= 5 -> intArrayOf(0x00, 0x64, 0xd6)
         d >= 3 -> lerpRgb(intArrayOf(0x00, 0x7a, 0xff), intArrayOf(0x2e, 0x8d, 0xff), (5 - d) / 2.0)

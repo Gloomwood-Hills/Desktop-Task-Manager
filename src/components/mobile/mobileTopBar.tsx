@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Menu, PanelLeft, RefreshCw, Search, Settings, X } from 'lucide-react';
+import { Menu, PanelLeft, RefreshCw, Search, Settings, Trash2, X } from 'lucide-react';
 import type { TopBarProps } from '../topBar';
 import CommandBubble from '../commandBubble';
 
@@ -11,13 +11,17 @@ export default function MobileTopBar({
   searchQuery,
   onSearchChange,
   onOpenSettings,
+  onOpenDeleted,
   onSync,
   syncBusy = false,
+  syncUiState = { kind: 'idle' },
+  syncConfigured = false,
   sidebarOpen = false,
   onToggleSidebar,
-}: Pick<TopBarProps, 'viewMode' | 'onCommand' | 'commandFocusSignal' | 'searchQuery' | 'onSearchChange' | 'onOpenSettings' | 'onSync' | 'syncBusy' | 'sidebarOpen' | 'onToggleSidebar'>) {
+}: Pick<TopBarProps, 'viewMode' | 'onCommand' | 'commandFocusSignal' | 'searchQuery' | 'onSearchChange' | 'onOpenSettings' | 'onOpenDeleted' | 'onSync' | 'syncBusy' | 'syncUiState' | 'syncConfigured' | 'sidebarOpen' | 'onToggleSidebar'>) {
   const [searchOpen, setSearchOpen] = useState(Boolean(searchQuery));
-  const label = viewMode === 'list' ? '任务' : viewMode === 'calendar' ? '月历' : '今日';
+  const [syncDetailsOpen, setSyncDetailsOpen] = useState(false);
+  const label = viewMode === 'focus' ? '焦点' : viewMode === 'list' ? '任务' : viewMode === 'calendar' ? '月历' : '今日';
 
   return (
     <header className="mobile-topbar">
@@ -49,10 +53,23 @@ export default function MobileTopBar({
         >
           <RefreshCw className={syncBusy ? 'is-spinning' : ''} />
         </button>
+        <button type="button" onClick={() => syncUiState.kind === 'error' && setSyncDetailsOpen((open) => !open)} style={{ border: 0, padding: 0, background: 'transparent', font: '500 10.5px var(--font-sans)', color: syncUiState.kind === 'error' ? 'var(--destructive)' : 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>
+          {syncUiState.kind === 'pending' ? '本地有变更' : syncUiState.kind === 'syncing' ? '同步中' : syncUiState.kind === 'error' ? '同步失败' : syncConfigured ? '已同步' : '未配置'}
+        </button>
         <button type="button" className="mobile-icon-button" aria-label="设置" onClick={onOpenSettings}>
           <Settings />
         </button>
+        <button type="button" className="mobile-icon-button" aria-label="回收站" onClick={onOpenDeleted}>
+          <Trash2 />
+        </button>
       </div>
+
+      {syncUiState.kind === 'error' && syncDetailsOpen && (
+        <div style={{ margin: '0 4px 6px', padding: '7px 9px', borderRadius: 8, background: 'color-mix(in srgb, var(--destructive) 8%, var(--background))', color: 'var(--foreground)', fontSize: 11.5, lineHeight: 1.4 }}>
+          {syncUiState.message}
+          <button type="button" onClick={() => { setSyncDetailsOpen(false); onSync(); }} style={{ marginLeft: 8, border: 0, borderRadius: 5, padding: '4px 7px', background: 'var(--primary)', color: 'var(--primary-foreground)', font: '600 11px var(--font-sans)' }}>重试</button>
+        </div>
+      )}
 
       {searchOpen && (
         <label className="mobile-search-field">

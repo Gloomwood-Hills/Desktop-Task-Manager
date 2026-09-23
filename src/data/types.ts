@@ -63,8 +63,8 @@ export type SortType = 'deadline' | 'name' | 'createdAt' | 'manual';
 /** 默认同步策略：双向合并 / 仅上传云端 / 仅覆盖本地（下载并覆盖本地） */
 export type SyncPolicy = 'twoWay' | 'uploadOnly' | 'downloadOnly';
 
-/** 视图模式：列表 / 日历 / 日 */
-export type ViewMode = 'list' | 'calendar' | 'day';
+/** 视图模式：焦点 / 列表 / 日历 / 日 */
+export type ViewMode = 'focus' | 'list' | 'calendar' | 'day';
 
 export interface Settings {
   id: string;
@@ -86,7 +86,7 @@ export interface Settings {
   defaultDeadlineHour: number;
   /** 截止时间仅填日期未填具体时刻时，默认补上的"分"（0-59，默认 0） */
   defaultDeadlineMinute: number;
-  /** 当前视图模式，默认 list */
+  /** 当前视图模式，默认 focus */
   viewMode: ViewMode;
   /** 自动同步开关：开启时启动/变更防抖/定时自动同步，默认 true */
   autoSync: boolean;

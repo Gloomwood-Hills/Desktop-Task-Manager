@@ -74,12 +74,18 @@ const NAV_BUTTON: CSSProperties = {
   transition: 'background-color 0.15s ease',
 };
 
-/** 勾选圆圈样式：完成=深蓝填充+白勾，未完成=灰色填充（无描边） */
-function circleStyle(completed: boolean): CSSProperties {
+/** 勾选圆圈样式：重要任务只通过橙色勾选框提示，不再显示额外标签。 */
+function circleStyle(completed: boolean, important = false): CSSProperties {
   if (completed) {
     return {
       background: 'var(--primary)',
       color: '#ffffff',
+    };
+  }
+  if (important) {
+    return {
+      border: '1.5px solid #ff6b3d',
+      background: 'color-mix(in srgb, #ff6b3d 10%, transparent)',
     };
   }
   return {
@@ -114,7 +120,7 @@ function SubtaskRow({ task, onToggleComplete, onContextMenuTask }: {
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            ...circleStyle(completed),
+            ...circleStyle(completed, task.priority === 'important'),
           }}
         >
           {completed && (
@@ -206,7 +212,7 @@ function TimelineEntry({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            ...circleStyle(completed),
+            ...circleStyle(completed, important),
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.16)',
             transition: 'transform 0.12s ease',
           }}
@@ -255,24 +261,6 @@ function TimelineEntry({
               </div>
             )}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-            {important && !completed && (
-              <span
-                style={{
-                  flexShrink: 0,
-                  marginTop: 1,
-                  padding: '1px 8px',
-                  borderRadius: 999,
-                  background: 'color-mix(in srgb, #ff6b3d 14%, transparent)',
-                  color: '#ff6b3d',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  lineHeight: 1.5,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                重要
-              </span>
-            )}
             <span
               style={{
                 flex: 1,

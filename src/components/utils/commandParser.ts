@@ -26,7 +26,7 @@ export type ParsedCommand =
   | { kind: 'toggle-completed'; query: string; completed: boolean }
   | { kind: 'stop-repeat'; query: string }
   | { kind: 'clear-reminder'; query: string }
-  | { kind: 'open-view'; view: 'list' | 'calendar' | 'day' }
+  | { kind: 'open-view'; view: 'focus' | 'list' | 'calendar' | 'day' }
   | { kind: 'search'; query: string }
   | { kind: 'expand-all'; expanded: boolean }
   | { kind: 'move-to-folder'; query: string; folderName: string }
@@ -179,6 +179,7 @@ export function parseCommand(text: string): ParsedCommand {
   if (!t) return { kind: 'unknown' };
 
   // 0) 不需要 AI 的视图、搜索与展开操作
+  if (/^(?:打开|切换到?|显示)?(?:焦点|今日焦点|今天只看这几件事)(?:视图)?$/.test(t)) return { kind: 'open-view', view: 'focus' };
   if (/^(?:打开|切换到?|显示)?(?:列表|清单)视图$/.test(t)) return { kind: 'open-view', view: 'list' };
   if (/^(?:打开|切换到?|显示)?日历视图$/.test(t)) return { kind: 'open-view', view: 'calendar' };
   if (/^(?:打开|切换到?|显示)?日视图$/.test(t)) return { kind: 'open-view', view: 'day' };

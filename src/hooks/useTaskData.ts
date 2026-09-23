@@ -85,8 +85,8 @@ export function useTaskData(): UseTaskData {
       // 子任务保留在父任务下（划线样式），保证父任务进度统计 x/y 正确
       const fullTree = buildFolderTree(folders, tasks);
       const cleanTree = fullTree.map(cleanFolderRoot);
-      // 按设置排序（仅排序任务列表本身，子任务不参与排序）
-      const sortType = settingsRef.current?.sortType ?? 'deadline';
+      // 排序方式固定为截止时间；重要任务是否置顶由设置控制。
+      const sortType = 'deadline' as const;
       const importantTop = settingsRef.current?.importantTop ?? false;
       const sortTaskList = (list: TaskWithSubtasks[]): TaskWithSubtasks[] =>
         sortTasksByType(list, sortType, importantTop);

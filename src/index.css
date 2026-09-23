@@ -26,6 +26,8 @@ html, body {
 
 /* 移动端（Android）全屏：去掉 #root 的桌面窗口圆角裁剪（html.mobile 由 main.tsx 按平台检测挂载） */
 html.mobile #root { border-radius: 0; }
+html.context-menu-popup #root { border-radius: 0; overflow: visible; }
+[data-tree], [data-tree] * { user-select: text; -webkit-user-select: text; }
 
 /* ===== Apple Design Tokens (from .design-taskmanager-ui) ===== */
 
@@ -443,9 +445,8 @@ select:focus-visible {
   background: var(--background);
   box-shadow: 0 2px 10px rgba(0,0,0,.04);
   margin-top: 16px;
-  transition: border-color var(--dur-short) var(--ease-standard), box-shadow var(--dur-short) var(--ease-standard);
 }
-.qc-scope .task-input:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 13%, transparent), 0 2px 10px rgba(0,0,0,.04); }
+.qc-scope .task-input:focus-within { border-color: var(--input); box-shadow: 0 2px 10px rgba(0,0,0,.04); }
 .qc-scope .task-input input:focus,
 .qc-scope .task-input input:focus-visible { outline: none; box-shadow: none; }
 .qc-scope .task-input svg { width: 15px; height: 15px; color: var(--icon-muted); flex-shrink: 0; }
@@ -454,6 +455,29 @@ select:focus-visible {
   font-size: 13.5px; color: var(--foreground); font-family: var(--font-sans);
 }
 .qc-scope .task-input input::placeholder { color: var(--muted-foreground); }
+
+/* 逾期/重要过滤共用同一胶囊矩形；不看时划线并降为灰色。 */
+.attention-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: var(--primary);
+  font: 600 11.5px var(--font-sans);
+  cursor: pointer;
+  transition: background-color var(--dur-short) var(--ease-standard), color var(--dur-short) var(--ease-standard), border-color var(--dur-short) var(--ease-standard);
+}
+.attention-filter-chip.is-hidden {
+  border-color: color-mix(in srgb, var(--muted-foreground) 20%, var(--border));
+  background: color-mix(in srgb, var(--muted-foreground) 5%, var(--card));
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+.attention-filter-chip:hover { background: color-mix(in srgb, var(--primary) 13%, var(--card)); }
+.attention-filter-chip.is-hidden:hover { background: color-mix(in srgb, var(--muted-foreground) 9%, var(--card)); }
 
 /* 设置面板的密码/密钥类输入框：用 text 类型规避 Android WebView 对 password 字段禁用粘贴，
    再用 -webkit-text-security 将明文显示为圆点，保持密码观感。 */
@@ -554,7 +578,7 @@ input.pw-mask {
 .mobile-icon-button:disabled { opacity: .45; cursor: default; }
 .mobile-icon-button .is-spinning { animation: dtm-spin 1s linear infinite; }
 .mobile-search-field {
-  display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 11px;
+  display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 10px;
   border: 1px solid var(--input); border-radius: 12px; background: var(--background);
   color: var(--icon-muted);
   transition: border-color var(--dur-short) var(--ease-standard), box-shadow var(--dur-short) var(--ease-standard);
@@ -566,7 +590,7 @@ input.pw-mask {
 .mobile-search-field button svg { width: 16px; height: 16px; }
 .mobile-command-field { min-width: 0; }
 .mobile-command-field > div { width: 100%; }
-.mobile-command-field input { width: 100% !important; height: 36px !important; border-radius: 12px !important; font-size: 12.5px !important; }
+.mobile-command-field input { width: 100% !important; height: 38px !important; border-radius: 12px !important; font-size: 13px !important; }
 
 .mobile-bottom-nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 80;
@@ -587,17 +611,21 @@ input.pw-mask {
 
 .mobile-task-list { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 10px; }
 .mobile-task-swipe-shell { position: relative; overflow: hidden; border-radius: 13px; }
-.mobile-task-actions { position: absolute; inset: 0 0 0 auto; width: 116px; display: flex; align-items: stretch; justify-content: flex-end; background: color-mix(in srgb, var(--primary) 14%, var(--background)); }
-.mobile-task-actions button { width: 84px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; background: var(--primary); color: var(--primary-foreground); font: 600 11px var(--font-sans); }
+.mobile-task-actions { position: absolute; inset: 0 0 0 auto; width: 222px; display: flex; align-items: stretch; justify-content: flex-end; visibility: visible; pointer-events: none; background: color-mix(in srgb, var(--primary) 14%, var(--background)); will-change: opacity, transform; touch-action: pan-y; }
+.mobile-task-actions.is-revealed { pointer-events: auto; }
+.mobile-task-actions button { width: 74px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; background: #8e8e93; color: #fff; font: 600 11px var(--font-sans); }
+.mobile-task-actions .mobile-task-defer-action { background: var(--primary); color: var(--primary-foreground); }
+.mobile-task-actions .mobile-task-delete-action { background: var(--destructive); color: var(--destructive-foreground); }
 .mobile-task-actions svg { width: 17px; height: 17px; }
-.mobile-task-row { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 7px 9px; border: 0; outline: none; border-radius: 13px; background: color-mix(in srgb, var(--background) 94%, var(--accent)); touch-action: pan-y; transition: transform 180ms var(--ease-standard), background-color var(--dur-short) var(--ease-standard); }
+.mobile-task-row { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 7px 9px; border: 0; outline: none; border-radius: 13px; background: color-mix(in srgb, var(--background) 94%, var(--accent)); touch-action: pan-y; transition: transform 180ms var(--ease-standard), background-color var(--dur-short) var(--ease-standard); user-select: text; -webkit-user-select: text; }
 .mobile-task-row.is-dragging { transition: none; will-change: transform; }
 .mobile-task-row:active { background: color-mix(in srgb, var(--accent) 72%, var(--background)); }
 .mobile-task-check { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--primary); cursor: pointer; flex-shrink: 0; }
 .mobile-task-check::before { content: ''; width: 20px; height: 20px; border: 1.6px solid var(--muted-foreground); border-radius: 50%; }
 .mobile-task-check.is-important::before { border-color: #ff6b3d; }
-.mobile-task-check.is-complete::before { display: none; }
-.mobile-task-check.is-complete { background: var(--primary); color: var(--primary-foreground); }
+.mobile-task-check.is-complete::before { border-color: var(--primary); background: var(--primary); }
+.mobile-task-check.is-complete { position: relative; background: transparent; color: var(--primary-foreground); }
+.mobile-task-check.is-complete span { position: absolute; inset: 14px; display: inline-flex; align-items: center; justify-content: center; }
 .mobile-task-check svg { width: 16px; height: 16px; }
 .mobile-task-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .mobile-task-title-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
@@ -605,13 +633,26 @@ input.pw-mask {
 .mobile-task-title.is-complete { color: var(--muted-foreground); text-decoration: line-through; }
 .mobile-task-star { width: 13px; height: 13px; color: #ff6b3d; flex-shrink: 0; }
 .mobile-task-meta { display: flex; align-items: center; gap: 8px; min-height: 18px; color: var(--muted-foreground); font-size: 11px; line-height: 1.2; }
-.mobile-task-deadline { display: inline-flex; align-items: center; gap: 3px; }
+.mobile-task-deadline { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.mobile-task-deadline b { font-weight: 700; }
 .mobile-task-deadline svg { width: 13px; height: 13px; }
+.mobile-task-deadline.is-overdue { color: rgb(228, 158, 0); font-weight: 650; }
 .mobile-subtask-toggle { display: inline-flex; align-items: center; gap: 2px; min-height: 28px; padding: 0 5px; border: 0; border-radius: 8px; background: transparent; color: var(--primary); font: 600 11px var(--font-sans); }
 .mobile-subtask-toggle svg { width: 14px; height: 14px; }
-.mobile-task-detail-hint { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; padding: 0; border: 0; outline: none; border-radius: 10px; background: transparent; color: var(--icon-muted); font: 24px/1 var(--font-sans); flex-shrink: 0; cursor: pointer; }
-.mobile-task-detail-hint:active, .mobile-task-detail-hint:focus-visible { background: color-mix(in srgb, var(--primary) 10%, transparent); color: var(--primary); }
-.mobile-task-close-actions { position: absolute; right: 5px; top: 50%; z-index: 2; width: 24px; height: 24px; transform: translateY(-50%); border: 0; border-radius: 8px; background: color-mix(in srgb, var(--background) 75%, transparent); color: var(--primary-foreground); font-size: 18px; line-height: 1; }
+.mobile-defer-layer { position: fixed; inset: 0; z-index: 190; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.mobile-defer-scrim { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(0, 0, 0, .28); }
+.mobile-defer-sheet { position: relative; z-index: 1; width: min(100%, 380px); max-height: min(76vh, 560px); overflow-y: auto; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: 20px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 18px 50px rgba(0, 0, 0, .22); }
+.mobile-defer-header { display: flex; align-items: center; gap: 12px; padding: 14px 14px 10px; border-bottom: 1px solid var(--border); }
+.mobile-defer-header > div { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.mobile-defer-header strong { font-size: 15px; }
+.mobile-defer-header span { overflow: hidden; color: var(--muted-foreground); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-defer-header button { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 11px; background: var(--accent); color: var(--foreground); }
+.mobile-defer-header svg { width: 17px; height: 17px; }
+.mobile-defer-options { display: flex; flex-direction: column; padding: 5px; }
+.mobile-defer-options button { display: grid; grid-template-columns: 22px 1fr 18px; align-items: center; gap: 8px; min-height: 50px; padding: 0 12px; border: 0; border-radius: 13px; background: transparent; color: var(--foreground); text-align: left; font: 600 14px var(--font-sans); }
+.mobile-defer-options button:active { background: var(--accent); }
+.mobile-defer-options svg { width: 17px; height: 17px; color: var(--primary); }
+.mobile-defer-options button svg:last-child { color: var(--icon-muted); }
 .mobile-folder-section { display: flex; flex-direction: column; gap: 3px; }
 .mobile-folder-heading { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 5px 8px; border: 0; border-radius: 11px; background: transparent; color: var(--foreground); font: 700 12px var(--font-sans); text-align: left; }
 .mobile-folder-heading svg { width: 16px; height: 16px; color: var(--primary); }
@@ -636,7 +677,7 @@ input.pw-mask {
 .mobile-sheet-status-row button { min-height: 42px; padding: 0 14px; border-radius: 11px; font: 600 12px var(--font-sans); }
 .mobile-sheet-status-row svg { width: 16px; height: 16px; }
 .mobile-sheet-complete { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; border: 0; background: var(--primary); color: var(--primary-foreground); }
-.mobile-sheet-edit, .mobile-sheet-copy { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); background: transparent; color: var(--foreground); }
+.mobile-sheet-edit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); background: transparent; color: var(--foreground); }
 .mobile-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .mobile-detail-grid > div { display: grid; grid-template-columns: 17px 1fr; column-gap: 6px; row-gap: 2px; padding: 9px 10px; border-radius: 11px; background: color-mix(in srgb, var(--accent) 58%, transparent); }
 .mobile-detail-grid svg { grid-row: span 2; width: 16px; height: 16px; color: var(--primary); }

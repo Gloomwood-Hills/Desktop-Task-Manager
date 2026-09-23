@@ -1,4 +1,4 @@
-import { CalendarDays, ListTodo, Plus, Sun } from 'lucide-react';
+import { CalendarDays, ListTodo, Plus, Sparkles, Sun } from 'lucide-react';
 import { ViewMode } from '../../data/types';
 
 interface MobileBottomNavProps {
@@ -10,6 +10,7 @@ interface MobileBottomNavProps {
 /** 手机端底部导航：把常用视图和新建动作放到拇指可达区域。 */
 export default function MobileBottomNav({ viewMode, onChangeViewMode, onNewTask }: MobileBottomNavProps) {
   const tabs: { mode: ViewMode; label: string; icon: typeof ListTodo }[] = [
+    { mode: 'focus', label: '焦点', icon: Sparkles },
     { mode: 'list', label: '列表', icon: ListTodo },
     { mode: 'calendar', label: '月历', icon: CalendarDays },
     { mode: 'day', label: '今日', icon: Sun },

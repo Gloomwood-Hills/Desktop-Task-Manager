@@ -117,7 +117,7 @@ async function initDatabase(db: Database): Promise<void> {
       deadlineGradient INTEGER NOT NULL DEFAULT 1,
       defaultDeadlineHour INTEGER NOT NULL DEFAULT 18,
       defaultDeadlineMinute INTEGER NOT NULL DEFAULT 0,
-      viewMode TEXT NOT NULL DEFAULT 'list',
+      viewMode TEXT NOT NULL DEFAULT 'focus',
       autoSync INTEGER NOT NULL DEFAULT 1,
       syncPolicy TEXT NOT NULL DEFAULT 'twoWay',
       webdavUrl TEXT NOT NULL DEFAULT '${DEFAULT_WEBDAV_URL}',
@@ -200,7 +200,7 @@ async function insertDefaultData(db: Database): Promise<void> {
     await db.execute(
       `INSERT INTO Settings (id, theme, glassEffect, transparency, sortType, importantTop, reminderEnabled, reminderOffset, autoPin, autoStart, deadlineGradient, defaultDeadlineHour, defaultDeadlineMinute, viewMode, autoSync, syncPolicy, webdavUrl, webdavUsername, webdavPassword, lastSyncedAt, lastSyncAction, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 18, 0, 'list', 1, 'twoWay', DEFAULT_WEBDAV_URL, '', '', null, null, now, now]
+      ['default', 'light', 1, 0.8, 'deadline', 0, 1, 86400, 1, 1, 1, 18, 0, 'focus', 1, 'twoWay', DEFAULT_WEBDAV_URL, '', '', null, null, now, now]
     );
   }
 
@@ -373,11 +373,11 @@ async function migrateSettingsAddDefaultDeadline(db: Database): Promise<void> {
   }
 }
 
-/** 旧库迁移：Settings 新增 viewMode 列（当前视图模式，默认 list） */
+/** 旧库迁移：Settings 新增 viewMode 列（当前视图模式，默认 focus） */
 async function migrateSettingsAddViewMode(db: Database): Promise<void> {
   const cols = await db.select<{ name: string }[]>('PRAGMA table_info(Settings)');
   if (!cols.some((c) => c.name === 'viewMode')) {
-    await db.execute('ALTER TABLE Settings ADD COLUMN viewMode TEXT NOT NULL DEFAULT \'list\'');
+    await db.execute('ALTER TABLE Settings ADD COLUMN viewMode TEXT NOT NULL DEFAULT \'focus\'');
   }
 }
 

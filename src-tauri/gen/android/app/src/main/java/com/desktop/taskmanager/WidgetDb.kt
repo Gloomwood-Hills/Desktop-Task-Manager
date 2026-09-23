@@ -7,7 +7,7 @@ import java.io.File
 
 /**
  * 小部件跨进程访问 App 数据库的统一入口。
- * 数据库实际位于 <dataDir>/desktop-task-manager/data.db（见 TaskWidgetFactory 注释）。
+ * 数据库实际位于 <dataDir>/desktop-task-manager/data.db。
  * 只读/可写均需设置 busy_timeout，避免 App 写入瞬间触发 SQLITE_BUSY 导致列表空白。
  */
 object WidgetDb {

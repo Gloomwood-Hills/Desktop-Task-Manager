@@ -53,7 +53,7 @@ function toDetail(t: TaskWithSubtasks | Task): TaskWithSubtasks {
 /** 当日事件药丸视觉层 */
 type PillTone = 'soft' | 'solid';
 
-/** 药丸配色：重要任务实心蓝（白字），普通任务浅蓝底深蓝字（iOS 日历蓝色系） */
+/** 药丸配色层；当前任务统一使用 soft，重要状态仅由详情勾选框表达。 */
 function pillStyleFor(tone: PillTone): CSSProperties {
   if (tone === 'solid') {
     return {
@@ -81,8 +81,7 @@ interface PillProps {
   onContextMenu?: (e: ReactMouseEvent) => void;
 }
 
-/** 当日事件药丸：勾号 + 标题（截断），优先级 important 用实心蓝底白字、其他用浅蓝底深蓝字；
- * 已完成实例显示对勾 + 删除线 + 半透明（重复任务历史出现日） */
+/** 当日事件药丸：只表达日期归属；重要状态留给详情行中的橙色勾选框。 */
 function Pill({ maxChars, title, tone, completed, onClick, onContextMenu }: PillProps) {
   const truncated = truncateTitle(title, maxChars);
   const baseStyle: CSSProperties = {
@@ -232,7 +231,7 @@ function DayCell({ ts, inMonth, isToday, dayTasks, isSelected, onClickCell, onTa
             key={t.id}
             title={t.title}
             maxChars={8}
-            tone={t.priority === 'important' ? 'solid' : 'soft'}
+            tone="soft"
             completed={t.completed}
             onContextMenu={onTaskContextMenu ? (e) => onTaskContextMenu(e, t.id) : undefined}
           />
@@ -477,13 +476,10 @@ export default function CalendarView({ tasks, completedTasks, onAddTask, onToggl
     };
     walkDone((completedTasks ?? []) as TaskWithSubtasks[]);
 
-    // 排序：未完成在前 / priority 重要优先 / 截止早者在前 / 标题字典序
+    // 排序：未完成在前 / 截止早者在前 / 标题字典序；重要状态不改变时间顺序。
     for (const list of map.values()) {
       list.sort((a, b) => {
         if (a.completed !== b.completed) return a.completed ? 1 : -1;
-        const ai = a.priority === 'important' ? 0 : 1;
-        const bi = b.priority === 'important' ? 0 : 1;
-        if (ai !== bi) return ai - bi;
         const ad = a.deadline ?? Number.POSITIVE_INFINITY;
         const bd = b.deadline ?? Number.POSITIVE_INFINITY;
         if (ad !== bd) return ad - bd;

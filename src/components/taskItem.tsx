@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Check, ChevronDown, ChevronRight, Clock, Calendar, AlignLeft, History, Info } from 'lucide-react';
 import { Task, TaskWithSubtasks } from '../data/types';
 import { formatDeadline, formatDeadlineRel, formatDeadlineYMD, formatStartDate } from './utils/formatDate';
-import { panelSpring } from './utils/motion';
+import { drawerReveal, panelSpring } from './utils/motion';
 import { closestDeadlineSubtask } from './utils/subtaskPreview';
+import { getEffectiveDeadline } from '../data/utils';
 
 interface TaskItemProps {
   task: TaskWithSubtasks;
@@ -19,6 +20,7 @@ interface TaskItemProps {
   /** 深色模式：渐变远端颜色为白色；浅色模式为黑色 */
   dark?: boolean;
 }
+
 
 /** 高亮搜索关键词 */
 export function Highlight({ text, query }: { text: string; query: string }) {
@@ -39,7 +41,13 @@ export function Highlight({ text, query }: { text: string; query: string }) {
 /** 截止时间颜色，按剩余天数分档（与设计稿品牌色阶一致）：
  * ≥7 天 = 主题正文色（浅色=黑 / 深色=白）；7~5 天 `#0064d6`；5~3 天 `#007aff`→`#2e8dff` 渐变；
  * 3~1 天 `#2e8dff`；剩余 24 小时以内（含逾期）`#ff453a`。关闭渐变时直接 `#ff453a`。 */
-function deadlineColor(deadline: number, gradient: boolean, dark: boolean): { bg: string; color: string } {
+export function deadlineColor(deadline: number, gradient: boolean, dark: boolean): { bg: string; color: string } {
+  if (deadline < Date.now()) {
+    return {
+      bg: 'color-mix(in srgb, rgb(228, 158, 0) 16%, transparent)',
+      color: 'rgb(228, 158, 0)',
+    };
+  }
   if (!gradient) {
     return {
       bg: 'color-mix(in srgb, #ff453a 16%, transparent)',
@@ -72,16 +80,17 @@ function deadlineColor(deadline: number, gradient: boolean, dark: boolean): { bg
 
 /** 是否已过期：有截止时间、未完成、且截止时间已过 */
 function isTaskExpired(task: { deadline: number | null; completed: boolean }): boolean {
-  return task.deadline !== null && !task.completed && task.deadline < Date.now();
+  const deadline = getEffectiveDeadline(task as TaskWithSubtasks);
+  return deadline !== null && !task.completed && deadline < Date.now();
 }
 
-/** 已过期标签（浅紫底白字）—— 与截止时间标签对齐：fontSize/padding/lineHeight 一致 */
+/** 已过期标签：琥珀色提醒，不改变整张任务卡片。 */
 function ExpiredBadge() {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', flexShrink: 0,
       padding: '2px 8px', borderRadius: 999,
-      background: '#c4b5fd', color: '#ffffff',
+      background: 'color-mix(in srgb, rgb(228, 158, 0) 14%, transparent)', color: 'rgb(228, 158, 0)',
       fontSize: 11, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
     }}>
       已过期
@@ -121,8 +130,9 @@ function DateBadge({
   dark?: boolean;
   compact?: boolean;
 }) {
+  const effectiveDeadline = getEffectiveDeadline(task as TaskWithSubtasks);
   const showStart = task.startDate !== null;
-  const showDeadline = task.deadline !== null;
+  const showDeadline = effectiveDeadline !== null;
 
   if (!showStart && !showDeadline) {
     return (
@@ -130,7 +140,7 @@ function DateBadge({
     );
   }
 
-  const deadlineStyle = task.deadline !== null ? deadlineColor(task.deadline, deadlineGradient, dark) : null;
+  const deadlineStyle = effectiveDeadline !== null ? deadlineColor(effectiveDeadline, deadlineGradient, dark) : null;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: compact ? 0 : 14, flexWrap: 'wrap' }}>
@@ -152,8 +162,8 @@ function DateBadge({
           background: deadlineStyle.bg, color: deadlineStyle.color,
         }}>
           <Clock style={{ width: 10, height: 10 }} />
-          {formatDeadlineRel(task.deadline!) && <span>{formatDeadlineRel(task.deadline!)}</span>}
-          <span>{formatDeadlineYMD(task.deadline!)}</span>
+          {formatDeadlineRel(effectiveDeadline!) && <span>{formatDeadlineRel(effectiveDeadline!)}</span>}
+          <span>{formatDeadlineYMD(effectiveDeadline!)}</span>
         </span>
       )}
       {/* 已过期 / 累计完成次数：与截止时间同一行（任务描述下方） */}
@@ -422,9 +432,6 @@ export default function TaskItem({
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* 标题行 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-            {task.priority === 'important' && !task.completed && (
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ff6b3d', flexShrink: 0 }} />
-            )}
             <span
               style={{
                 fontSize: 13.5,
@@ -500,11 +507,11 @@ export default function TaskItem({
               value={formatStartDate(task.startDate)}
             />
           )}
-          {task.deadline !== null && (
+          {getEffectiveDeadline(task) !== null && (
             <DetailRow
               icon={<Clock style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
               label="截止"
-              value={formatDeadline(task.deadline)}
+              value={formatDeadline(getEffectiveDeadline(task)!)}
             />
           )}
           <DetailRow
@@ -519,7 +526,7 @@ export default function TaskItem({
       {hasChildren && !expanded && previewSubtask && (
         <div data-no-task-drag style={{ marginLeft: 18, position: 'relative' }}>
           <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.4 }} />
-          <div style={{ marginLeft: 18, paddingTop: 1 }}>
+          <div style={{ paddingTop: 1 }}>
             <SubtaskRow
               task={previewSubtask}
               expandedSet={expandedSet}
@@ -536,8 +543,9 @@ export default function TaskItem({
       )}
 
       {/* 子任务（递归，支持无限层级） */}
+      <AnimatePresence initial={false}>
       {hasChildren && expanded && (
-        <div style={{ marginLeft: 18, position: 'relative' }}>
+        <motion.div key={`subtasks-${task.id}`} variants={drawerReveal} initial="initial" animate="animate" exit="exit" style={{ marginLeft: 18, position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', left: 6, top: 0, bottom: 16, width: 1, background: 'var(--border)', opacity: 0.4 }} />
           <SubtaskList
             tasks={task.subtasks}
@@ -549,8 +557,9 @@ export default function TaskItem({
             deadlineGradient={deadlineGradient}
             dark={dark}
           />
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

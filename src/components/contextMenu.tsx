@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import {
   Pencil, Trash2, FolderPlus, Edit3, FolderMinus,
-  Plus, RefreshCw, Settings, Power, CheckCircle2, Repeat, Copy,
+  Plus, RefreshCw, Settings, Power, CheckCircle2, Repeat, ChevronRight, Clock3,
 } from 'lucide-react';
 import { isMobile } from '../data/platform';
+import { DeferTarget } from './utils/taskTiming';
 
 export interface ContextMenuState {
   x: number;
@@ -21,7 +23,6 @@ interface ContextMenuProps {
   state: ContextMenuState | null;
   onClose: () => void;
   onEditTask: (taskId: string) => void;
-  onCopyTask: (taskId: string) => void;
   onToggleComplete: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onCreateFolder: (parentId: string | null) => void;
@@ -35,6 +36,10 @@ interface ContextMenuProps {
   onExit: () => void;
   /** 结束重复：清除该任务重复规则（仅重复任务显示） */
   onStopRepeat: (taskId: string) => void;
+  /** 仅移动当前任务实例的截止时间（桌面端右键子菜单） */
+  onDeferTask: (taskId: string, target: DeferTarget) => void;
+  /** 独立浮窗有预留空间时固定二级菜单方向，避免高 DPI 下误判。 */
+  deferSubmenuDirection?: 'auto' | 'left' | 'right';
 }
 
 interface MenuItem {
@@ -49,11 +54,16 @@ interface MenuItem {
 
 /** 右键菜单（对齐设计稿 context-menu，Task 12） */
 export default function ContextMenu({
-  state, onClose, onEditTask, onCopyTask, onToggleComplete,
+  state, onClose, onEditTask, onToggleComplete,
   onDeleteTask, onCreateFolder, onRenameFolder, onDeleteFolder, onNewTask, onNewTaskInFolder,
-  onRefresh, onOpenSettings, onExit, onStopRepeat,
+  onRefresh, onOpenSettings, onExit, onStopRepeat, onDeferTask,
+  deferSubmenuDirection = 'auto',
 }: ContextMenuProps) {
   if (!state) return null;
+
+  const menuLeft = Math.max(8, Math.min(state.x, window.innerWidth - 230));
+  const submenuOpensLeft = deferSubmenuDirection === 'left'
+    || (deferSubmenuDirection === 'auto' && menuLeft + 210 + 138 - 4 > window.innerWidth - 8);
 
   const itemBase: React.CSSProperties = {
     display: 'flex',
@@ -74,20 +84,20 @@ export default function ContextMenu({
   // 任务菜单项（右键任务）
   const taskItems: MenuItem[] = [
     {
+      key: 'defer',
+      icon: <Clock3 style={iconStyle} />,
+      label: '稍后处理',
+      hint: '',
+      visible: isTaskContext && !state.taskCompleted && !isMobile,
+      action: () => {},
+    },
+    {
       key: 'edit',
       icon: <Pencil style={iconStyle} />,
       label: '编辑',
       hint: 'Enter',
       visible: isTaskContext,
       action: () => state.taskId && onEditTask(state.taskId),
-    },
-    {
-      key: 'copy-task',
-      icon: <Copy style={iconStyle} />,
-      label: '复制任务与备注',
-      hint: '',
-      visible: isTaskContext,
-      action: () => state.taskId && onCopyTask(state.taskId),
     },
     {
       key: 'complete',
@@ -186,7 +196,9 @@ export default function ContextMenu({
     .map((g) => g.filter((i) => i.visible))
     .filter((g) => g.length > 0);
 
-  const renderItem = (item: MenuItem) => (
+  const renderItem = (item: MenuItem) => item.key === 'defer' && state.taskId ? (
+    <DeferMenuItem key={item.key} taskId={state.taskId} onDeferTask={onDeferTask} onClose={onClose} itemBase={itemBase} iconStyle={iconStyle} labelStyle={labelStyle} openToLeft={submenuOpensLeft} />
+  ) : (
     <div
       key={item.key}
       className="ctx-menu-item"
@@ -225,8 +237,8 @@ export default function ContextMenu({
       <div
         style={{
           position: 'fixed',
-          top: Math.min(state.y, window.innerHeight - 280),
-          left: Math.min(state.x, window.innerWidth - 230),
+          top: Math.max(8, Math.min(state.y, window.innerHeight - 280)),
+          left: menuLeft,
           zIndex: 100,
           minWidth: 210,
           padding: '4px 0',
@@ -275,5 +287,43 @@ export default function ContextMenu({
         )}
       </div>
     </>
+  );
+}
+
+/** 桌面右键菜单的悬浮二级菜单，鼠标可无缝移动到右侧选项。 */
+function DeferMenuItem({ taskId, onDeferTask, onClose, itemBase, iconStyle, labelStyle, openToLeft }: {
+  taskId: string;
+  onDeferTask: (taskId: string, target: DeferTarget) => void;
+  onClose: () => void;
+  itemBase: React.CSSProperties;
+  iconStyle: React.CSSProperties;
+  labelStyle: React.CSSProperties;
+  openToLeft: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const options: { target: DeferTarget; label: string }[] = [
+    { target: 'tonight', label: '今晚' },
+    { target: 'tomorrow', label: '明天' },
+    { target: 'nextWorkday', label: '下个工作日' },
+    { target: 'nextMonday', label: '下周一' },
+  ];
+  return (
+    <div
+      className="ctx-menu-item"
+      style={{ ...itemBase, position: 'relative' }}
+      onMouseEnter={(event) => { setOpen(true); event.currentTarget.style.background = 'var(--primary)'; }}
+      onMouseLeave={(event) => { setOpen(false); event.currentTarget.style.background = 'transparent'; }}
+    >
+      <Clock3 style={iconStyle} />
+      <span style={labelStyle}>稍后处理</span>
+      <ChevronRight style={{ ...iconStyle, width: 14, height: 14, transform: openToLeft ? 'rotate(180deg)' : undefined }} />
+      {open && (
+        <div role="menu" aria-label="稍后处理选项" style={{ position: 'absolute', ...(openToLeft ? { right: 'calc(100% - 4px)' } : { left: 'calc(100% - 4px)' }), top: -5, zIndex: 101, width: 138, padding: 4, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--popover)', boxShadow: '0 10px 28px rgba(0,0,0,0.18)' }}>
+          {options.map((option) => (
+            <button key={option.target} type="button" role="menuitem" onClick={() => { onDeferTask(taskId, option.target); onClose(); }} style={{ display: 'block', width: '100%', border: 0, borderRadius: 7, padding: '7px 9px', background: 'transparent', color: 'var(--popover-foreground)', textAlign: 'left', font: '500 13px var(--font-sans)', cursor: 'pointer' }} onMouseEnter={(event) => { event.currentTarget.style.background = 'var(--accent)'; }} onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}>{option.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

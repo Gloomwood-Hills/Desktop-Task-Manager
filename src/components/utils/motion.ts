@@ -35,6 +35,21 @@ export const fadeThrough: Variants = {
   exit: { opacity: 0, scale: 0.995, transition: { duration: DUR.short, ease: EASE.emphasizedAccelerate } },
 };
 
+/** 视图切换：仅使用 X 轴水平位移，不缩放、不纵向移动、不使用景深或旋转。 */
+export const viewSlide: Variants = {
+  initial: (direction: number = 1) => ({ opacity: 0, x: direction * 56 }),
+  animate: {
+    opacity: 1,
+    x: 0,
+    transition: { opacity: { duration: 0.2 }, duration: 0.38, ease: EASE.emphasizedDecelerate },
+  },
+  exit: (direction: number = 1) => ({
+    opacity: 0,
+    x: direction * -56,
+    transition: { duration: 0.2, ease: EASE.emphasizedAccelerate },
+  }),
+};
+
 /** Container transform：对话框/面板（弹簧缩放 + 淡入 + 上移） */
 export const containerTransform: Variants = {
   initial: { opacity: 0, y: -6, scale: 0.985 },
@@ -47,6 +62,21 @@ export const sharedAxis: Variants = {
   initial: { opacity: 0, x: -10 },
   animate: { opacity: 1, x: 0, transition: { duration: DUR.medium, ease: EASE.standardDecelerate } },
   exit: { opacity: 0, x: -10, transition: { duration: DUR.short, ease: EASE.standardAccelerate } },
+};
+
+/** 抽屉式展开：内容沿高度向下展开，收起时沿高度折回。 */
+export const drawerReveal: Variants = {
+  initial: { height: 0, opacity: 0 },
+  animate: {
+    height: 'auto',
+    opacity: 1,
+    transition: { height: { duration: 0.24, ease: EASE.standard }, opacity: { duration: 0.16 } },
+  },
+  exit: {
+    height: 0,
+    opacity: 0,
+    transition: { height: { duration: 0.2, ease: EASE.standardAccelerate }, opacity: { duration: 0.12 } },
+  },
 };
 
 /**

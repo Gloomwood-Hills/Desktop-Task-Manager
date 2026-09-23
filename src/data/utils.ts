@@ -1,5 +1,19 @@
 import { Task, TaskWithSubtasks, Folder, FolderNode, SortType } from './types';
 
+/**
+ * 用于显示的截止时间：父任务没有自己的截止时间时，继承所有后代任务中最晚的截止时间。
+ * 这是纯派生值，不会写回数据库，因此不会覆盖用户对父任务“无截止时间”的实际设置。
+ */
+type DeadlineTree = { deadline: number | null; subtasks?: DeadlineTree[] };
+
+export function getEffectiveDeadline(task: DeadlineTree): number | null {
+  if (task.deadline !== null) return task.deadline;
+  const childDeadlines = (task.subtasks ?? [])
+    .map((child) => getEffectiveDeadline(child))
+    .filter((value): value is number => value !== null);
+  return childDeadlines.length > 0 ? Math.max(...childDeadlines) : null;
+}
+
 export function mapBooleanFields<T extends object>(
   row: T,
   booleanFields: (keyof T)[]

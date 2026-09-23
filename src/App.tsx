@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { fadeThrough, toastUp, sharedAxis, DUR } from './components/utils/motion';
+import { viewSlide, toastUp, sharedAxis, DUR } from './components/utils/motion';
 import { glassSurface } from './components/utils/glass';
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
+import { createChannel, Importance, isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import { enable as autostartEnable, disable as autostartDisable } from '@tauri-apps/plugin-autostart';
 import TopBar from './components/topBar';
 import FolderTree from './components/folderTree';
@@ -14,17 +14,20 @@ import CompletedSection from './components/completedSection';
 import CalendarView from './components/calendarView';
 import DayView from './components/dayView';
 import ContextMenu, { ContextMenuState } from './components/contextMenu';
-import { copyText, formatTaskClipboardText } from './components/utils/clipboard';
 import QuickCapture from './components/quickCapture';
 import EditTaskDialog from './components/editTaskDialog';
 import SettingsPanel, { ThemeMode } from './components/settingsPanel';
 import MobileBottomNav from './components/mobile/mobileBottomNav';
 import MobileTaskList from './components/mobile/mobileTaskList';
 import MobileTaskSheet from './components/mobile/mobileTaskSheet';
+import type { DesktopTaskMenuActionPayload } from './components/desktopContextMenuPopup';
+import FocusSection from './components/focusSection';
 import { PromptDialog, ConfirmDialog } from './components/dialogPrompt';
 import { useTaskData } from './hooks/useTaskData';
 import { parseCommand, fuzzyScore } from './components/utils/commandParser';
 import { applyDefaultDeadlineTime, formatDeadline } from './components/utils/formatDate';
+import { DeferTarget, deferTargetLabel, deferredDeadline, shiftReminderTimes, timingConfirmation } from './components/utils/taskTiming';
+import { selectTodayFocus } from './components/utils/focusTasks';
 import { getDatabase } from './data';
 import { TaskService, FOLDER_NAME_MAX } from './services';
 import { generateSubtasks, aiRunCommand, toTimestamp, DEFAULT_AI_BASE_URL } from './services/aiClient';
@@ -32,7 +35,7 @@ import { buildReminderNotification, REMINDER_POLL_INTERVAL_MS } from './services
 import type { AiToolCall, GeneratedSubtask } from './services/aiClient';
 import { FolderNode, Priority, Task, TaskWithSubtasks, ViewMode, WindowState, SyncPolicy, TaskRepeatRule } from './data/types';
 import { isMobile } from './data/platform';
-import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync, logSync } from './data/sync';
+import { syncAuto, configureAutoSync, startAutoSync, stopAutoSync, logSync, setSyncUiState, subscribeSyncUiState, type SyncUiState } from './data/sync';
 
 /** 对话框状态机 */
 type DialogState =
@@ -48,7 +51,35 @@ type LastAction =
   | { kind: 'deleted'; taskId: string; seriesId?: string }
   /** 结束重复：记录被清除的重复规则，使「撤销」能重新武装该系列 */
   | { kind: 'stoppedRepeat'; taskId: string; repeatRule: TaskRepeatRule; repeatIntervalDays: number | null }
+  | { kind: 'deferred'; task: Task; previousDeadline: number | null; previousReminderTimes: number[] }
   | null;
+
+type AttentionVisibility = { overdue: boolean; important: boolean };
+
+const MOBILE_NOTIFICATION_CHANNEL_ID = 'task-reminders';
+let mobileNotificationChannelReady: Promise<void> | null = null;
+
+/** Android 8+ 通知必须归属到已创建的通道；复用同一 Promise 避免轮询重复创建。 */
+function ensureMobileNotificationChannel(): Promise<void> {
+  if (!isMobile) return Promise.resolve();
+  if (!mobileNotificationChannelReady) {
+    mobileNotificationChannelReady = (async () => {
+      // createChannel 对同一 id 是幂等的；不再调用 channels/listChannels，
+      // 避免部分 Android 构建的 ACL 未放行 listChannels 导致测试通知失败。
+      await createChannel({
+        id: MOBILE_NOTIFICATION_CHANNEL_ID,
+        name: '任务提醒',
+        description: '任务截止与自定义提醒',
+        importance: Importance.High,
+        vibration: true,
+      });
+    })().catch((error) => {
+      mobileNotificationChannelReady = null;
+      throw error;
+    });
+  }
+  return mobileNotificationChannelReady;
+}
 
 function App() {
   const {
@@ -58,10 +89,13 @@ function App() {
   } = useTaskData();
 
   const [searchQuery, setSearchQuery] = useState('');
+  /** 列表顶部的关注项显示状态；默认查看全部，不改变用户原有排序。 */
+  const [attentionVisibility, setAttentionVisibility] = useState<AttentionVisibility>({ overdue: true, important: true });
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(() => new Set());
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const taskMenuActionRef = useRef<(payload: DesktopTaskMenuActionPayload) => void>(() => {});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   /** 新建弹窗预选文件夹（右键文件夹 → 新建任务时记录；弹窗关闭/创建后清空） */
@@ -89,6 +123,7 @@ function App() {
   const reminderWarningAt = useRef(0);
   /** 顶栏同步按钮状态：进行中禁用点击并旋转图标 */
   const [syncBusy, setSyncBusy] = useState(false);
+  const [syncUiState, setSyncUiStateLocal] = useState<SyncUiState>({ kind: 'idle' });
   /** 已删除任务查看弹窗 */
   const [deletedOpen, setDeletedOpen] = useState(false);
   const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
@@ -103,9 +138,10 @@ function App() {
   /** 自然语言命令：编辑任务前的确认（仅编辑操作弹确认框） */
   const [commandEdit, setCommandEdit] = useState<{ task: Task; newDeadline: number | null } | null>(null);
 
-  // ===== 视图切换（V2：列表 / 日历 / 日） =====
-  /** 当前视图模式：从持久化 Settings 初始化，切换后回写 */
-  const [viewMode, setViewMode] = useState<ViewMode>(settings?.viewMode ?? 'list');
+  // ===== 视图切换（焦点 / 列表 / 日历 / 日） =====
+  /** 每次启动都从焦点视图开始；日常切换仍会保存所选视图。 */
+  const [viewMode, setViewMode] = useState<ViewMode>('focus');
+  const [viewDirection, setViewDirection] = useState(1);
   /** 日视图当前查看日（当天 00:00 时间戳） */
   const [calendarDate, setCalendarDate] = useState<number>(() => {
     const d = new Date();
@@ -114,17 +150,51 @@ function App() {
   });
 
   /** 切换视图并持久化到 Settings.viewMode */
-  const changeViewMode = (m: ViewMode) => {
+  const changeViewMode = useCallback((m: ViewMode) => {
+    const order: ViewMode[] = ['focus', 'list', 'calendar', 'day'];
+    const currentIndex = order.indexOf(viewModeLatest.current);
+    const nextIndex = order.indexOf(m);
+    if (m !== viewModeLatest.current) setViewDirection(nextIndex > currentIndex ? -1 : 1);
     setViewMode(m);
     void updateSettings({ viewMode: m });
-  };
+  }, [updateSettings]);
 
-  // settings 异步加载完成或外部变更时，同步本地视图状态（ref 读取最新值避免闭包陈旧）
+  // 同步视图状态的 ref 同时用于识别左右切换方向。
   const viewModeLatest = useRef(viewMode);
   viewModeLatest.current = viewMode;
+  const startupFocusInitialized = useRef(false);
+
+  // 设置异步加载后，启动时强制回到焦点视图并持久化；后续设置变更才同步到当前界面。
   useEffect(() => {
-    if (settings && settings.viewMode !== viewModeLatest.current) setViewMode(settings.viewMode);
-  }, [settings]);
+    if (!settings) return;
+    if (settings.sortType !== 'deadline' || !settings.deadlineGradient) {
+      void updateSettings({ sortType: 'deadline', deadlineGradient: true });
+    }
+    if (!startupFocusInitialized.current) {
+      startupFocusInitialized.current = true;
+      viewModeLatest.current = 'focus';
+      setViewMode('focus');
+      if (settings.viewMode !== 'focus') void updateSettings({ viewMode: 'focus' });
+      return;
+    }
+    if (settings.viewMode !== viewModeLatest.current) setViewMode(settings.viewMode);
+  }, [settings, updateSettings]);
+
+  // 应用运行期间，每天 08:00 自动回到当天的焦点页面。
+  useEffect(() => {
+    const nextEightAm = () => {
+      const next = new Date();
+      next.setHours(8, 0, 0, 0);
+      if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1);
+      return next.getTime() - Date.now();
+    };
+    let daily: ReturnType<typeof setInterval> | undefined;
+    const first = setTimeout(() => {
+      changeViewMode('focus');
+      daily = setInterval(() => changeViewMode('focus'), 24 * 60 * 60 * 1000);
+    }, nextEightAm());
+    return () => { clearTimeout(first); if (daily) clearInterval(daily); };
+  }, [changeViewMode]);
 
   // 提醒定时器读取最新值（避免 effect 闭包陈旧）
   const settingsLatest = useRef(settings);
@@ -133,6 +203,9 @@ function App() {
   folderTreeLatest.current = folderTree;
   const unclassifiedLatest = useRef(unclassifiedTasks);
   unclassifiedLatest.current = unclassifiedTasks;
+
+  // 自动同步、手动同步和设置面板同步共用同一事实状态，顶栏不会把“刚点击”误当作“已同步”。
+  useEffect(() => subscribeSyncUiState(setSyncUiStateLocal), []);
 
   // 主题切换：挂载/切换 .dark class 到 document
   useEffect(() => {
@@ -244,6 +317,27 @@ function App() {
     }
   };
 
+  /** “稍后处理”只移动当前任务实例。相对提醒由服务层按新截止重算，绝对提醒按同一差值平移。 */
+  const handleDeferTask = async (id: string, target: DeferTarget) => {
+    const task = findTaskAnywhere(id);
+    if (!task) return;
+    const nextDeadline = deferredDeadline(
+      target,
+      settings?.defaultDeadlineHour ?? 18,
+      settings?.defaultDeadlineMinute ?? 0,
+    );
+    const reminderTimes = task.reminderTimes?.length
+      ? shiftReminderTimes(task.reminderTimes, task.deadline, nextDeadline)
+      : undefined;
+    const updated = await updateTask(id, { deadline: nextDeadline, ...(reminderTimes ? { reminderTimes } : {}) });
+    if (!updated) {
+      setToast('稍后处理失败，请重试');
+      return;
+    }
+    setLastAction({ kind: 'deferred', task, previousDeadline: task.deadline, previousReminderTimes: task.reminderTimes ?? [] });
+    setToast(`已将「${task.title}」延后到${deferTargetLabel(target)}`);
+  };
+
   const handleRestore = async (id: string) => {
     const task = completedTasks.find((t) => t.id === id);
     await restoreTask(id);
@@ -270,25 +364,70 @@ function App() {
     e.preventDefault();
     e.stopPropagation();
     const t = findTaskAnywhere(taskId);
-    setContextMenu({
+    const fallbackState: ContextMenuState = {
       x: e.clientX,
       y: e.clientY,
       taskId,
       canStopRepeat: !!t?.repeatRule,
       taskCompleted: !!t?.completed,
-    });
-  };
-
-  /** 从任意主视图直接复制任务标题与备注，无需进入编辑页。 */
-  const handleCopyTask = async (taskId: string) => {
-    const task = findTaskAnywhere(taskId);
-    if (!task) {
-      setToast('未找到任务，复制失败');
+    };
+    if (isMobile) {
+      setContextMenu(fallbackState);
       return;
     }
-    const copied = await copyText(formatTaskClipboardText(task));
-    setToast(copied ? `已复制“${task.title}”及备注` : '无法访问剪贴板，请检查系统权限');
+    setContextMenu(null);
+    void invoke('open_context_menu_popup', {
+      x: e.clientX,
+      y: e.clientY,
+      taskId,
+      canStopRepeat: !!t?.repeatRule,
+      taskCompleted: !!t?.completed,
+      dark: theme === 'dark',
+    }).catch(() => setContextMenu(fallbackState));
   };
+
+  const handleStopRepeat = async (taskId: string) => {
+    const task = findTaskAnywhere(taskId);
+    const previousRule = task?.repeatRule ?? null;
+    const previousInterval = task?.repeatIntervalDays ?? null;
+    await stopRepeat(taskId);
+    if (previousRule) {
+      setLastAction({ kind: 'stoppedRepeat', taskId, repeatRule: previousRule, repeatIntervalDays: previousInterval });
+      setToast(`已结束重复 "${task?.title ?? ''}"`);
+    } else {
+      setLastAction(null);
+      setToast('已结束重复');
+    }
+  };
+
+  taskMenuActionRef.current = (payload) => {
+    switch (payload.action) {
+      case 'edit': {
+        const task = findTaskWithSubtasksAnywhere(payload.taskId);
+        if (task) setEditingTask(task);
+        break;
+      }
+      case 'toggle-complete':
+        void handleToggleCompleted(payload.taskId);
+        break;
+      case 'delete':
+        void handleDeleteTask(payload.taskId);
+        break;
+      case 'stop-repeat':
+        void handleStopRepeat(payload.taskId);
+        break;
+      case 'defer':
+        if (payload.target) void handleDeferTask(payload.taskId, payload.target);
+        break;
+    }
+  };
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<DesktopTaskMenuActionPayload>('desktop-task-context-action', ({ payload }) => taskMenuActionRef.current(payload))
+      .then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
 
   /** 取消删除（恢复已删除任务），并在"已删除"列表实时移除 */
   const handleRestoreDeleted = async (id: string) => {
@@ -316,6 +455,11 @@ function App() {
       // 撤销删除：重复系列整体恢复（保留完成态），普通任务恢复原任务
       if (lastAction.seriesId) await restoreSeries(lastAction.seriesId);
       else await restoreTask(lastAction.taskId);
+    } else if (lastAction.kind === 'deferred') {
+      await updateTask(lastAction.task.id, {
+        deadline: lastAction.previousDeadline,
+        ...(lastAction.previousReminderTimes.length ? { reminderTimes: lastAction.previousReminderTimes } : {}),
+      });
     }
     setToast(null);
   };
@@ -672,17 +816,25 @@ function App() {
     try {
       // Windows 便携版也需要先注册稳定的通知发送者身份，否则系统会将 toast 归到
       // PowerShell 或不显示在“通知发送者”列表中。Android/iOS 上该命令是安全空操作。
-      await invoke('ensure_notification_identity');
+      if (!isMobile) await invoke('ensure_notification_identity');
       let granted = await isPermissionGranted();
       if (!granted) {
         const permission = await requestPermission();
         granted = permission === 'granted';
       }
       if (!granted) {
-        return { ok: false, message: '系统通知权限未授予，请在系统设置中允许通知后重试' };
+        return { ok: false, message: isMobile ? '通知权限未授予，请前往“系统设置 > 应用 > Desktop Task Manager > 通知”开启后重试' : '系统通知权限未授予，请在系统设置中允许通知后重试' };
       }
-      sendNotification({ title: '任务提醒已开启', body: '这是一条测试通知；到点任务会以相同方式提醒。' });
-      return { ok: true, message: '测试通知已请求；Windows 收到首次通知后会在“通知发送者”中显示 Desktop Task Manager' };
+      await ensureMobileNotificationChannel();
+      sendNotification({
+        title: '任务提醒已开启',
+        body: '这是一条测试通知；到点任务会以相同方式提醒。',
+        ...(isMobile ? { channelId: MOBILE_NOTIFICATION_CHANNEL_ID } : {}),
+      });
+      return {
+        ok: true,
+        message: isMobile ? '测试通知已发送；若未看到，请检查系统是否允许横幅或锁屏通知' : '测试通知已请求；Windows 收到首次通知后会在“通知发送者”中显示 Desktop Task Manager',
+      };
     } catch (error) {
       return { ok: false, message: `无法发送系统通知：${error instanceof Error ? error.message : String(error)}` };
     }
@@ -718,10 +870,14 @@ function App() {
           warn('提醒待授权：请在“设置 > 提醒”中授权并测试通知');
           return;
         }
+        await ensureMobileNotificationChannel();
         for (const item of due) {
           if (cancelled) return;
           try {
-            sendNotification(buildReminderNotification(item.task));
+            sendNotification({
+              ...buildReminderNotification(item.task),
+              ...(isMobile ? { channelId: MOBILE_NOTIFICATION_CHANNEL_ID } : {}),
+            });
             // 仅当调用系统通知成功后才记为已触发；失败时保留任务，下一轮可重试。
             await svc.markReminderFired(item.task.id, item.offsetKey, item.reminderTime);
             if (settingsLatest.current?.autoPin && !isMobile) {
@@ -831,6 +987,15 @@ function App() {
     // 以上操作会分别刷新；最后再拉取一次完整快照，确保分类树、未分类列表
     // 与整棵子任务树来自同一数据库状态。
     await refresh();
+    // 编辑一个普通任务并首次加入子任务后，立即将其视为父任务并展开，
+    // 避免用户看到旧的普通任务行而误以为子任务没有保存。
+    if (nextSubtasks.some((sub) => sub.title.trim())) {
+      setExpandedTasks((prev) => {
+        const next = new Set(prev);
+        next.add(task.id);
+        return next;
+      });
+    }
     setEditingTask(null);
     setToast(`已更新任务及 ${nextSubtasks.filter((s) => s.title.trim()).length} 个子任务`);
   };
@@ -1042,7 +1207,9 @@ function App() {
         reminderOffsets: hasDeadline ? cmd.reminderOffsets : [],
         reminderAt: cmd.reminderAt,
       });
-      setToast(task ? `已创建任务「${cmd.title}」` : '创建任务失败');
+      setToast(task
+        ? `已创建任务「${cmd.title}」· ${timingConfirmation(deadline, hasDeadline ? cmd.reminderOffsets : [])}`
+        : '创建任务失败');
       return;
     }
 
@@ -1110,9 +1277,11 @@ function App() {
     if (!syncConfigReady()) {
       logSync('warn', label, '未配置坚果云账号/应用密码（设置 → 同步）');
       setToast('请先在 设置 → 同步 中配置 WebDAV 账号');
+      setSyncUiState({ kind: 'idle' });
       return;
     }
     setSyncBusy(true);
+    setSyncUiState({ kind: 'syncing' });
     const policyLabel = policy === 'uploadOnly' ? '仅上传云端' : policy === 'downloadOnly' ? '仅覆盖本地' : '双向合并';
     logSync('info', label, `开始（策略：${policyLabel}）`);
     try {
@@ -1130,9 +1299,13 @@ function App() {
           lastSyncAction: result.status === 'merged' ? 'merged' : result.status === 'uploaded' ? 'upload' : 'download',
         });
       }
+      setSyncUiState(result.status === 'error'
+        ? { kind: 'error', message: result.message }
+        : { kind: 'synced', at: Date.now() });
     } catch (error) {
       logSync('error', label, `异常：${error instanceof Error ? error.message : String(error)}`);
       setToast(`同步失败：${error instanceof Error ? error.message : String(error)}`);
+      setSyncUiState({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
     } finally {
       setSyncBusy(false);
     }
@@ -1140,9 +1313,6 @@ function App() {
 
   /** 一键更新：按用户设置的默认同步策略执行（当前默认双向合并） */
   const handleOneClickSync = () => runSyncWithPolicy(settings?.syncPolicy ?? 'twoWay', '一键更新');
-  /** 强制策略同步（顶栏 上传云端 / 覆盖本地 键） */
-  const handleForceSync = (policy: SyncPolicy) =>
-    runSyncWithPolicy(policy, policy === 'uploadOnly' ? '上传云端' : '覆盖本地');
 
   /** 打开已删除任务查看（30 天内保留） */
   const handleOpenDeleted = async () => {
@@ -1181,6 +1351,9 @@ function App() {
     return out;
   }, [folderTree, unclassifiedTasks]);
 
+  // 焦点区只引用活动任务的同一份对象；最多五项，优先级由 selectTodayFocus 统一决定。
+  const todayFocusTasks = useMemo(() => selectTodayFocus(allActiveTasks), [allActiveTasks]);
+
   // ===== 文件夹侧栏过滤（跨列表/月/日视图） =====
 
   /** 选中文件夹自身及其所有子孙文件夹 id 集合；null=全部/未分类 */
@@ -1210,6 +1383,15 @@ function App() {
     return allActiveTasks.filter((t) => t.folderId != null && activeFolderSet.has(t.folderId));
   }, [allActiveTasks, activeFolderId, activeFolderSet]);
 
+  /** 当前文件夹范围内的关注摘要，子任务也计入。 */
+  const attentionCounts = useMemo(() => {
+    const now = Date.now();
+    return {
+      overdue: filteredActiveTasks.filter((task) => task.deadline !== null && task.deadline < now).length,
+      important: filteredActiveTasks.filter((task) => task.priority === 'important').length,
+    };
+  }, [filteredActiveTasks]);
+
   /** 当前选中文件夹的显示名（用于"仅看"条与 toast） */
   const activeFolderName = useMemo(
     () => activeFolderId && activeFolderId !== 'unclassified'
@@ -1220,11 +1402,25 @@ function App() {
 
   // ===== 搜索过滤（标题/备注/子任务，递归） =====
 
-  /** 任务是否匹配关键词（含任意层级子任务，递归） */
-  const taskMatches = (t: TaskWithSubtasks, q: string): boolean =>
-    t.title.toLowerCase().includes(q)
-    || t.remark.toLowerCase().includes(q)
-    || t.subtasks.some((s) => taskMatches(s, q));
+  /** 搜索与关注筛选共用同一棵任务树；命中的子任务会保留父级路径。 */
+  const filterTaskListForView = (tasks: TaskWithSubtasks[]): TaskWithSubtasks[] => {
+    const q = searchQuery.trim().toLowerCase();
+    const now = Date.now();
+    const walk = (list: TaskWithSubtasks[]): TaskWithSubtasks[] => list.flatMap((task) => {
+      const subtasks = walk(task.subtasks);
+      const matchesSearch = !q
+        || task.title.toLowerCase().includes(q)
+        || task.remark.toLowerCase().includes(q);
+      const isOverdue = task.deadline !== null && task.deadline < now;
+      const isImportant = task.priority === 'important';
+      const matchesAttention = (!isOverdue && !isImportant)
+        || (isOverdue && attentionVisibility.overdue)
+        || (isImportant && attentionVisibility.important);
+      if ((!matchesSearch || !matchesAttention) && subtasks.length === 0) return [];
+      return [{ ...task, subtasks }];
+    });
+    return walk(tasks);
+  };
 
   const filteredCompleted = useMemo(() => {
     if (!searchQuery.trim()) return completedTasks;
@@ -1234,24 +1430,23 @@ function App() {
 
   // 未分类任务过滤
   const unclassifiedToRender = useMemo(() => {
-    if (!searchQuery.trim()) return unclassifiedTasks;
-    const q = searchQuery.toLowerCase();
-    return unclassifiedTasks.filter((t) => taskMatches(t, q));
-  }, [unclassifiedTasks, searchQuery]);
+    if (!searchQuery.trim() && attentionVisibility.overdue && attentionVisibility.important) return unclassifiedTasks;
+    return filterTaskListForView(unclassifiedTasks);
+  }, [unclassifiedTasks, searchQuery, attentionVisibility]);
 
   // ===== 递归过滤文件夹树（搜索时保留含匹配任务的路径；文件夹名匹配时保留该文件夹） =====
   const treeToRender = useMemo(() => {
-    if (!searchQuery.trim()) return folderTree;
+    if (!searchQuery.trim() && attentionVisibility.overdue && attentionVisibility.important) return folderTree;
     const q = searchQuery.toLowerCase();
     const filterNode = (node: FolderNode): FolderNode | null => {
-      const nameMatch = node.name.toLowerCase().includes(q);
-      const tasks = node.tasks.filter((t) => taskMatches(t, q));
+      const nameMatch = !!q && node.name.toLowerCase().includes(q);
+      const tasks = filterTaskListForView(node.tasks);
       const children = node.children.map(filterNode).filter((c): c is FolderNode => c !== null);
       if (!nameMatch && tasks.length === 0 && children.length === 0) return null;
       return { ...node, tasks, children };
     };
     return folderTree.map(filterNode).filter((n): n is FolderNode => n !== null);
-  }, [folderTree, searchQuery]);
+  }, [folderTree, searchQuery, attentionVisibility]);
 
   // 列表视图的文件夹隔离：全量 / 仅未分类 / 单文件夹子树
   const listRender = useMemo<{ tree: FolderNode[]; roots: TaskWithSubtasks[] }>(() => {
@@ -1385,12 +1580,12 @@ function App() {
           pinned={pinned}
           onTogglePin={() => setPinned(!pinned)}
           onSync={handleOneClickSync}
-          onUploadCloud={() => handleForceSync('uploadOnly')}
-          onDownloadCloud={() => handleForceSync('downloadOnly')}
           onOpenDeleted={handleOpenDeleted}
           allExpanded={allExpanded}
           onToggleExpandAll={handleToggleExpandAll}
           syncBusy={syncBusy}
+          syncUiState={syncUiState}
+          syncConfigured={syncConfigReady()}
           sidebarOpen={folderSidebarPinned}
           onToggleSidebar={() => setFolderSidebarPinned((v) => !v)}
         />
@@ -1409,7 +1604,7 @@ function App() {
             )}
 
             {/* 月/日视图：显示当前文件夹过滤 + 一键回到全部 */}
-            {viewMode !== 'list' && activeFolderId !== null && activeFolderName && (
+            {viewMode !== 'list' && viewMode !== 'focus' && activeFolderId !== null && activeFolderName && (
               <div style={{ padding: '8px 20px 0', flexShrink: 0 }}>
                 <div
                   onClick={() => setActiveFolderId(null)}
@@ -1443,10 +1638,30 @@ function App() {
               padding: isMobile ? '8px 16px 88px' : '8px 20px 20px',
               }}
             >
-          {/* 视图切换：Fade-through 过渡（列表/日历/日） */}
-          <AnimatePresence mode="wait">
+          {/* 视图切换：仅沿 X 轴水平移动。 */}
+          <AnimatePresence mode="wait" custom={viewDirection}>
           {viewMode === 'list' && (
-            <motion.div key="view-list" variants={fadeThrough} initial="initial" animate="animate" exit="exit">
+            <motion.div key="view-list" variants={viewSlide} initial="initial" animate="animate" exit="exit" style={{ width: '100%', minWidth: 0, transformOrigin: 'center center', willChange: 'transform' }}>
+              {(attentionCounts.overdue > 0 || attentionCounts.important > 0 || !attentionVisibility.overdue || !attentionVisibility.important) && (
+                <div aria-label="关注任务筛选" style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 30, margin: '0 0 8px', padding: '0 2px' }}>
+                  <button
+                    type="button"
+                    className={`attention-filter-chip ${attentionVisibility.overdue ? 'is-visible' : 'is-hidden'}`}
+                    aria-pressed={attentionVisibility.overdue}
+                    onClick={() => setAttentionVisibility((current) => ({ ...current, overdue: !current.overdue }))}
+                  >
+                    逾期 {attentionCounts.overdue} · {attentionVisibility.overdue ? '查看' : '不看'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`attention-filter-chip ${attentionVisibility.important ? 'is-visible' : 'is-hidden'}`}
+                    aria-pressed={attentionVisibility.important}
+                    onClick={() => setAttentionVisibility((current) => ({ ...current, important: !current.important }))}
+                  >
+                    重要 {attentionCounts.important} · {attentionVisibility.important ? '查看' : '不看'}
+                  </button>
+                </div>
+              )}
               {isMobile ? (
                 <MobileTaskList
                   folders={listRender.tree}
@@ -1456,18 +1671,21 @@ function App() {
                   onToggleCompleted={(task) => void handleToggleCompleted(task.id)}
                   onOpenTask={setMobileTask}
                   onEditTask={(task) => { setMobileTask(null); setEditingTask(task); }}
+                  onDeferTask={(task, target) => { void handleDeferTask(task.id, target); }}
+                  onDeleteTask={(task) => { void handleDeleteTask(task.id); }}
                 />
               ) : (
+              <>
               <FolderTree
                 folders={listRender.tree}
                 rootTasks={listRender.roots}
                 expandedFolders={expandedFolders}
                 expandedTasks={expandedTasks}
                 searchQuery={searchQuery}
-                sortType={settings?.sortType ?? 'deadline'}
+                sortType="deadline"
                 importantTop={settings?.importantTop ?? false}
-                manualSort={settings?.sortType === 'manual'}
-                deadlineGradient={settings?.deadlineGradient ?? true}
+                manualSort={false}
+                deadlineGradient={true}
                 dark={theme === 'dark'}
                 onReorderTasks={reorderTasks}
                 onReorderFolders={reorderFolders}
@@ -1482,6 +1700,7 @@ function App() {
                   setContextMenu({ x: e.clientX, y: e.clientY, taskId: null, folderId });
                 }}
               />
+              </>
               )}
 
               <div className={isMobile ? 'mobile-completed-wrap' : undefined}>
@@ -1499,9 +1718,24 @@ function App() {
             </motion.div>
           )}
 
+          {/* 焦点视图：每日仅保留最需要处理的 3–5 项。 */}
+          {viewMode === 'focus' && (
+            <motion.div key="view-focus" variants={viewSlide} initial="initial" animate="animate" exit="exit" style={{ width: '100%', minWidth: 0, transformOrigin: 'center center', willChange: 'transform' }}>
+              <FocusSection
+                tasks={todayFocusTasks}
+                expandedTasks={expandedTasks}
+                onToggleExpanded={(id) => setExpandedTasks((s) => toggleSet(s, id))}
+                onToggleCompleted={handleToggleCompleted}
+                onContextMenu={openTaskMenu}
+                deadlineGradient={settings?.deadlineGradient ?? true}
+                dark={theme === 'dark'}
+              />
+            </motion.div>
+          )}
+
           {/* 日历视图（V3）：月历药丸标签 + 选中态详情面板 */}
           {viewMode === 'calendar' && (
-            <motion.div key="view-calendar" variants={fadeThrough} initial="initial" animate="animate" exit="exit">
+            <motion.div key="view-calendar" variants={viewSlide} initial="initial" animate="animate" exit="exit" style={{ width: '100%', minWidth: 0, transformOrigin: 'center center', willChange: 'transform' }}>
               <CalendarView
                 tasks={filteredActiveTasks}
                 completedTasks={completedTasks as TaskWithSubtasks[]}
@@ -1519,7 +1753,7 @@ function App() {
 
           {/* 日视图（V2） */}
           {viewMode === 'day' && (
-            <motion.div key="view-day" variants={fadeThrough} initial="initial" animate="animate" exit="exit">
+            <motion.div key="view-day" variants={viewSlide} initial="initial" animate="animate" exit="exit" style={{ width: '100%', minWidth: 0, transformOrigin: 'center center', willChange: 'transform' }}>
               <DayView
                 tasks={filteredActiveTasks}
                 completedTasks={completedTasks as TaskWithSubtasks[]}
@@ -1628,23 +1862,10 @@ function App() {
           const task = findTaskWithSubtasksAnywhere(taskId);
           if (task) setEditingTask(task);
         }}
-        onCopyTask={(taskId) => { void handleCopyTask(taskId); }}
+        onDeferTask={(taskId, target) => { void handleDeferTask(taskId, target); }}
         onToggleComplete={handleToggleCompleted}
         onDeleteTask={handleDeleteTask}
-        onStopRepeat={async (taskId) => {
-          // 结束重复：清除重复规则 + 标记已完成。记录原规则，令 Toast「撤销」可还原重复
-          const t = findTaskAnywhere(taskId);
-          const prevRule = t?.repeatRule ?? null;
-          const prevInterval = t?.repeatIntervalDays ?? null;
-          await stopRepeat(taskId);
-          if (prevRule) {
-            setLastAction({ kind: 'stoppedRepeat', taskId, repeatRule: prevRule, repeatIntervalDays: prevInterval });
-            setToast(`已结束重复 "${t?.title ?? ''}"`);
-          } else {
-            setLastAction(null);
-            setToast('已结束重复');
-          }
-        }}
+        onStopRepeat={(taskId) => { void handleStopRepeat(taskId); }}
         onCreateFolder={(parentId) => {
           setDialog({ type: 'create-folder', parentId });
         }}
@@ -1675,7 +1896,6 @@ function App() {
         onClose={() => setMobileTask(null)}
         onToggleCompleted={(id) => { void handleToggleCompleted(id); setMobileTask(null); }}
         onEdit={(task) => { setMobileTask(null); setEditingTask(task); }}
-        onCopy={(task) => { void handleCopyTask(task.id); }}
       />
 
       <AnimatePresence>
@@ -1693,6 +1913,8 @@ function App() {
             onCreate={(title, folderId, options) => editingTask
               ? handleEditTask(editingTask, title, folderId, options)
               : handleCreateTask(title, folderId, options)}
+            onTimeConfirmed={(message) => setToast(message)}
+            timeConfirmationNeeded={!!aiCreateDraft}
             initialDate={prefillDate ?? undefined}
             initialFolderId={editingTask ? editingTask.folderId : aiCreateDraft ? aiCreateDraft.folderId : captureFolder}
             initialTitle={editingTask?.title ?? aiCreateDraft?.title}
@@ -1828,9 +2050,12 @@ function App() {
               boxShadow: 'var(--shadow-lg)',
               zIndex: 200,
               whiteSpace: 'nowrap',
+              maxWidth: isMobile ? 'calc(100vw - 32px)' : 'min(560px, calc(100vw - 48px))',
+              boxSizing: 'border-box',
+              overflow: 'hidden',
             }}
           >
-            <span>{toast}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{toast}</span>
             {lastAction && (
               <button
                 onClick={handleUndo}

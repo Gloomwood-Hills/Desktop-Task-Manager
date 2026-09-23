@@ -21,3 +21,5 @@ export type { SyncResult, SyncProbe } from './engine';
 export { configureAutoSync, startAutoSync, stopAutoSync, notifyDataChanged } from './scheduler';
 export { logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from './syncLog';
 export type { SyncLogEntry, SyncLogLevel } from './syncLog';
+export { getSyncUiState, setSyncUiState, subscribeSyncUiState } from './status';
+export type { SyncUiState } from './status';

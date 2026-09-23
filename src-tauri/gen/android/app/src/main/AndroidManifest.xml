@@ -62,22 +62,5 @@
                 android:resource="@xml/task_widget_info" />
         </receiver>
 
-        <!-- 标准 Android 滚动版小部件：使用 ListView；鸿蒙不兼容时仍可选择上面的兼容版。 -->
-        <receiver
-            android:name=".TaskScrollableWidgetProvider"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/task_widget_scroll_info" />
-        </receiver>
-
-        <!-- 小部件任务列表数据源（RemoteViewsService 集合视图） -->
-        <service
-            android:name=".TaskWidgetService"
-            android:exported="false"
-            android:permission="android.permission.BIND_REMOTEVIEWS" />
     </application>
 </manifest>

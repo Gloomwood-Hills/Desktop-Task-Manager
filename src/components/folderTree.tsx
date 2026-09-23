@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, ChevronRight, Folder as FolderIcon, FolderOpen, GripVertical } from 'lucide-react';
 import { FolderNode, TaskWithSubtasks, SortType } from '../data/types';
 import { compareByName } from '../data/utils';
 import TaskItem, { Highlight } from './taskItem';
-import { listItem } from './utils/motion';
 import { glassSurface } from './utils/glass';
+import { drawerReveal } from './utils/motion';
 
 interface FolderTreeProps {
   folders: FolderNode[];
@@ -261,6 +261,9 @@ export default function FolderTree({
     containerIds: string[],
     label: string,
   ) => {
+    // 任务与文件夹不再支持拖拽；保留函数签名只为兼容旧渲染结构。
+    return;
+    /* istanbul ignore next */
     if (e.pointerType !== 'mouse') return;
     if (e.button !== 0) return;
     if (kind === 'folder' && !manualSort) return;
@@ -308,16 +311,8 @@ export default function FolderTree({
     const isDragging = drag?.kind === 'task' && drag.id === task.id;
     const isTarget = drop?.id === task.id && drag?.kind === 'task';
     return (
-      <motion.div
+      <div
         key={task.id}
-        // 只用 position 布局动画：完整 layout 会通过 scale 模拟「尺寸变化」，
-        // 展开子任务/详情时会把卡片内的文字一起拉伸，出现撕裂重影。
-        // position 只平滑移动，本身不缩放内容，改由自然回流承担高度变化。
-        layout="position"
-        initial="initial"
-        animate="animate"
-        exit="exit"
-        variants={listItem}
         data-drag-row
         data-drag-kind="task"
         data-drag-id={task.id}
@@ -347,7 +342,7 @@ export default function FolderTree({
           deadlineGradient={deadlineGradient}
           dark={dark}
         />
-      </motion.div>
+      </div>
     );
   };
 
@@ -440,8 +435,9 @@ export default function FolderTree({
         </div>
 
         {/* 子级容器 */}
+        <AnimatePresence initial={false}>
         {isExpanded && (
-          <div className="tree-children" style={{ marginLeft: 20, position: 'relative' }}>
+          <motion.div key={`children-${folder.id}`} className="tree-children" variants={drawerReveal} initial="initial" animate="animate" exit="exit" style={{ marginLeft: 20, position: 'relative', overflow: 'hidden' }}>
             {/* 垂直连接线 */}
             <div style={{
               position: 'absolute',
@@ -456,8 +452,9 @@ export default function FolderTree({
             {renderFolderList(folder.children, `folder:${folder.id}`, true)}
             {/* 任务项 */}
             {renderTaskList(folder.tasks, `task:${folder.id}`, taskIds)}
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
       </div>
     );
   };

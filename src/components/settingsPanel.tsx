@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { X, Check, Cloud, BookOpen, ChevronDown } from 'lucide-react';
-import { Settings, SortType, SyncPolicy, DEFAULT_WEBDAV_URL } from '../data/types';
+import { Settings, SyncPolicy, DEFAULT_WEBDAV_URL } from '../data/types';
 import { glassSurface } from './utils/glass';
 import { DEFAULT_AI_BASE_URL, testAiConnection } from '../services/aiClient';
-import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from '../data/sync';
+import { probeRemote, syncAuto, logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText, setSyncUiState } from '../data/sync';
 import type { SyncSettings, SyncLogEntry } from '../data/sync';
 import { isMobile } from '../data/platform';
 
@@ -20,22 +20,14 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type TabId = '外观' | '排序' | '提醒' | '同步' | 'AI' | '排障';
+type TabId = '外观' | '提醒' | '同步' | 'AI' | '排障';
 
 const TABS: { id: TabId; disabled?: boolean }[] = [
   { id: '外观' },
-  { id: '排序' },
   { id: '提醒' },
   { id: '同步' },
   { id: 'AI' },
   { id: '排障' },
-];
-
-const SORT_OPTIONS: { label: string; value: SortType }[] = [
-  { label: '按创建时间', value: 'createdAt' },
-  { label: '按截止时间', value: 'deadline' },
-  { label: '按名称', value: 'name' },
-  { label: '手动排序', value: 'manual' },
 ];
 
 /** 常用 OpenAI 兼容 AI 服务预设：只帮助填写 BaseURL，不替用户决定模型。 */
@@ -54,12 +46,10 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   // 从持久化设置初始化
   const [glassEffect, setGlassEffect] = useState(settings?.glassEffect ?? true);
   const [transparency, setTransparency] = useState(Math.round((settings?.transparency ?? 0.8) * 100));
-  const [sortType, setSortType] = useState<SortType>(settings?.sortType ?? 'deadline');
-  const [priorityTop, setPriorityTop] = useState(settings?.importantTop ?? false);
   const [winNotify, setWinNotify] = useState(settings?.reminderEnabled ?? true);
   const [autoPin, setAutoPin] = useState(settings?.autoPin ?? true);
+  const [importantTop, setImportantTop] = useState(settings?.importantTop ?? false);
   const [autoStart, setAutoStart] = useState(settings?.autoStart ?? true);
-  const [deadlineGradient, setDeadlineGradient] = useState(settings?.deadlineGradient ?? true);
   const [autoSync, setAutoSync] = useState(settings?.autoSync ?? true);
   const [notificationBusy, setNotificationBusy] = useState(false);
   const [notificationResult, setNotificationResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -284,6 +274,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const handleOneClickSync = async () => {
     if (syncBusy) return;
     setSyncBusy(true);
+    setSyncUiState({ kind: 'syncing' });
     logSync('info', '一键更新', '开始合并式同步（面板触发）');
     try {
       const result = await syncAuto(buildSyncSettings(), settings?.lastSyncedAt ?? null);
@@ -296,10 +287,12 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
           lastSyncAction: result.status === 'merged' ? 'merged' : result.status === 'uploaded' ? 'upload' : 'download',
         });
       }
+      setSyncUiState(result.status === 'error' ? { kind: 'error', message: result.message } : { kind: 'synced', at: Date.now() });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logSync('error', '一键更新', `异常：${msg}`);
       setSyncResult({ ok: false, message: `同步失败：${msg}` });
+      setSyncUiState({ kind: 'error', message: msg });
     } finally {
       setSyncBusy(false);
     }
@@ -423,6 +416,30 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </div>
               </div>
 
+              <div style={rowStyle}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <label style={labelStyle}>重要任务置顶</label>
+                  <p style={descStyle}>开启后，重要任务会排在普通任务之前；关闭后仅按截止时间排序</p>
+                </div>
+                <div
+                  role="switch"
+                  aria-checked={importantTop}
+                  tabIndex={0}
+                  style={switchStyle}
+                  onClick={() => { setImportantTop(!importantTop); onChange({ importantTop: !importantTop }); }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setImportantTop(!importantTop);
+                      onChange({ importantTop: !importantTop });
+                    }
+                  }}
+                >
+                  <span style={switchTrack(importantTop)} />
+                  <span style={{ ...switchThumb, transform: importantTop ? 'translateX(20px)' : 'none' }} />
+                </div>
+              </div>
+
               {/* 毛玻璃（仅桌面，移动端隐藏） */}
               {!isMobile && (
                 <div style={rowStyle}>
@@ -466,7 +483,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                 </div>
               )}
 
-              <div style={rowStyle}>
+              {!isMobile && <div style={rowStyle}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <label style={labelStyle}>开机自启动</label>
                   <p style={descStyle}>登录 Windows 后自动在桌面层显示</p>
@@ -475,55 +492,8 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <span style={switchTrack(autoStart)} />
                   <span style={{ ...switchThumb, transform: autoStart ? 'translateX(20px)' : 'none' }} />
                 </div>
-              </div>
+              </div>}
 
-              <div style={rowStyle}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <label style={labelStyle}>截止时间按日期渐变</label>
-                  <p style={descStyle}>开启时随日期临近由白渐变至红色；关闭时直接显示红色</p>
-                </div>
-                <div style={switchStyle} onClick={() => { setDeadlineGradient(!deadlineGradient); onChange({ deadlineGradient: !deadlineGradient }); }}>
-                  <span style={switchTrack(deadlineGradient)} />
-                  <span style={{ ...switchThumb, transform: deadlineGradient ? 'translateX(20px)' : 'none' }} />
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* ===== 排序 ===== */}
-          {tab === '排序' && (
-            <section>
-              <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>默认排序方式</label>
-                <div style={selectWrapper}>
-                  <select
-                    value={sortType}
-                    onChange={(e) => {
-                      const v = e.target.value as SortType;
-                      setSortType(v);
-                      onChange({ sortType: v });
-                    }}
-                    style={{ ...selectStyle, marginTop: 8 }}
-                    aria-label="默认排序方式"
-                  >
-                    {SORT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                  </select>
-                  <span style={{ position: 'absolute', right: 12, top: 'calc(50% + 4px)', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--icon-muted)' }}>
-                    <span style={{ fontSize: 12 }}>▼</span>
-                  </span>
-                </div>
-              </div>
-
-              <div style={rowStyle}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <label style={labelStyle}>重要任务置顶</label>
-                  <p style={descStyle}>标注"重要"的任务始终置顶在前列</p>
-                </div>
-                <div style={switchStyle} onClick={() => { setPriorityTop(!priorityTop); onChange({ importantTop: !priorityTop }); }}>
-                  <span style={switchTrack(priorityTop)} />
-                  <span style={{ ...switchThumb, transform: priorityTop ? 'translateX(20px)' : 'none' }} />
-                </div>
-              </div>
             </section>
           )}
 
@@ -547,20 +517,20 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   disabled={notificationBusy}
                   onClick={() => { void handleTestNotification(); }}
                   style={{
-                    minHeight: 36, padding: '0 12px', border: '1px solid var(--primary)', borderRadius: 9,
+                    width: isMobile ? '100%' : undefined, minHeight: isMobile ? 44 : 36, padding: '0 12px', border: '1px solid var(--primary)', borderRadius: 9,
                     background: 'color-mix(in srgb, var(--primary) 10%, transparent)', color: 'var(--primary)',
                     font: '600 12px var(--font-sans)', cursor: notificationBusy ? 'wait' : 'pointer',
                     opacity: notificationBusy ? 0.65 : 1,
                   }}
                 >
-                  {notificationBusy ? '正在检查通知权限…' : '授权并发送测试通知'}
+                  {notificationBusy ? '正在检查通知权限…' : isMobile ? '授权并测试手机通知' : '授权并发送测试通知'}
                 </button>
                 <p style={{ ...descStyle, marginTop: 7, color: notificationResult ? (notificationResult.ok ? 'var(--primary)' : 'var(--destructive)') : 'var(--muted-foreground)' }}>
                   {notificationResult?.message ?? '首次使用请点击此按钮授权；若未弹出，请到系统设置中允许本应用通知。'}
                 </p>
               </div>
 
-              <div style={rowStyle}>
+              {!isMobile && <div style={rowStyle}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <label style={labelStyle}>提醒后自动置顶</label>
                   <p style={descStyle}>任务到达提醒时间后自动置顶显示</p>
@@ -569,7 +539,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
                   <span style={switchTrack(autoPin)} />
                   <span style={{ ...switchThumb, transform: autoPin ? 'translateX(20px)' : 'none' }} />
                 </div>
-              </div>
+              </div>}
 
               <div style={{ marginBottom: 20 }}>
                 <label style={labelStyle}>默认截止时刻</label>

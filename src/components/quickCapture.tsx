@@ -11,6 +11,7 @@ import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../
 import { containerTransform } from './utils/motion';
 import { glassSurface, glassBlur } from './utils/glass';
 import { isMobile } from '../data/platform';
+import { timingConfirmation } from './utils/taskTiming';
 
 interface QuickCaptureProps {
   folders: FolderNode[];
@@ -20,6 +21,9 @@ interface QuickCaptureProps {
     folderId: string | null,
     options: { priority?: Priority; deadline?: number | null; remark?: string; reminderOffsets?: string[]; reminderTimes?: number[]; repeatRule?: TaskRepeatRule | null; repeatIntervalDays?: number | null; subtasks?: GeneratedSubtask[] }
   ) => void | Promise<void>;
+  /** 仅在自然语言/AI 时间解析参与保存时，向当前动作链回报最终写入的时间。 */
+  onTimeConfirmed?: (message: string) => void;
+  timeConfirmationNeeded?: boolean;
   /** 预填的默认截止日期（归一化为当天 00:00）；不传时保持原有行为 */
   initialDate?: number;
   /** 预选的默认文件夹（如右键文件夹 → 新建任务）；null/不传时默认未分类 */
@@ -339,7 +343,7 @@ function DualCalendar({
 }
 
 /** 新建任务弹窗（Quick Capture，对齐设计稿 side-0 quick-capture / modeTime 三列布局） */
-export default function QuickCapture({ folders, onClose, onCreate, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0, aiEnabled = false, onGenerateSubtasks, parentContext, initialTitle, initialDeadline, initialPriority, initialRemark, initialRepeatRule, initialRepeatIntervalDays, initialReminderOffsets, initialReminderTimes, initialSubtasks }: QuickCaptureProps) {
+export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirmed, timeConfirmationNeeded = false, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0, aiEnabled = false, onGenerateSubtasks, parentContext, initialTitle, initialDeadline, initialPriority, initialRemark, initialRepeatRule, initialRepeatIntervalDays, initialReminderOffsets, initialReminderTimes, initialSubtasks }: QuickCaptureProps) {
   const [title, setTitle] = useState(initialTitle ?? '');
   const [remark, setRemark] = useState(initialRemark ?? '');
   const [folderId, setFolderId] = useState<string | null>(initialFolderId);
@@ -587,6 +591,9 @@ export default function QuickCapture({ folders, onClose, onCreate, initialDate, 
       // 编辑模式下空数组表示用户明确移除了全部子任务；新建模式下同样安全地表示无子任务。
       subtasks,
     });
+    if (onTimeConfirmed && (parsedDeadline !== null || timeConfirmationNeeded)) {
+      onTimeConfirmed(timingConfirmation(effectiveDeadline, customTimes ? [] : (hasDeadline ? offsetList : []), customTimes ? reminderTimes : []));
+    }
   };
 
   const reminderCount = offsetList.length + reminderTimes.length;

@@ -1,5 +1,7 @@
 # 技术文档
 
+> 版本：V2.0.0 · 更新日期：2026-09-23
+
 ## 1. 技术栈
 
 | 层 | 技术 | 说明 |
@@ -44,7 +46,7 @@
 │  │ 桌面小部件      │◄───────────────────────────────┘     │
 │  │ (Kotlin)       │                                      │
 │  │ - Provider      │                                      │
-│  │ - Factory       │                                      │
+│  │ - 静态 Provider  │                                      │
 │  │ - AddTask       │                                      │
 │  │ - Appearance    │                                      │
 │  └────────────────┘                                      │
@@ -184,7 +186,7 @@ interface SyncSnapshot {
 
 ### 6.1 跨进程数据库访问
 
-小部件（AppWidgetProvider + RemoteViewsService）运行在独立进程，通过 `SQLiteDatabase.openDatabase` 直接打开 App 的 `data.db`：
+小部件（`AppWidgetProvider`）运行在独立进程，通过 `SQLiteDatabase.openDatabase` 直接打开 App 的 `data.db`：
 
 - 路径：`<dataDir>/desktop-task-manager/data.db`
 - 只读查询用 `OPEN_READONLY`，写入用 `OPEN_READWRITE`
@@ -195,14 +197,13 @@ interface SyncSnapshot {
 | 组件 | 职责 |
 | --- | --- |
 | `TaskWidgetProvider` | 接收广播（刷新 / 切换完成 / 翻页）、重绘 RemoteViews |
-| `TaskWidgetFactory` | 列表数据工厂（已由静态渲染替代，保留兼容） |
 | `WidgetAddTaskActivity` | 独立新建任务界面，直接读写 SQLite |
 | `WidgetAppearanceActivity` | 小部件外观设置（主题/毛玻璃/透明度） |
 | `WidgetDb` | 数据库路径解析与打开封装 |
 
 ### 6.3 静态渲染方案
 
-鸿蒙桌面对集合视图（ListView）的项点击和 fill-in 附加信息支持不佳，因此采用**静态 RemoteViews** 渲染前 6 条任务，每行独立 `setOnClickPendingIntent`，任务 ID 内嵌在 PendingIntent 的 `data URI` 中（保证不同任务的 PendingIntent 身份不冲突）。
+鸿蒙及部分 Android 桌面对集合视图（ListView）的项点击和 fill-in 附加信息支持不一致，因此采用**静态 RemoteViews** 渲染任务条目。条目高度固定，根据小部件实际高度计算可显示行数（不足时以空白占位保持布局稳定），通过上下翻页显示全部任务。每行独立 `setOnClickPendingIntent`，任务 ID 内嵌在 PendingIntent 的 `data URI` 中（保证不同任务的 PendingIntent 身份不冲突）。滚动版小部件已移除，不再维护 `RemoteViewsService`/`Factory` 实现。
 
 ### 6.4 外观设置
 
@@ -251,7 +252,7 @@ npm run tauri build    # cargo build --release，嵌入 dist
 npm run release        # 上述 + scripts/copy-release.mjs 归档便携版 exe
 ```
 
-便携版 exe 输出到 `release/DesktopTaskManager-v1.0.0.exe`。
+便携版 exe 输出到 `release/DesktopTaskManager-v2.0.0.exe`，安装包为 `release/DesktopTaskManager-v2.0.0-setup.exe`。
 
 ### Android
 

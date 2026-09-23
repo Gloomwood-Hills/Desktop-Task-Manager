@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 桌面小部件布局：顶部控制栏 + 任务区（静态行 × 6，weight 拉伸填满高度）。
+<!-- 桌面小部件布局：顶部控制栏 + 任务区（静态行 × 12）+ 固定翻页栏。
      重要（真机定案，华为鸿蒙 5.x）：
      1. 集合视图（ListView）点击在鸿蒙不可用 → 用静态行 + 每项独立 setOnClickPendingIntent；
      2. ScrollView 不在 RemoteViews 官方支持清单，鸿蒙渲染报"问题加载小工具"→ 不能用，
         小部件平台不支持任意内容滚动（只能靠行数上限 + 高度自适应）。
-     行数上限 6：weight 等分高度，最小尺寸下每行 ≥18dp 图标高度。
+     行数上限 12：由 Provider 按可用高度控制可见行数，任务区不能挤掉翻页栏。
      视觉规范：与应用端一致（品牌蓝 #007AFF / 分隔线半透明灰 / 圆角药丸标签）；
      按钮一律用矢量图标（ImageView）而非文字符号，避免不同 ROM 字形渲染差异。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -14,9 +14,9 @@
     android:background="@drawable/widget_bg"
     android:baselineAligned="false"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="10dp">
 
-    <!-- 顶部控制栏：品牌点 + 标题 + 待办计数 + 刷新 / 新增；外观设置移入应用，减少首屏干扰 -->
+    <!-- 顶部控制栏：品牌点 + 标题 + 待办计数 + 外观 / 刷新 / 新增 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -62,73 +62,140 @@
             android:orientation="horizontal" />
 
         <ImageView
+            android:id="@+id/btn_appearance"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:background="@drawable/widget_tap_feedback"
+            android:clickable="true"
+            android:contentDescription="@string/widget_appearance"
+            android:focusable="true"
+            android:padding="6dp"
+            android:src="@drawable/ic_sliders" />
+
+        <ImageView
             android:id="@+id/btn_refresh"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
             android:background="@drawable/widget_tap_feedback"
             android:clickable="true"
             android:contentDescription="@string/widget_refresh"
             android:focusable="true"
-            android:padding="7dp"
+            android:padding="6dp"
             android:src="@drawable/ic_refresh" />
 
         <ImageView
             android:id="@+id/btn_add"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:layout_marginStart="4dp"
             android:background="@drawable/widget_tap_feedback"
             android:clickable="true"
             android:contentDescription="@string/widget_add"
             android:focusable="true"
-            android:padding="2dp"
+            android:padding="1dp"
             android:src="@drawable/ic_add_circle" />
     </LinearLayout>
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="10dp"
-        android:background="#1A8E8E93" />
-
-    <!-- 保留任务解析输入入口：点击后打开独立输入页，支持自然语言日期解析。 -->
+    <!-- 解析入口与逾期/重要筛选同栏，减少首屏垂直占用。 -->
     <LinearLayout
-        android:id="@+id/btn_quick_add"
+        android:id="@+id/widget_input_filters"
         android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginTop="8dp"
-        android:background="@drawable/widget_input_pill"
-        android:clickable="true"
-        android:focusable="true"
+        android:layout_height="34dp"
+        android:layout_marginTop="4dp"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp">
+        android:orientation="horizontal">
 
-        <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_plus" />
+        <!-- 保留任务解析输入入口：点击后打开独立输入页，支持自然语言日期解析。 -->
+        <LinearLayout
+            android:id="@+id/btn_quick_add"
+            android:layout_width="0dp"
+            android:layout_height="34dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_input_pill"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_plus" />
+
+            <TextView
+                android:id="@+id/btn_quick_add_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:text="@string/widget_task_quick_add"
+                android:textColor="#8E8E93"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- 与应用列表一致的关注项筛选：点击切换“查看 / 不看”。 -->
+        <TextView
+            android:id="@+id/widget_filter_overdue"
+            android:layout_width="wrap_content"
+            android:layout_height="26dp"
+            android:layout_marginStart="5dp"
+            android:background="@drawable/widget_filter_active"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="0dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:text="逾期 0"
+            android:textColor="#007AFF"
+            android:textSize="9.5sp"
+            android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/btn_quick_add_text"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:maxLines="1"
-            android:text="@string/widget_task_quick_add"
-            android:textColor="#8E8E93"
-            android:textSize="12.5sp" />
+            android:id="@+id/widget_filter_important"
+            android:layout_width="wrap_content"
+            android:layout_height="26dp"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/widget_filter_active"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="0dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:text="重要 0"
+            android:textColor="#007AFF"
+            android:textSize="9.5sp"
+            android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- ===== 任务行 × 6（weight 等分填满剩余高度；小尺寸由 Provider 隐藏多余行） ===== -->
+    <!-- 保留旧 id 容器语义，筛选项已移入 widget_input_filters。 -->
     <LinearLayout
-        android:id="@+id/slot_1"
+        android:id="@+id/widget_attention_filters"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:orientation="horizontal">
+    </LinearLayout>
+
+    <!-- 任务区只占翻页栏上方的剩余空间；即使桌面尺寸报告不准，也不遮住翻页键。 -->
+    <LinearLayout
+        android:id="@+id/widget_rows"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:clipChildren="true"
+        android:orientation="vertical">
+
+    <!-- ===== 固定高度任务行 × 12；小尺寸由 Provider 隐藏多余行 ===== -->
+    <LinearLayout
+        android:id="@+id/slot_1"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
         android:background="@drawable/widget_tap_feedback"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -173,8 +240,7 @@
     <LinearLayout
         android:id="@+id/slot_2"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="48dp"
         android:background="@drawable/widget_tap_feedback"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -219,8 +285,7 @@
     <LinearLayout
         android:id="@+id/slot_3"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="48dp"
         android:background="@drawable/widget_tap_feedback"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -265,8 +330,7 @@
     <LinearLayout
         android:id="@+id/slot_4"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="48dp"
         android:background="@drawable/widget_tap_feedback"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -311,8 +375,7 @@
     <LinearLayout
         android:id="@+id/slot_5"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="48dp"
         android:background="@drawable/widget_tap_feedback"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -357,8 +420,7 @@
     <LinearLayout
         android:id="@+id/slot_6"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="48dp"
         android:background="@drawable/widget_tap_feedback"
         android:gravity="center_vertical"
         android:orientation="horizontal"
@@ -400,6 +462,90 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <LinearLayout
+        android:id="@+id/slot_7"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_tap_feedback"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp">
+        <ImageView android:id="@+id/item_check_7" android:layout_width="19dp" android:layout_height="19dp" android:layout_marginEnd="10dp" android:contentDescription="@null" android:src="@drawable/ic_task_normal" />
+        <TextView android:id="@+id/item_title_7" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:ellipsize="end" android:maxLines="1" android:textColor="#1D1D1F" android:textSize="13.5sp" android:textStyle="bold" />
+        <TextView android:id="@+id/item_dl_7" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill" android:maxLines="1" android:paddingStart="8dp" android:paddingTop="3dp" android:paddingEnd="8dp" android:paddingBottom="3dp" android:textColor="#8E8E93" android:textSize="11sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/slot_8"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_tap_feedback"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp">
+        <ImageView android:id="@+id/item_check_8" android:layout_width="19dp" android:layout_height="19dp" android:layout_marginEnd="10dp" android:contentDescription="@null" android:src="@drawable/ic_task_normal" />
+        <TextView android:id="@+id/item_title_8" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:ellipsize="end" android:maxLines="1" android:textColor="#1D1D1F" android:textSize="13.5sp" android:textStyle="bold" />
+        <TextView android:id="@+id/item_dl_8" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill" android:maxLines="1" android:paddingStart="8dp" android:paddingTop="3dp" android:paddingEnd="8dp" android:paddingBottom="3dp" android:textColor="#8E8E93" android:textSize="11sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/slot_9"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_tap_feedback"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp">
+        <ImageView android:id="@+id/item_check_9" android:layout_width="19dp" android:layout_height="19dp" android:layout_marginEnd="10dp" android:contentDescription="@null" android:src="@drawable/ic_task_normal" />
+        <TextView android:id="@+id/item_title_9" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:ellipsize="end" android:maxLines="1" android:textColor="#1D1D1F" android:textSize="13.5sp" android:textStyle="bold" />
+        <TextView android:id="@+id/item_dl_9" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill" android:maxLines="1" android:paddingStart="8dp" android:paddingTop="3dp" android:paddingEnd="8dp" android:paddingBottom="3dp" android:textColor="#8E8E93" android:textSize="11sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/slot_10"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_tap_feedback"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp">
+        <ImageView android:id="@+id/item_check_10" android:layout_width="19dp" android:layout_height="19dp" android:layout_marginEnd="10dp" android:contentDescription="@null" android:src="@drawable/ic_task_normal" />
+        <TextView android:id="@+id/item_title_10" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:ellipsize="end" android:maxLines="1" android:textColor="#1D1D1F" android:textSize="13.5sp" android:textStyle="bold" />
+        <TextView android:id="@+id/item_dl_10" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill" android:maxLines="1" android:paddingStart="8dp" android:paddingTop="3dp" android:paddingEnd="8dp" android:paddingBottom="3dp" android:textColor="#8E8E93" android:textSize="11sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/slot_11"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_tap_feedback"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp">
+        <ImageView android:id="@+id/item_check_11" android:layout_width="19dp" android:layout_height="19dp" android:layout_marginEnd="10dp" android:contentDescription="@null" android:src="@drawable/ic_task_normal" />
+        <TextView android:id="@+id/item_title_11" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:ellipsize="end" android:maxLines="1" android:textColor="#1D1D1F" android:textSize="13.5sp" android:textStyle="bold" />
+        <TextView android:id="@+id/item_dl_11" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill" android:maxLines="1" android:paddingStart="8dp" android:paddingTop="3dp" android:paddingEnd="8dp" android:paddingBottom="3dp" android:textColor="#8E8E93" android:textSize="11sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/slot_12"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_tap_feedback"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp">
+        <ImageView android:id="@+id/item_check_12" android:layout_width="19dp" android:layout_height="19dp" android:layout_marginEnd="10dp" android:contentDescription="@null" android:src="@drawable/ic_task_normal" />
+        <TextView android:id="@+id/item_title_12" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:ellipsize="end" android:maxLines="1" android:textColor="#1D1D1F" android:textSize="13.5sp" android:textStyle="bold" />
+        <TextView android:id="@+id/item_dl_12" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill" android:maxLines="1" android:paddingStart="8dp" android:paddingTop="3dp" android:paddingEnd="8dp" android:paddingBottom="3dp" android:textColor="#8E8E93" android:textSize="11sp" android:textStyle="bold" />
+    </LinearLayout>
+
     <!-- 空列表占位 -->
     <TextView
         android:id="@+id/widget_empty"
@@ -410,6 +556,7 @@
         android:text="@string/widget_empty"
         android:textColor="#8E8E93"
         android:textSize="12sp" />
+    </LinearLayout>
 
     <!-- 上/下翻页（同一小部件通过偏移分页展示更多任务；仅多页时显示） -->
     <LinearLayout

@@ -59,6 +59,153 @@ fn ensure_notification_identity() -> Result<(), String> {
     notification_identity::ensure_registered()
 }
 
+/// 在主窗口外显示仍由前端样式绘制的任务右键菜单。
+/// 独立透明浮窗不受主 WebView 裁剪，因此二级菜单可以越过主窗口边界。
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn open_context_menu_popup(
+    app: tauri::AppHandle,
+    x: f64,
+    y: f64,
+    task_id: String,
+    can_stop_repeat: bool,
+    task_completed: bool,
+    dark: bool,
+) -> Result<(), String> {
+    const POPUP_WIDTH: f64 = 380.0;
+    const POPUP_HEIGHT: f64 = 320.0;
+
+    if let Some(existing) = app.get_webview_window("task-context-menu") {
+        let _ = existing.destroy();
+    }
+
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "主窗口不存在".to_string())?;
+    let scale = main.scale_factor().map_err(|error| error.to_string())?;
+    let outer = main.outer_position().map_err(|error| error.to_string())?;
+    let mut screen_x = outer.x as f64 / scale + x;
+    let mut screen_y = outer.y as f64 / scale + y;
+
+    // 只避让屏幕工作区，不受主窗口边界约束。
+    if let Ok(Some(monitor)) = main.current_monitor() {
+        let monitor_scale = monitor.scale_factor();
+        let work = monitor.work_area();
+        let left = work.position.x as f64 / monitor_scale;
+        let top = work.position.y as f64 / monitor_scale;
+        let right = left + work.size.width as f64 / monitor_scale;
+        let bottom = top + work.size.height as f64 / monitor_scale;
+        screen_x = screen_x.clamp(left + 4.0, (right - POPUP_WIDTH - 4.0).max(left + 4.0));
+        screen_y = screen_y.clamp(top + 4.0, (bottom - POPUP_HEIGHT - 4.0).max(top + 4.0));
+    }
+
+    let url = format!(
+        "index.html?popup=task-context-menu&taskId={task_id}&canStopRepeat={can_stop_repeat}&taskCompleted={task_completed}&dark={dark}"
+    );
+    let popup = tauri::WebviewWindowBuilder::new(
+        &app,
+        "task-context-menu",
+        tauri::WebviewUrl::App(url.into()),
+    )
+    .title("任务菜单")
+    .inner_size(POPUP_WIDTH, POPUP_HEIGHT)
+    .position(screen_x, screen_y)
+    .resizable(false)
+    .maximizable(false)
+    .minimizable(false)
+    .closable(true)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(true)
+    .build()
+    .map_err(|error| format!("无法创建任务菜单浮窗：{error}"))?;
+
+    // 明确使用物理像素设置实际尺寸。Windows 高 DPI 下若只依赖 builder 的逻辑尺寸，
+    // WebView 可用区域可能被系统缩放压小，造成二级菜单方向误判并被裁切。
+    let physical_width = (POPUP_WIDTH * scale).round().max(1.0) as u32;
+    let physical_height = (POPUP_HEIGHT * scale).round().max(1.0) as u32;
+    popup
+        .set_size(PhysicalSize::new(physical_width, physical_height))
+        .map_err(|error| format!("无法调整任务菜单浮窗尺寸：{error}"))?;
+
+    #[cfg(windows)]
+    if let Ok(hwnd) = popup.hwnd() {
+        watch_context_menu_outside_click(app.clone(), hwnd.0 as isize);
+    }
+    Ok(())
+}
+
+/// Windows 桌面层点击空白处时不一定触发 WebView 的 blur。
+/// 监测下一次发生在浮窗外的鼠标按下，使行为与系统原生右键菜单一致。
+#[cfg(windows)]
+fn watch_context_menu_outside_click(app: tauri::AppHandle, hwnd_raw: isize) {
+    std::thread::spawn(move || {
+        use windows::Win32::Foundation::{HWND, POINT, RECT};
+        use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+        use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
+
+        let hwnd = HWND(hwnd_raw as *mut _);
+        let mut armed = false;
+
+        loop {
+            let Some(current) = app.get_webview_window("task-context-menu") else {
+                break;
+            };
+            let Ok(current_hwnd) = current.hwnd() else {
+                break;
+            };
+            if current_hwnd.0 as isize != hwnd_raw {
+                break;
+            }
+
+            let mouse_down = unsafe {
+                GetAsyncKeyState(0x01) < 0
+                    || GetAsyncKeyState(0x02) < 0
+                    || GetAsyncKeyState(0x04) < 0
+            };
+
+            // 等待触发菜单的右键先释放，避免浮窗刚创建就把自己关闭。
+            if !armed {
+                armed = !mouse_down;
+            } else if mouse_down {
+                let mut point = POINT::default();
+                let mut rect = RECT::default();
+                let point_ok = unsafe { GetCursorPos(&mut point) }.is_ok();
+                let rect_ok = unsafe { GetWindowRect(hwnd, &mut rect) }.is_ok();
+                if point_ok
+                    && rect_ok
+                    && (point.x < rect.left
+                        || point.x >= rect.right
+                        || point.y < rect.top
+                        || point.y >= rect.bottom)
+                {
+                    let _ = current.destroy();
+                    break;
+                }
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+    });
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+async fn open_context_menu_popup(
+    _app: tauri::AppHandle,
+    _x: f64,
+    _y: f64,
+    _task_id: String,
+    _can_stop_repeat: bool,
+    _task_completed: bool,
+    _dark: bool,
+) -> Result<(), String> {
+    Err("移动端不使用桌面右键菜单".to_string())
+}
+
 #[cfg(windows)]
 mod worker_w {
     use windows::Win32::Foundation::HWND;
@@ -141,6 +288,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             exit_app,
             ensure_notification_identity,
+            open_context_menu_popup,
             webdav::webdav_fetch,
             webdav::webdav_put,
             webdav::webdav_mkcol
@@ -289,8 +437,19 @@ pub fn run() {
             // 阻止关闭会导致 Activity 无法正常退出，故仅在桌面启用）
             #[cfg(not(target_os = "android"))]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                // 只有主窗口隐藏到托盘；右键菜单等临时浮窗必须真正销毁。
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+
+            // WebView 前端的 blur 在桌面层并不总是可靠；原生窗口失焦时同步销毁菜单。
+            #[cfg(not(target_os = "android"))]
+            if window.label() == "task-context-menu"
+                && matches!(event, tauri::WindowEvent::Focused(false))
+            {
+                let _ = window.destroy();
             }
         })
         .run(tauri::generate_context!())
