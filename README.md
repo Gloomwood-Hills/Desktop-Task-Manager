@@ -16,7 +16,7 @@
 
 ### Android 移动端
 
-[观看移动端操作演示视频](docs/videos/mobile-task-demo.mp4)
+https://github.com/user-attachments/assets/bef0337b-2def-4e68-9d86-688ab0db2d02
 
 ## 核心能力
 
