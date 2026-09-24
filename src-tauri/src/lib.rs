@@ -8,7 +8,7 @@ mod notification_identity {
     use windows_registry::CURRENT_USER;
 
     pub const APP_ID: &str = "com.desktop.taskmanager";
-    const DISPLAY_NAME: &str = "Desktop Task Manager";
+    const DISPLAY_NAME: &str = "HiTask";
 
     pub fn ensure_registered() -> Result<(), String> {
         let executable = std::env::current_exe()
@@ -318,7 +318,7 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            // 让 Windows 能将通知稳定归属为“Desktop Task Manager”。失败不阻止主程序启动，
+            // 让 Windows 能将通知稳定归属为“HiTask”。失败不阻止主程序启动，
             // 但设置页的测试按钮会把具体错误反馈给用户。
             if let Err(error) = notification_identity::ensure_registered() {
                 eprintln!("[notification] failed to register sender identity: {error}");
@@ -357,7 +357,7 @@ pub fn run() {
                 let _tray = TrayIconBuilder::new()
                     .icon(app.default_window_icon().unwrap().clone())
                     .menu(&menu)
-                    .tooltip("Desktop Task Manager")
+                    .tooltip("HiTask")
                     .on_menu_event(move |_, event| {
                         match event.id().as_ref() {
                             "show" => {

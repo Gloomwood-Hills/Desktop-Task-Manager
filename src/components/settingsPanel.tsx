@@ -120,7 +120,7 @@ export default function SettingsPanel({ theme, onThemeChange, settings, onChange
   const buildDiagText = (): string => {
     const s = settings;
     const lines: string[] = [
-      '===== Desktop Task Manager 同步诊断信息 =====',
+      '===== HiTask 同步诊断信息 =====',
       `服务器：${s?.webdavUrl || DEFAULT_WEBDAV_URL}`,
       `账号：${s?.webdavUsername ? '已填写' : '未填写'}`,
       `应用密码：${s?.webdavPassword ? '已填写' : '未填写'}`,

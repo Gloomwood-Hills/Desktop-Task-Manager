@@ -1,4 +1,4 @@
-# Desktop Task Manager
+# HiTask
 
 跨平台任务管理器，提供 Windows 桌面层任务面板、Android 桌面小部件和 WebDAV 双向同步。应用以本地 SQLite 为核心存储，支持自然语言录入、文件夹与子任务、截止时间管理和系统提醒。
 
@@ -51,7 +51,7 @@ https://github.com/user-attachments/assets/bef0337b-2def-4e68-9d86-688ab0db2d02
 
 ### Android
 
-下载 `DesktopTaskManager-arm64-release.apk` 安装；随后在桌面添加“桌面任务管理器”小部件。
+下载 `DesktopTaskManager-arm64-release.apk` 安装；随后在桌面添加“HiTask”小部件。
 
 ## 开发
 

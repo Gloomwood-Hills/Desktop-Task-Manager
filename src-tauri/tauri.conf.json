@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Desktop Task Manager",
+  "productName": "HiTask",
   "version": "2.0.0",
   "identifier": "com.desktop.taskmanager",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Desktop Task Manager",
+        "title": "HiTask",
         "width": 400,
         "height": 600,
         "minWidth": 380,

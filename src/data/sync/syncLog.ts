@@ -72,7 +72,7 @@ export function exportSyncLogsText(): string {
     return `[${ts}] [${e.lvl.toUpperCase()}] [${e.phase}] ${e.msg}`;
   });
   return [
-    '===== Desktop Task Manager 同步排障日志 =====',
+    '===== HiTask 同步排障日志 =====',
     `生成时间：${new Date().toLocaleString()}`,
     ...lines,
     `（共 ${lines.length} 条）`,

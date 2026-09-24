@@ -823,7 +823,7 @@ function App() {
         granted = permission === 'granted';
       }
       if (!granted) {
-        return { ok: false, message: isMobile ? '通知权限未授予，请前往“系统设置 > 应用 > Desktop Task Manager > 通知”开启后重试' : '系统通知权限未授予，请在系统设置中允许通知后重试' };
+        return { ok: false, message: isMobile ? '通知权限未授予，请前往“系统设置 > 应用 > HiTask > 通知”开启后重试' : '系统通知权限未授予，请在系统设置中允许通知后重试' };
       }
       await ensureMobileNotificationChannel();
       sendNotification({
@@ -833,7 +833,7 @@ function App() {
       });
       return {
         ok: true,
-        message: isMobile ? '测试通知已发送；若未看到，请检查系统是否允许横幅或锁屏通知' : '测试通知已请求；Windows 收到首次通知后会在“通知发送者”中显示 Desktop Task Manager',
+        message: isMobile ? '测试通知已发送；若未看到，请检查系统是否允许横幅或锁屏通知' : '测试通知已请求；Windows 收到首次通知后会在“通知发送者”中显示 HiTask',
       };
     } catch (error) {
       return { ok: false, message: `无法发送系统通知：${error instanceof Error ? error.message : String(error)}` };
